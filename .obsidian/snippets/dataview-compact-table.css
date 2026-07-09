@@ -1,0 +1,109 @@
+﻿/* Scoped compact Dataview table.
+   Add cssclasses: [dv-compact-table] to a note to enable. */
+.markdown-preview-view.dv-compact-table .table-view-table,
+.markdown-preview-view.dv-compact-table .table-view-table th,
+.markdown-preview-view.dv-compact-table .table-view-table td,
+.markdown-rendered.dv-compact-table .table-view-table,
+.markdown-rendered.dv-compact-table .table-view-table th,
+.markdown-rendered.dv-compact-table .table-view-table td,
+.markdown-source-view.mod-cm6.dv-compact-table .table-view-table,
+.markdown-source-view.mod-cm6.dv-compact-table .table-view-table th,
+.markdown-source-view.mod-cm6.dv-compact-table .table-view-table td {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.markdown-preview-view.dv-compact-table .table-view-table th,
+.markdown-preview-view.dv-compact-table .table-view-table td,
+.markdown-rendered.dv-compact-table .table-view-table th,
+.markdown-rendered.dv-compact-table .table-view-table td,
+.markdown-source-view.mod-cm6.dv-compact-table .table-view-table th,
+.markdown-source-view.mod-cm6.dv-compact-table .table-view-table td {
+  padding: 3px 6px;
+  vertical-align: top;
+}
+
+/* Hide Dataview's small result count shown in the first table header. */
+.markdown-preview-view.dv-compact-table .table-view-table th:first-child > span.dataview.small-text,
+.markdown-rendered.dv-compact-table .table-view-table th:first-child > span.dataview.small-text,
+.markdown-source-view.mod-cm6.dv-compact-table .table-view-table th:first-child > span.dataview.small-text {
+  display: none;
+}
+
+/* Keep the second Dataview column on one line. In most tag pages it is 日期; in overview pages it may be 项目. */
+.markdown-preview-view.dv-compact-table .table-view-table th:nth-child(2),
+.markdown-preview-view.dv-compact-table .table-view-table td:nth-child(2),
+.markdown-rendered.dv-compact-table .table-view-table th:nth-child(2),
+.markdown-rendered.dv-compact-table .table-view-table td:nth-child(2),
+.markdown-source-view.mod-cm6.dv-compact-table .table-view-table th:nth-child(2),
+.markdown-source-view.mod-cm6.dv-compact-table .table-view-table td:nth-child(2) {
+  white-space: nowrap;
+  min-width: 6.8em;
+  max-width: none;
+}
+
+/* Overview tag pages: columns are ??, ??, ??, ??.
+   Keep ?? and ?? readable, allow ?? to wrap, and avoid horizontal scrolling. */
+.markdown-preview-view.dv-overview-table .table-view-table,
+.markdown-rendered.dv-overview-table .table-view-table,
+.markdown-source-view.mod-cm6.dv-overview-table .table-view-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.markdown-preview-view.dv-overview-table .table-view-table th:nth-child(1),
+.markdown-preview-view.dv-overview-table .table-view-table td:nth-child(1),
+.markdown-rendered.dv-overview-table .table-view-table th:nth-child(1),
+.markdown-rendered.dv-overview-table .table-view-table td:nth-child(1),
+.markdown-source-view.mod-cm6.dv-overview-table .table-view-table th:nth-child(1),
+.markdown-source-view.mod-cm6.dv-overview-table .table-view-table td:nth-child(1) {
+  white-space: nowrap;
+  width: 8.5em;
+}
+
+.markdown-preview-view.dv-overview-table .table-view-table th:nth-child(2),
+.markdown-preview-view.dv-overview-table .table-view-table td:nth-child(2),
+.markdown-rendered.dv-overview-table .table-view-table th:nth-child(2),
+.markdown-rendered.dv-overview-table .table-view-table td:nth-child(2),
+.markdown-source-view.mod-cm6.dv-overview-table .table-view-table th:nth-child(2),
+.markdown-source-view.mod-cm6.dv-overview-table .table-view-table td:nth-child(2) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  width: auto;
+  min-width: 0;
+}
+
+.markdown-preview-view.dv-overview-table .table-view-table th:nth-child(3),
+.markdown-preview-view.dv-overview-table .table-view-table td:nth-child(3),
+.markdown-rendered.dv-overview-table .table-view-table th:nth-child(3),
+.markdown-rendered.dv-overview-table .table-view-table td:nth-child(3),
+.markdown-source-view.mod-cm6.dv-overview-table .table-view-table th:nth-child(3),
+.markdown-source-view.mod-cm6.dv-overview-table .table-view-table td:nth-child(3) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  width: 14em;
+}
+
+.markdown-preview-view.dv-overview-table .table-view-table th:nth-child(4),
+.markdown-preview-view.dv-overview-table .table-view-table td:nth-child(4),
+.markdown-rendered.dv-overview-table .table-view-table th:nth-child(4),
+.markdown-rendered.dv-overview-table .table-view-table td:nth-child(4),
+.markdown-source-view.mod-cm6.dv-overview-table .table-view-table th:nth-child(4),
+.markdown-source-view.mod-cm6.dv-overview-table .table-view-table td:nth-child(4) {
+  white-space: nowrap;
+  width: 7.2em;
+}
+
+/* Zebra striping for overview Dataview tables: light gray / transparent alternating rows. */
+.markdown-preview-view.dv-overview-table .table-view-table tbody tr:nth-child(even) td,
+.markdown-rendered.dv-overview-table .table-view-table tbody tr:nth-child(even) td,
+.markdown-source-view.mod-cm6.dv-overview-table .table-view-table tbody tr:nth-child(even) td {
+  background-color: rgba(128, 128, 128, 0.08);
+}
+
+.markdown-preview-view.dv-overview-table .table-view-table tbody tr:nth-child(odd) td,
+.markdown-rendered.dv-overview-table .table-view-table tbody tr:nth-child(odd) td,
+.markdown-source-view.mod-cm6.dv-overview-table .table-view-table tbody tr:nth-child(odd) td {
+  background-color: transparent;
+}
+

@@ -1,0 +1,17 @@
+﻿# Raw/local inputs and system-tool working files are not publishable knowledge.
+_raw/
+_/
+
+# Local agent/tool state.
+.claude/
+.claudian/
+
+# Obsidian local/app state is mostly machine-specific. Keep only the CSS snippet
+# required by the tag-page Dataview tables and its enablement setting.
+.obsidian/*
+!.obsidian/appearance.json
+!.obsidian/snippets/
+!.obsidian/snippets/dataview-compact-table.css
+
+# Microsoft Office temporary lock files.
+~$*
