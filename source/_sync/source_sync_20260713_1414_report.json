@@ -1,0 +1,116 @@
+﻿{
+    "date":  "2026-07-13",
+    "report":  [
+                   {
+                       "path":  "source/CDE/CDE_共性问题-常见一般性技术问题.md",
+                       "status":  "skipped_browser_unavailable",
+                       "latest":  null,
+                       "new_relevant":  0,
+                       "detail":  "CDE 直连返回反爬 JS 外壳；当前无可用 in-app browser。未更新 last_updated。"
+                   },
+                   {
+                       "path":  "source/CDE/CDE_共性问题-受理共性问题.md",
+                       "status":  "skipped_browser_unavailable",
+                       "latest":  null,
+                       "new_relevant":  0,
+                       "detail":  "CDE 直连返回反爬 JS 外壳；当前无可用 in-app browser。未更新 last_updated。"
+                   },
+                   {
+                       "path":  "source/CDE/CDE_共性问题-化学仿制药共性问题.md",
+                       "status":  "skipped_browser_unavailable",
+                       "latest":  null,
+                       "new_relevant":  0,
+                       "detail":  "CDE 直连返回反爬 JS 外壳；当前无可用 in-app browser。未更新 last_updated。"
+                   },
+                   {
+                       "path":  "source/CPC/CPC_《中国药典》执行专栏.md",
+                       "status":  "checked_no_new",
+                       "remote_count":  74,
+                       "latest":  "2026-06-17",
+                       "new_relevant":  0
+                   },
+                   {
+                       "path":  "source/NIFDC/NIFDC_常见共性问题解答.md",
+                       "status":  "checked_no_new",
+                       "remote_count":  3,
+                       "latest":  "2026-02-25",
+                       "new_relevant":  0
+                   },
+                   {
+                       "path":  "source/上海/上海局_信息公开.md",
+                       "status":  "checked_no_new",
+                       "remote_count":  204,
+                       "latest":  "2026-05-07",
+                       "new_relevant":  0,
+                       "detail":  "最新远端记录为医疗器械主题；晚于/等于上次维护日的记录无符合本库主题者。"
+                   },
+                   {
+                       "path":  "source/北京/北京局_咨询建议.md",
+                       "status":  "checked_no_new",
+                       "remote_count":  20,
+                       "latest":  "2026-07-10",
+                       "new_relevant":  0,
+                       "detail":  "2026-07-10 新近公开记录为医疗器械主题；其余近期记录早于上次维护日或不符合主题。"
+                   },
+                   {
+                       "path":  "source/安徽/安徽局_许可注册惠企政策超市-药品.md",
+                       "status":  "checked_no_new",
+                       "remote_count":  80,
+                       "latest":  "2026-07-02",
+                       "new_relevant":  0
+                   },
+                   {
+                       "path":  "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md",
+                       "status":  "checked_no_new",
+                       "remote_count":  47,
+                       "latest":  "2026-05-29",
+                       "new_relevant":  0
+                   },
+                   {
+                       "path":  "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md",
+                       "status":  "checked_no_new",
+                       "remote_count":  19,
+                       "latest":  "2025-12-30",
+                       "new_relevant":  0
+                   },
+                   {
+                       "path":  "source/江苏/江苏局_药小问普法讲堂.md",
+                       "status":  "skipped_no_fetch_rule",
+                       "latest":  null,
+                       "new_relevant":  0,
+                       "detail":  "source note 标明抓取规则尚未固化；未更新 last_updated。"
+                   },
+                   {
+                       "path":  "source/山东/山东局_检问百答.md",
+                       "status":  "skipped_no_fetch_rule",
+                       "latest":  null,
+                       "new_relevant":  0,
+                       "detail":  "source note 标明抓取规则尚未固化；未更新 last_updated。"
+                   },
+                   {
+                       "path":  "source/江苏/江苏局CDE_你问我答.md",
+                       "status":  "checked_no_new",
+                       "remote_count":  null,
+                       "latest":  "2025-06-11",
+                       "new_relevant":  0
+                   },
+                   {
+                       "path":  "source/海南/海南局CDE_服务事项.md",
+                       "status":  "checked_no_new",
+                       "remote_count":  37,
+                       "latest":  "2025-09-10",
+                       "new_relevant":  0,
+                       "detail":  "列表中较新医疗器械/化妆品/中药条目不符合主题；化学药品相关条目已存在。"
+                   },
+                   {
+                       "path":  "source/陕西/陕西局CDE_药品上市后变更管理.md",
+                       "status":  "checked_no_new",
+                       "remote_count":  5,
+                       "latest":  "2025-10-30",
+                       "new_relevant":  0
+                   }
+               ],
+    "rough_created":  [
+
+                      ]
+}

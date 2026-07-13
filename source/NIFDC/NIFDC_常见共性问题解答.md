@@ -1,8 +1,9 @@
----
+﻿---
 entity: 中国食品药品检定研究院
 entity_alias: NIFDC
 url: https://www.nifdc.org.cn/nifdc/ywzx/jyywzx/cjgxwtjd/index.html
 path: 网站首页 > 业务咨询 > 检验业务咨询 > 常见共性问题解答
+last_updated: 2026-07-13
 ---
 
 ## 整理规则

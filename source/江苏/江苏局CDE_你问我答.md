@@ -1,9 +1,9 @@
----
+﻿---
 entity: 江苏省药品监督管理局审评中心
 entity_alias: 江苏局CDE
 url: https://www.jspcc.org.cn/spzx/web/column/nwwd/1.html
 path: 首页 > 服务之窗 > 你问我答
-fetch_method:
+last_updated: 2026-07-13
 ---
 
 ## 整理规则

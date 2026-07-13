@@ -3,6 +3,7 @@ entity: 国家药品监督管理局药品审评中心
 entity_alias: CDE
 url: https://www.cde.org.cn/main/xxgk/listpage/07edef25f1e7354bfd8490baa0ce056b
 path: 信息公开 > 共性问题 > 化学仿制药共性问题
+last_updated: 2026-07-09
 ---
 
 ## 整理规则

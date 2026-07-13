@@ -107,3 +107,96 @@
   background-color: transparent;
 }
 
+/* Source Index: five-column Dataview table.
+   Columns: title / entity / URL / path / last updated. */
+.markdown-preview-view.dv-source-index-table .table-view-table,
+.markdown-rendered.dv-source-index-table .table-view-table,
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.markdown-preview-view.dv-source-index-table .table-view-table,
+.markdown-preview-view.dv-source-index-table .table-view-table th,
+.markdown-preview-view.dv-source-index-table .table-view-table td,
+.markdown-rendered.dv-source-index-table .table-view-table,
+.markdown-rendered.dv-source-index-table .table-view-table th,
+.markdown-rendered.dv-source-index-table .table-view-table td,
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table,
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table th,
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table td {
+  font-size: 12px;
+  line-height: 1.32;
+}
+
+.markdown-preview-view.dv-source-index-table .table-view-table th,
+.markdown-preview-view.dv-source-index-table .table-view-table td,
+.markdown-rendered.dv-source-index-table .table-view-table th,
+.markdown-rendered.dv-source-index-table .table-view-table td,
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table th,
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table td {
+  padding: 3px 5px;
+  vertical-align: top;
+}
+
+.markdown-preview-view.dv-source-index-table .table-view-table th:first-child > span.dataview.small-text,
+.markdown-rendered.dv-source-index-table .table-view-table th:first-child > span.dataview.small-text,
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table th:first-child > span.dataview.small-text {
+  display: none;
+}
+
+.markdown-preview-view.dv-source-index-table .table-view-table th:nth-child(1),
+.markdown-preview-view.dv-source-index-table .table-view-table td:nth-child(1),
+.markdown-rendered.dv-source-index-table .table-view-table th:nth-child(1),
+.markdown-rendered.dv-source-index-table .table-view-table td:nth-child(1),
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table th:nth-child(1),
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table td:nth-child(1) {
+  width: 20%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.markdown-preview-view.dv-source-index-table .table-view-table th:nth-child(2),
+.markdown-preview-view.dv-source-index-table .table-view-table td:nth-child(2),
+.markdown-rendered.dv-source-index-table .table-view-table th:nth-child(2),
+.markdown-rendered.dv-source-index-table .table-view-table td:nth-child(2),
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table th:nth-child(2),
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table td:nth-child(2) {
+  width: 15%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.markdown-preview-view.dv-source-index-table .table-view-table th:nth-child(3),
+.markdown-preview-view.dv-source-index-table .table-view-table td:nth-child(3),
+.markdown-rendered.dv-source-index-table .table-view-table th:nth-child(3),
+.markdown-rendered.dv-source-index-table .table-view-table td:nth-child(3),
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table th:nth-child(3),
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table td:nth-child(3) {
+  width: 28%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markdown-preview-view.dv-source-index-table .table-view-table th:nth-child(4),
+.markdown-preview-view.dv-source-index-table .table-view-table td:nth-child(4),
+.markdown-rendered.dv-source-index-table .table-view-table th:nth-child(4),
+.markdown-rendered.dv-source-index-table .table-view-table td:nth-child(4),
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table th:nth-child(4),
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table td:nth-child(4) {
+  width: 23%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.markdown-preview-view.dv-source-index-table .table-view-table th:nth-child(5),
+.markdown-preview-view.dv-source-index-table .table-view-table td:nth-child(5),
+.markdown-rendered.dv-source-index-table .table-view-table th:nth-child(5),
+.markdown-rendered.dv-source-index-table .table-view-table td:nth-child(5),
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table th:nth-child(5),
+.markdown-source-view.mod-cm6.dv-source-index-table .table-view-table td:nth-child(5) {
+  width: 8.2em;
+  white-space: nowrap;
+}
+

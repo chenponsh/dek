@@ -1,4 +1,4 @@
-﻿---
+---
 purpose: CDE 共性问题 source 笔记抓取与增量整理方法
 scope:
   - "[[CDE_共性问题-受理共性问题]]"
@@ -6,7 +6,7 @@ scope:
   - "[[CDE_共性问题-化学仿制药共性问题]]"
 ---
 
-本文件记录 CDE「信息公开 > 共性问题」页面的数据抓取方法，用于维护 `wiki/_source/` 下的 CDE source 笔记。
+本文件记录 CDE「信息公开 > 共性问题」页面的数据抓取方法，用于维护 `source/` 下的 CDE source 笔记。
 
 ## 与来源笔记的关系
 
@@ -20,9 +20,9 @@ scope:
 
 对应 source 笔记：
 
-- `[[wiki/_source/CDE/CDE_共性问题-受理共性问题.md]]`
-- `[[wiki/_source/CDE/CDE_共性问题-常见一般性技术问题.md]]`
-- `[[wiki/_source/CDE/CDE_共性问题-化学仿制药共性问题.md]]`
+- [[source/CDE/CDE_共性问题-受理共性问题.md]]
+- [[source/CDE/CDE_共性问题-常见一般性技术问题.md]]
+- [[source/CDE/CDE_共性问题-化学仿制药共性问题.md]]
 
 ## 核心原则
 
@@ -65,10 +65,10 @@ POST
 
 | probleType | 页面栏目 | 对应 source 笔记 |
 | --- | --- | --- |
-| 1 | 常见一般性技术问题 | `[[wiki/_source/CDE/CDE_共性问题-常见一般性技术问题.md]]` |
-| 2 | 受理共性问题 | `[[wiki/_source/CDE/CDE_共性问题-受理共性问题.md]]` |
+| 1 | 常见一般性技术问题 | `[[source/CDE/CDE_共性问题-常见一般性技术问题.md]]` |
+| 2 | 受理共性问题 | `[[source/CDE/CDE_共性问题-受理共性问题.md]]` |
 | 3 | 共性问题专家意见 | 当前接口曾返回 0 条；如后续出现数据，再新建/维护对应 source 笔记 |
-| 4 | 化学仿制药共性问题 | `[[wiki/_source/CDE/CDE_共性问题-化学仿制药共性问题.md]]` |
+| 4 | 化学仿制药共性问题 | `[[source/CDE/CDE_共性问题-化学仿制药共性问题.md]]` |
 
 ## 返回字段映射
 
@@ -120,7 +120,7 @@ POST
 
 2026-07-09 的执行是历史全量抓取。后续再次维护这 3 个数据源时，默认需求应理解为：
 
-> 回顾 `[[wiki/_source/CDE/CDE_共性问题-受理共性问题.md]]`、`[[wiki/_source/CDE/CDE_共性问题-常见一般性技术问题.md]]`、`[[wiki/_source/CDE/CDE_共性问题-化学仿制药共性问题.md]]` 三个 source 笔记对应的数据源；如官网有新增，则增量抓取并写入。
+> 回顾 `[[source/CDE/CDE_共性问题-受理共性问题.md]]`、`[[source/CDE/CDE_共性问题-常见一般性技术问题.md]]`、`[[source/CDE/CDE_共性问题-化学仿制药共性问题.md]]` 三个 source 笔记对应的数据源；如官网有新增，则增量抓取并写入。
 
 增量维护建议流程：
 
@@ -188,10 +188,10 @@ async function fetchCommonQuestions(page, type) {
 
 2026-07-09 执行时：
 
-- `probleType=1`：267 条，写入 `[[wiki/_source/CDE/CDE_共性问题-常见一般性技术问题.md]]`
-- `probleType=2`：96 条，写入 `[[wiki/_source/CDE/CDE_共性问题-受理共性问题.md]]`
+- `probleType=1`：267 条，写入 `[[source/CDE/CDE_共性问题-常见一般性技术问题.md]]`
+- `probleType=2`：96 条，写入 `[[source/CDE/CDE_共性问题-受理共性问题.md]]`
 - `probleType=3`：0 条，未建立单独 source 笔记
-- `probleType=4`：39 条，写入 `[[wiki/_source/CDE/CDE_共性问题-化学仿制药共性问题.md]]`
+- `probleType=4`：39 条，写入 `[[source/CDE/CDE_共性问题-化学仿制药共性问题.md]]`
 
 临时抓取缓存曾保存为 `[[_/cde_common_questions_fetched.json]]`，该文件属于过程数据，不作为长期知识内容。
 
