@@ -3,7 +3,7 @@ entity: 陕西省药品监督管理局
 entity_alias: 陕西局CDE
 url: https://mpa.shaanxi.gov.cn/ztzl/ypzcgl/ypsshbggl/
 path: 首页 > 专题专栏 > 药品注册管理 > 药品上市后变更管理
-last_updated: 2026-07-13
+last_updated: 2026-07-14
 ---
 
 ## 整理规则

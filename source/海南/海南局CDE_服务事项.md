@@ -3,7 +3,7 @@ entity: 海南省药品和医疗器械审评服务中心
 entity_alias: 海南局CDE
 url: https://amr.hainan.gov.cn/himpa/HICDME/fwsx/
 path: 首页 > 服务事项
-last_updated: 2026-07-13
+last_updated: 2026-07-14
 ---
 
 ## 整理规则

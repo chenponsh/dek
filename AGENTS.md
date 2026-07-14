@@ -12,7 +12,10 @@
 
 - `wiki/`：经过整理、可以发布的正式知识内容。
 - `source/`：来源笔记与来源摘录笔记，是从外部来源到正式内容笔记的中间层；与 `wiki/` 同属主要知识库内容，需要纳入 git 版本管理。
-  - `source/_sync/`：来源增量同步的结构化运行记录与同步说明，固定纳入 git，用于下次继续同步时追踪状态、跳过原因、失败原因和 rough 草稿生成情况。
+- `ingestion/`：来源摄入流程相关的可复用过程记忆与草稿区，需要纳入 git 版本管理。
+  - `ingestion/README.md`：来源摄入目录说明。
+  - `ingestion/logs/`：来源增量摄入的结构化运行记录，用于下次继续摄入时追踪状态、跳过原因、失败原因和 rough 草稿生成情况。
+  - `ingestion/rough/`：摄入后生成、尚未正式整理入 `wiki/` 的 rough 草稿。
 - `_raw/`：原始、未经整理的数据来源。通常只作为整理输入，不作为最终知识库内容。
 - `_/`：系统工具、临时脚本、处理过程文件等，与知识库正文内容无关。
 
@@ -20,7 +23,7 @@
 
 - 未来本库会使用 git 做版本管理。
 - `wiki/` 中的正式知识内容与 `source/` 中的来源笔记、来源摘录笔记，均应作为主要版本管理对象并纳入 git。
-- `source/_sync/` 中的来源同步记录应纳入 git；这是为了让下一次增量同步能基于上次运行状态继续判断，而不是依赖本地临时缓存。
+- `ingestion/` 中的来源摄入说明、摄入记录和 rough 草稿应纳入 git；这是为了让下一次增量摄入能基于上次运行状态继续判断，而不是依赖本地临时缓存。
 - `_raw/` 中的原始材料通常不纳入 git。
 - `_/` 中与本地环境、临时处理、非通用工具相关的内容通常不纳入 git。
 - 原则上不将二进制文件纳入 git；如果确实需要在笔记中使用图片、附件等二进制资源，优先采用图床链接等外部托管方式，只在有明确必要时再纳入版本管理。
@@ -54,31 +57,31 @@
 
 适用于 `source/` 下的来源笔记、来源抓取方法笔记和来源摘录笔记。来源笔记是从外部来源到正式 `wiki/` 内容笔记的中间层，不等同于最终知识内容。
 
-#### 来源增量同步记录
+#### 来源增量摄入记录
 
-- 每次按用户要求“遍历源笔记”“增量同步 source”后，应将结构化同步记录固定保存到 `source/_sync/`，不要只放在被 `.gitignore` 忽略的 `_/`。
-- 同步记录命名固定使用：`source_sync_YYYYMMDD_HHMM_report.json`。`sync` 表示“将外部来源与本地 source 笔记进行增量对齐”；涵盖抓取、比对、写入新增、生成 rough 草稿和记录跳过/失败原因。
-- 同步记录 JSON 至少包含：
-  - `date`：同步日期。
-  - `report`：逐来源记录，包含 source 笔记路径、同步状态、远端记录数或最新日期、是否发现符合主题的新增、跳过/失败原因。
-  - `rough_created`：本次新增到 `rough/` 的草稿笔记列表；无新增时为空列表。
-- 同步状态建议使用稳定枚举值，便于后续脚本或人工复核：
+- 每次按用户要求“遍历源笔记”“增量摄入 source”后，应将结构化摄入记录固定保存到 `ingestion/logs/`，不要只放在被 `.gitignore` 忽略的 `_/`。
+- 摄入记录命名固定使用：`source_ingest_YYYYMMDD_HHMM_report.json`。`ingest` 表示“将外部来源内容摄入本地知识库”；涵盖抓取远端、解析清洗、主题筛选、写入 source、生成 `ingestion/rough/` 草稿和记录跳过/失败原因。
+- 摄入记录 JSON 至少包含：
+  - `date`：摄入日期。
+  - `report`：逐来源记录，包含 source 笔记路径、摄入状态、远端记录数或最新日期、是否发现符合主题的新增、跳过/失败原因。
+  - `rough_created`：本次新增到 `ingestion/rough/` 的草稿笔记列表；无新增时为空列表。
+- 摄入状态建议使用稳定枚举值，便于后续脚本或人工复核：
   - `checked_no_new`：已成功核对，未发现符合主题新增。
-  - `updated_with_new`：已写入 source 增量，并已生成 rough 草稿。
+  - `updated_with_new`：已写入 source 增量，并已生成 `ingestion/rough/` 草稿。
   - `skipped_browser_unavailable`：来源需要浏览器上下文/反爬初始化，但当前环境无可用浏览器。
-  - `skipped_no_fetch_rule`：来源笔记标明抓取规则尚未固化，未机械同步。
+  - `skipped_no_fetch_rule`：来源笔记标明抓取规则尚未固化，未机械摄入。
   - `failed`：抓取或解析失败，需要人工复核。
-- 同步记录属于可复用的过程记忆，应纳入 git；临时 HTML、接口原始缓存、PDF 下载、调试脚本等仍放入 `_/`，通常不纳入 git。
+- 摄入记录属于可复用的过程记忆，应纳入 git；临时 HTML、接口原始缓存、PDF 下载、调试脚本等仍放入 `_/`，通常不纳入 git。
 - 更新 source 笔记 `last_updated` 的边界：
   - 只有成功核对该来源并完成“无新增/已增量写入/已确认无符合主题新增”的判断后，才更新 `last_updated`。
-  - 因浏览器不可用、反爬、抓取规则未固化或解析失败而跳过的来源，不更新 `last_updated`，并在同步记录中写明原因。
-- 当前已知同步依赖/方法：
+  - 因浏览器不可用、反爬、抓取规则未固化或解析失败而跳过的来源，不更新 `last_updated`，并在摄入记录中写明原因。
+- 当前已知摄入依赖/方法：
   - 普通静态列表或 JSON 接口：优先用 Python `requests` 或 PowerShell `Invoke-WebRequest` 抓取。
   - 江苏局 `da.jiangsu.gov.cn` 列表页：普通 `requests` 可能返回 403，加速乐页面；可用 PowerShell `Invoke-WebRequest -UseBasicParsing` 读取 `RawContentStream`。
   - CDE 共性问题：直接 `curl`、`requests` 或普通 HTML 解析通常只能拿到反爬/JS 外壳；需要浏览器页面上下文完成初始化后调用前端 `myAjax("/xxgk/getCommonQuestionList", ...)`，详见 [[source/CDE/CDE_共性问题_SourceFetchMethod.md]]。
   - 国家药典委员会 CPC 专栏：优先使用接口 `https://www.chp.org.cn/three/sys/news/es/list` 和 `https://www.chp.org.cn/three/sys/news/es/detail`，详见对应 source 笔记规则。
   - 上海局常见问题：优先使用 `https://sjcx.yjj.sh.gov.cn/api/v1/qa/list?pageNum=...&pageSize=...`。
-- 若同步时发现本来源方法已稳定复用，应优先沉淀为对应 `_SourceFetchMethod.md`；若只是一次运行的临时脚本，不要放入 `source/_sync/`，仍放入 `_/`。
+- 若摄入时发现本来源方法已稳定复用，应优先沉淀为对应 `_SourceFetchMethod.md`；若只是一次运行的临时脚本，不要放入 `ingestion/logs/`，仍放入 `_/`。
 
 #### 来源笔记结构
 

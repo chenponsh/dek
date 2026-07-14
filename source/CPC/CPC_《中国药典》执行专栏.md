@@ -3,7 +3,7 @@ entity: 国家药典委员会
 entity_alias: CPC
 url: https://www.chp.org.cn/#/gjyjw/ztzl?id=5&blockId=47
 path: 首页 > 专题专栏 > 《中国药典》执行专栏
-last_updated: 2026-07-13
+last_updated: 2026-07-14
 ---
 
 ## 整理规则
