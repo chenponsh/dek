@@ -4,8 +4,11 @@
 
 ## 【通用】约定与原则
 
-#### Markdown 笔记格式规则
+#### Obsidian 兼容性与 Markdown 格式规则
 
+- 本知识库以 Obsidian 兼容性作为维护基线。无论使用 Obsidian、Codex、Hermes、脚本或其他非 Obsidian 环境执行任务，都必须保留能被 Obsidian 正确识别和渲染的文件结构与语法。
+- 不得仅因当前工具无法渲染或识别，就删除、展开或改写 Obsidian 专用结构；包括但不限于 YAML frontmatter、`[[Wiki-links]]`、`![[嵌入]]`、标签、块引用/块 ID、callout、Dataview 查询块及其他插件代码块。遇到不熟悉的结构时，应先确认用途并保守保留。
+- 新建或修改笔记时，应检查标题层级、列表、表格、代码围栏、内部链接和嵌入在 Obsidian 中是否仍可正常解析。移动或重命名笔记及附件时，还应同步检查并更新受影响的内部链接。
 - 所有 Markdown 笔记的 YAML frontmatter 与正文之间保留一个空行。
 
 #### 规则维护原则
