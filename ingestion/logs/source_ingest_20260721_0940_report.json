@@ -1,0 +1,81 @@
+{
+  "date": "2026-07-21",
+  "report": [
+    {
+      "source": "source/CPC/CPC_《中国药典》执行专栏.md",
+      "status": "checked_no_new",
+      "detail": "API返回74条（字段newsTime），本地47+27篇共74篇；最新文章2026-06-17，与上次一致"
+    },
+    {
+      "source": "source/NIFDC/NIFDC_常见共性问题解答.md",
+      "status": "checked_no_new",
+      "detail": "列表页3篇文章（2026-02-25, 2025-08-04, 2024-09-18），本地已有2+1篇，无新增"
+    },
+    {
+      "source": "source/上海/上海局_信息公开.md",
+      "status": "checked_no_new",
+      "detail": "API共204条，新增1条为医疗器械生产许可证主题（2026-05-07），不纳入化学药品制剂摘录"
+    },
+    {
+      "source": "source/海南/海南局CDE_服务事项.md",
+      "status": "checked_no_new",
+      "detail": "列表3页，新增均为化妆品备案常见问题（第十一至十五期）和中药申报资料；药问药答(八)为中药主题"
+    },
+    {
+      "source": "source/陕西/陕西局CDE_药品上市后变更管理.md",
+      "status": "checked_no_new",
+      "detail": "列表共5篇文章，与本地一致，无新增"
+    },
+    {
+      "source": "source/江苏/江苏局CDE_你问我答.md",
+      "status": "checked_no_new",
+      "detail": "articleData共10篇，最新2026-02-02（体外诊断试剂），其余为化妆品/医疗器械主题，无新增化学药品制剂内容"
+    },
+    {
+      "source": "source/CDE/CDE_共性问题-常见一般性技术问题.md",
+      "status": "skipped_browser_unavailable",
+      "detail": "需浏览器上下文调用myAjax"
+    },
+    {
+      "source": "source/CDE/CDE_共性问题-受理共性问题.md",
+      "status": "skipped_browser_unavailable",
+      "detail": "需浏览器上下文调用myAjax"
+    },
+    {
+      "source": "source/CDE/CDE_共性问题-化学仿制药共性问题.md",
+      "status": "skipped_browser_unavailable",
+      "detail": "需浏览器上下文调用myAjax"
+    },
+    {
+      "source": "source/山东/山东局_检问百答.md",
+      "status": "skipped_no_fetch_rule",
+      "detail": "抓取规则尚未固化"
+    },
+    {
+      "source": "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md",
+      "status": "skipped_browser_unavailable",
+      "detail": "da.jiangsu.gov.cn返回加速乐反爬页面"
+    },
+    {
+      "source": "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md",
+      "status": "skipped_browser_unavailable",
+      "detail": "da.jiangsu.gov.cn返回加速乐反爬页面"
+    },
+    {
+      "source": "source/江苏/江苏局_药小问普法讲堂.md",
+      "status": "skipped_no_fetch_rule",
+      "detail": "抓取规则尚未固化"
+    },
+    {
+      "source": "source/北京/北京局_咨询建议.md",
+      "status": "failed",
+      "detail": "列表API返回'您访问的页面已撤稿或删除'页面，端点已变更，需人工复核"
+    },
+    {
+      "source": "source/安徽/安徽局_许可注册惠企政策超市-药品.md",
+      "status": "skipped_browser_unavailable",
+      "detail": "页面文章列表为JS动态加载，静态HTML仅含少量导航链接，无法可靠获取完整文章列表"
+    }
+  ],
+  "rough_created": []
+}
