@@ -1,0 +1,97 @@
+{
+  "date": "2026-07-25",
+  "report": [
+    {
+      "source_note": "source/CDE/CDE_共性问题-受理共性问题.md",
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE页面需要浏览器上下文调用myAjax，当前环境无可用浏览器"
+    },
+    {
+      "source_note": "source/CDE/CDE_共性问题-常见一般性技术问题.md",
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE页面需要浏览器上下文调用myAjax，当前环境无可用浏览器"
+    },
+    {
+      "source_note": "source/CDE/CDE_共性问题-化学仿制药共性问题.md",
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE页面需要浏览器上下文调用myAjax，当前环境无可用浏览器"
+    },
+    {
+      "source_note": "source/上海/上海局_信息公开.md",
+      "status": "checked_no_new",
+      "remote_total": 204,
+      "new_count": 0,
+      "reason": "API返回204条记录，与本地一致，无新增"
+    },
+    {
+      "source_note": "source/CPC/CPC_《中国药典》执行专栏.md",
+      "status": "checked_no_new",
+      "remote_total": 74,
+      "new_count": 0,
+      "reason": "API返回74条记录（字段createTime），经文件名匹配全部已存在于本地摘录/排除目录"
+    },
+    {
+      "source_note": "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md",
+      "status": "checked_no_new",
+      "remote_total": 45,
+      "new_count": 0,
+      "reason": "栏目页解析45个文章链接，本地46条QA记录，无新增"
+    },
+    {
+      "source_note": "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md",
+      "status": "checked_no_new",
+      "remote_total": 18,
+      "new_count": 0,
+      "reason": "栏目页解析18个文章链接，本地19条QA记录，无新增"
+    },
+    {
+      "source_note": "source/江苏/江苏局CDE_你问我答.md",
+      "status": "checked_no_new",
+      "remote_total": 10,
+      "new_count": 0,
+      "reason": "列表页第1页articleData含10条，均为化妆品/体外诊断试剂/医疗器械等非化学药品主题，已全部被主题筛选过滤"
+    },
+    {
+      "source_note": "source/江苏/江苏局_药小问普法讲堂.md",
+      "status": "skipped_no_fetch_rule",
+      "reason": "抓取规则尚未固化"
+    },
+    {
+      "source_note": "source/北京/北京局_咨询建议.md",
+      "status": "skipped_no_fetch_rule",
+      "reason": "API端点已变更（POST bjah-index-dept!letterList.action 返回404），需确认新接口地址"
+    },
+    {
+      "source_note": "source/山东/山东局_检问百答.md",
+      "status": "skipped_no_fetch_rule",
+      "reason": "抓取规则尚未固化"
+    },
+    {
+      "source_note": "source/陕西/陕西局CDE_药品上市后变更管理.md",
+      "status": "checked_no_new",
+      "remote_total": 5,
+      "new_count": 0,
+      "reason": "栏目页5篇文章均已存在于本地"
+    },
+    {
+      "source_note": "source/海南/海南局CDE_服务事项.md",
+      "status": "failed",
+      "reason": "Connection refused/SSL error，海南局服务器拒绝连接"
+    },
+    {
+      "source_note": "source/NIFDC/NIFDC_常见共性问题解答.md",
+      "status": "checked_no_new",
+      "remote_total": 2,
+      "new_count": 0,
+      "reason": "列表页2篇文章均已存在于本地（第3篇干细胞专题已排除）"
+    },
+    {
+      "source_note": "source/安徽/安徽局_许可注册惠企政策超市-药品.md",
+      "status": "checked_no_new",
+      "remote_total": 15,
+      "new_count": 0,
+      "reason": "栏目页15篇文章中，6篇与化学药品制剂相关的已存在于本地摘录/排除目录；9篇新增均属中药饮片/中药配方颗粒勘误通知，被主题筛选排除"
+    }
+  ],
+  "rough_created": []
+}
