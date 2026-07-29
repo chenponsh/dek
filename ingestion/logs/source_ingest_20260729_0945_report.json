@@ -1,0 +1,85 @@
+{
+  "date": "2026-07-29",
+  "report": [
+    {
+      "source": "source/CDE/CDE_共性问题-常见一般性技术问题.md",
+      "status": "checked_no_new",
+      "details": "远端 278 条（与 2026-07-27 一致），最新 2026-07-17。Playwright 反爬成功调用 myAjax。无新增。"
+    },
+    {
+      "source": "source/CDE/CDE_共性问题-受理共性问题.md",
+      "status": "checked_no_new",
+      "details": "远端 99 条（与上次一致），最新 2026-07-17。无新增。"
+    },
+    {
+      "source": "source/CDE/CDE_共性问题-化学仿制药共性问题.md",
+      "status": "checked_no_new",
+      "details": "远端 39 条（与上次一致），最新 2026-07-06。无新增。"
+    },
+    {
+      "source": "source/上海/上海局_信息公开.md",
+      "status": "checked_no_new",
+      "details": "API 返回 204 条，最新 2026-05-07（医疗器械相关）。经主题筛选后无符合化学药品制剂主题的增量。"
+    },
+    {
+      "source": "source/江苏/江苏局CDE_你问我答.md",
+      "status": "checked_no_new",
+      "details": "远端 10 篇文章，最新 2026-02-02。新增均为体外诊断试剂和化妆品主题，已按主题筛选排除。无符合化学药品制剂主题的增量。"
+    },
+    {
+      "source": "source/海南/海南局CDE_服务事项.md",
+      "status": "checked_no_new",
+      "details": "远端 3 页共 37 篇文章。首页全部为普通化妆品备案常见问题（第十一至十五期等），子页为医疗器械和药品上市后变更旧文。无符合化学药品制剂主题的新增。"
+    },
+    {
+      "source": "source/陕西/陕西局CDE_药品上市后变更管理.md",
+      "status": "checked_no_new",
+      "details": "远端 5 篇文章，最新 2025-10-30（药品上市后变更管理常见问题简答（五））。早于 last_updated (2026-07-23)，无新增。"
+    },
+    {
+      "source": "source/安徽/安徽局_许可注册惠企政策超市-药品.md",
+      "status": "checked_no_new",
+      "details": "网页可访问，最新文章为药品上市后变更备案共性问题解答（五）（2026-07-02），本地已有对应摘录笔记。无新增。"
+    },
+    {
+      "source": "source/北京/北京局_咨询建议.md",
+      "status": "failed",
+      "details": "API endpoint 返回 404。JSON 接口路径已变更，需人工更新抓取逻辑。"
+    },
+    {
+      "source": "source/CPC/CPC_《中国药典》执行专栏.md",
+      "status": "failed",
+      "details": "POST API 返回 0 条记录（pageSize=100, channelId=47）。API 响应结构可能已变更，需人工复核。"
+    },
+    {
+      "source": "source/NIFDC/NIFDC_常见共性问题解答.md",
+      "status": "failed",
+      "details": "返回 404，NIFDC 网站 URL 已变更。需人工更新入口地址。"
+    },
+    {
+      "source": "source/山东/山东局_检问百答.md",
+      "status": "skipped_no_fetch_rule",
+      "details": "抓取规则尚未固化。"
+    },
+    {
+      "source": "source/江苏/江苏局_药小问普法讲堂.md",
+      "status": "skipped_no_fetch_rule",
+      "details": "抓取规则尚未固化。"
+    },
+    {
+      "source": "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md",
+      "status": "skipped_no_fetch_rule",
+      "details": "江苏局专栏页受加速乐保护，Python requests 不可用；需要 PowerShell 或其他方案。"
+    },
+    {
+      "source": "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md",
+      "status": "skipped_no_fetch_rule",
+      "details": "同上，江苏局专栏页反爬限制。"
+    }
+  ],
+  "rough_created": [],
+  "notes": {
+    "cde_playwright": "CDE 3 个来源通过 Playwright + Chromium 增强反爬配置（禁用 webdriver 标记、注入 navigator 覆盖脚本）成功调用 myAjax。与上次（2026-07-27）相比无新增内容。",
+    "remaining_issues": "北京局（404）、CPC（返回 0 条）、NIFDC（404）三个来源因 API/页面结构变化或 URL 变更而失败，需要人工更新抓取逻辑。所有可成功抓取的来源均无化学药品制剂主题增量。"
+  }
+}

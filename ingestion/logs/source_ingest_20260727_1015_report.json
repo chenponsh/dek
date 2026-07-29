@@ -1,0 +1,86 @@
+{
+  "date": "2026-07-27",
+  "report": [
+    {
+      "source": "source/CDE/CDE_共性问题-常见一般性技术问题.md",
+      "status": "updated_with_new",
+      "details": "远端 278 条（上次全量 267 条，+11）。Playwright 成功调用 myAjax。按主题筛选排除 8 条中药相关问题后，写入 3 条化学药品相关新增：化学原料药登记事项电子申报、网络传输提交资料大小要求更新、同品种核对码/受理号填写。last_updated 已更新为 2026-07-27。"
+    },
+    {
+      "source": "source/CDE/CDE_共性问题-受理共性问题.md",
+      "status": "updated_with_new",
+      "details": "远端 99 条（上次 96 条）。2026-07-17 新增 3 条：化学原料药登记事项电子申报、网络传输提交资料大小要求更新、网络传输提交资料时同品种核对码/受理号填写。Playwright 成功调用 myAjax。"
+    },
+    {
+      "source": "source/CDE/CDE_共性问题-化学仿制药共性问题.md",
+      "status": "checked_no_new",
+      "details": "远端 39 条，与本地完全一致，无新增。Playwright 成功调用 myAjax。"
+    },
+    {
+      "source": "source/上海/上海局_信息公开.md",
+      "status": "checked_no_new",
+      "details": "API 返回 204 条。经主题筛选后（排除医疗器械、执业药师、经营流通等），无符合化学药品制剂主题的增量。"
+    },
+    {
+      "source": "source/北京/北京局_咨询建议.md",
+      "status": "failed",
+      "details": "POST 请求返回 HTML 页面（10KB），不含 letterTitle/originalId 等预期字段。页面结构已变化，API endpoint 需更新。"
+    },
+    {
+      "source": "source/CPC/CPC_《中国药典》执行专栏.md",
+      "status": "failed",
+      "details": "POST API 返回 0 条记录（pageSize=100, channelId=47）。API 响应结构可能已变更，需人工复核。"
+    },
+    {
+      "source": "source/海南/海南局CDE_服务事项.md",
+      "status": "checked_no_new",
+      "details": "远端 15 篇文章。新增均为普通化妆品备案常见问题（第十至十五期），已按主题筛选排除。无符合化学药品制剂主题的增量。"
+    },
+    {
+      "source": "source/陕西/陕西局CDE_药品上市后变更管理.md",
+      "status": "checked_no_new",
+      "details": "HTML 解析仅匹配到 1 篇文章（可能解析不完整），与本地一致。需改进解析逻辑以获取完整文章列表。"
+    },
+    {
+      "source": "source/江苏/江苏局CDE_你问我答.md",
+      "status": "checked_no_new",
+      "details": "远端 articleData 含 10 篇文章。新增均为体外诊断试剂（#170-172）和化妆品（#106-107）主题，已按主题筛选排除。无符合化学药品制剂主题的增量。"
+    },
+    {
+      "source": "source/安徽/安徽局_许可注册惠企政策超市-药品.md",
+      "status": "checked_no_new",
+      "details": "远端 3 篇文章（药品上市后变更备案共性问题解答五、2025年版中国药典实施解读一二、勘误函），均已有对应摘录笔记。无新增。"
+    },
+    {
+      "source": "source/NIFDC/NIFDC_常见共性问题解答.md",
+      "status": "failed",
+      "details": "HTTP 403 Forbidden。NIFDC 网站反爬升级，curl 和 requests 均被拒绝。需使用浏览器方式或更换 User-Agent。"
+    },
+    {
+      "source": "source/山东/山东局_检问百答.md",
+      "status": "skipped_no_fetch_rule",
+      "details": "抓取规则尚未固化。"
+    },
+    {
+      "source": "source/江苏/江苏局_药小问普法讲堂.md",
+      "status": "skipped_no_fetch_rule",
+      "details": "抓取规则尚未固化。"
+    },
+    {
+      "source": "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md",
+      "status": "skipped_no_fetch_rule",
+      "details": "江苏局专栏页需 PowerShell Invoke-WebRequest 绕过加速乐，Python requests 不可用；本次环境未实现替代方案。"
+    },
+    {
+      "source": "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md",
+      "status": "skipped_no_fetch_rule",
+      "details": "同上，江苏局专栏页反爬限制。"
+    }
+  ],
+  "rough_created": [],
+  "notes": {
+    "major_improvement": "CDE 3 个来源首次通过 Playwright + Chromium 成功抓取（此前因 browser_unavailable 连续跳过多日）。Playwright 反爬配置（禁用 webdriver 标记、中文 UA、viewport）有效绕过 CDE 的 JS 挑战。",
+    "cdE_new_20260717": "CDE 于 2026-07-17 发布了 11 条新共性问题（常见一般性技术问题 +3 受理共性），距上次全量抓取（2026-07-09）已过 8 天。",
+    "remaining_issues": "北京局、CPC、NIFDC 三个来源因 API/页面结构变化或反爬升级而失败，需要人工更新抓取逻辑。江苏局专栏页受加速乐保护，需要 PowerShell 或其他方案。"
+  }
+}
