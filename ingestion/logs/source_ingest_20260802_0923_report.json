@@ -1,0 +1,65 @@
+{
+  "date": "2026-08-02",
+  "report": {
+    "source/上海/上海局_信息公开.md": {
+      "status": "checked_no_new",
+      "note": "API返回204条记录。筛选后发现1条疑似新增（\"申领大家签\"），但属于电子签章系统通用IT问题，非化学药品制剂主题，已排除。"
+    },
+    "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md": {
+      "status": "checked_no_new",
+      "note": "页面可访问(200)，45篇文章结构未变。article link解析需datastore格式处理。"
+    },
+    "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md": {
+      "status": "checked_no_new",
+      "note": "同上，col91925页面无新增文章。"
+    },
+    "source/江苏/江苏局CDE_你问我答.md": {
+      "status": "checked_no_new"
+    },
+    "source/NIFDC/NIFDC_常见共性问题解答.md": {
+      "status": "checked_no_new"
+    },
+    "source/陕西/陕西局CDE_药品上市后变更管理.md": {
+      "status": "checked_no_new",
+      "note": "列表页5篇文章，全部已处理。"
+    },
+    "source/海南/海南局CDE_服务事项.md": {
+      "status": "updated_with_new",
+      "new_count": 1,
+      "note": "发现2021-09-16遗漏文章\"海南省药品上市后备案类变更相关共性问题（一）\"。Q&A解析质量一般，需人工复核整理。"
+    },
+    "source/安徽/安徽局_许可注册惠企政策超市-药品.md": {
+      "status": "checked_no_new"
+    },
+    "source/北京/北京局_咨询建议.md": {
+      "status": "checked_no_new"
+    },
+    "source/CPC/CPC_《中国药典》执行专栏.md": {
+      "status": "checked_no_new",
+      "note": "API返回74条记录，全部已处理。"
+    },
+    "source/江苏/江苏局_药小问普法讲堂.md": {
+      "status": "skipped_no_fetch_rule",
+      "reason": "抓取规则尚未固化"
+    },
+    "source/山东/山东局_检问百答.md": {
+      "status": "skipped_no_fetch_rule",
+      "reason": "抓取规则尚未固化"
+    },
+    "source/CDE/CDE_共性问题-常见一般性技术问题.md": {
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE JS反爬，需浏览器上下文"
+    },
+    "source/CDE/CDE_共性问题-受理共性问题.md": {
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE JS反爬，需浏览器上下文"
+    },
+    "source/CDE/CDE_共性问题-化学仿制药共性问题.md": {
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE JS反爬，需浏览器上下文"
+    }
+  },
+  "rough_created": [
+    "ingestion/rough/20260802_海南局_服务事项_备案类变更共性问题一.md"
+  ]
+}
