@@ -1,0 +1,66 @@
+{
+  "date": "2026-08-05",
+  "report": {
+    "source/上海/上海局_信息公开.md": {
+      "status": "checked_no_new",
+      "note": "API返回204条记录，无2026-08-01之后的新增。"
+    },
+    "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md": {
+      "status": "checked_no_new",
+      "note": "col91813页面可访问(200)，datastore格式，最新文章2026-07-19，无新增。"
+    },
+    "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md": {
+      "status": "checked_no_new",
+      "note": "col91925页面可访问(200)，最新文章2025-12-30，无新增。"
+    },
+    "source/江苏/江苏局CDE_你问我答.md": {
+      "status": "checked_no_new",
+      "note": "遍历19页共190条文章。最新化学药品相关条目日期为2025-07-14，无2026-07-14之后的化学药品新增。近期新增均为化妆品/体外诊断试剂。"
+    },
+    "source/NIFDC/NIFDC_常见共性问题解答.md": {
+      "status": "checked_no_new",
+      "note": "列表页3篇文章（2026-02-25, 2025-08-04, 2024-09-18），均已处理。"
+    },
+    "source/陕西/陕西局CDE_药品上市后变更管理.md": {
+      "status": "checked_no_new",
+      "note": "列表页5篇文章，最新2025-10-30，无新增。"
+    },
+    "source/海南/海南局CDE_服务事项.md": {
+      "status": "checked_no_new",
+      "note": "index.html连接重置，index_1和index_2共22篇文章，全部为化妆品/医疗器械/服务事项。无化学药品新增。"
+    },
+    "source/安徽/安徽局_许可注册惠企政策超市-药品.md": {
+      "status": "checked_no_new",
+      "note": "列表页15篇文章，最新2026-07-02（药品上市后变更备案共性问题解答五），全部已处理。"
+    },
+    "source/北京/北京局_咨询建议.md": {
+      "status": "skipped_browser_unavailable",
+      "reason": "API (bjah-index-dept!letterList.action) 返回「页面已撤稿或删除」。Cookie含__jsluid_s，疑似加速乐JS反爬。主页面HTML可见2026-08-04日期但无法提取信件数据。"
+    },
+    "source/CPC/CPC_《中国药典》执行专栏.md": {
+      "status": "checked_no_new",
+      "note": "API返回74条记录，全部已处理，无2026-07-14之后新增。"
+    },
+    "source/江苏/江苏局_药小问普法讲堂.md": {
+      "status": "skipped_no_fetch_rule",
+      "reason": "抓取规则尚未固化"
+    },
+    "source/山东/山东局_检问百答.md": {
+      "status": "skipped_no_fetch_rule",
+      "reason": "抓取规则尚未固化"
+    },
+    "source/CDE/CDE_共性问题-常见一般性技术问题.md": {
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE JS反爬，需浏览器上下文"
+    },
+    "source/CDE/CDE_共性问题-受理共性问题.md": {
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE JS反爬，需浏览器上下文"
+    },
+    "source/CDE/CDE_共性问题-化学仿制药共性问题.md": {
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE JS反爬，需浏览器上下文"
+    }
+  },
+  "rough_created": []
+}
