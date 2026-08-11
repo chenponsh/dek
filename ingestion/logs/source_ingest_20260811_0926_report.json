@@ -1,0 +1,67 @@
+{
+  "date": "2026-08-11",
+  "git_sync_note": "SSH远端不可达(Connection closed by UNKNOWN port 65535)，无法拉取/推送；基于本地版本(领先origin/main 4个commit)进行摄入检查。",
+  "report": {
+    "source/上海/上海局_信息公开.md": {
+      "status": "checked_no_new",
+      "note": "API返回204条记录，最新createDate 2026-05-07，0条发布于2026-08-01之后，无新增。"
+    },
+    "source/CPC/CPC_《中国药典》执行专栏.md": {
+      "status": "checked_no_new",
+      "note": "API(GET /three/sys/news/es/list?blockId=47)返回74条记录，最新newsTime 2026-06-17，0条晚于2026-07-14，无新增。"
+    },
+    "source/NIFDC/NIFDC_常见共性问题解答.md": {
+      "status": "checked_no_new",
+      "note": "列表页3篇文章（2026-02-25, 2025-08-04, 2024-09-18），均已在source笔记中，无新增。"
+    },
+    "source/陕西/陕西局CDE_药品上市后变更管理.md": {
+      "status": "checked_no_new",
+      "note": "列表页5篇文章，最新2025-10-30（药品上市后变更管理常见问题简答（五）），均已在source笔记中，无新增。"
+    },
+    "source/海南/海南局CDE_服务事项.md": {
+      "status": "checked_no_new",
+      "note": "列表页22篇文章（含3页），最新药品相关为2025-06-06（中药篇）和2025-05-27（化学药品篇），均已在source笔记中；2025-06之后新增均为普通化妆品备案问答，不纳入。无化学药品制剂新增。"
+    },
+    "source/安徽/安徽局_许可注册惠企政策超市-药品.md": {
+      "status": "checked_no_new",
+      "note": "药品tab 15篇文章，最新2026-07-02（药品上市后变更备案共性问题解答（五）），全部已处理；其余新增链接均为CPC中药配方颗粒勘误/中药饮片标准转发（不纳入）。无新增。"
+    },
+    "source/江苏/江苏局CDE_你问我答.md": {
+      "status": "checked_no_new",
+      "note": "articleData含10篇文章，最新releaseDate对应2026-02-03（体外诊断试剂相关），所有10篇均为化妆品/医疗器械/IVD主题，无化学药品制剂新增。"
+    },
+    "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md": {
+      "status": "checked_no_new",
+      "note": "col91813页面含90条article URL（去重后），最新2026-07-19（某注射剂新增生产场地），已在source笔记中，无新增。"
+    },
+    "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md": {
+      "status": "checked_no_new",
+      "note": "col91925页面最新日期2025-12-30，0条晚于该日期，无新增。"
+    },
+    "source/北京/北京局_咨询建议.md": {
+      "status": "skipped_browser_unavailable",
+      "reason": "API (bjah-index-dept!letterList.action) 返回「页面已撤稿或删除」，需浏览器上下文完成反爬初始化。当前环境无可用浏览器（chromium未安装）。"
+    },
+    "source/江苏/江苏局_药小问普法讲堂.md": {
+      "status": "skipped_no_fetch_rule",
+      "reason": "抓取规则尚未固化"
+    },
+    "source/山东/山东局_检问百答.md": {
+      "status": "skipped_no_fetch_rule",
+      "reason": "抓取规则尚未固化"
+    },
+    "source/CDE/CDE_共性问题-常见一般性技术问题.md": {
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE JS反爬，需浏览器上下文调用myAjax('/xxgk/getCommonQuestionList', ...)。当前环境无可用浏览器。"
+    },
+    "source/CDE/CDE_共性问题-受理共性问题.md": {
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE JS反爬，需浏览器上下文调用myAjax('/xxgk/getCommonQuestionList', ...)。当前环境无可用浏览器。"
+    },
+    "source/CDE/CDE_共性问题-化学仿制药共性问题.md": {
+      "status": "skipped_browser_unavailable",
+      "reason": "CDE JS反爬，需浏览器上下文调用myAjax('/xxgk/getCommonQuestionList', ...)。当前环境无可用浏览器。"
+    }
+  },
+  "rough_created": []
+}
