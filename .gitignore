@@ -2,6 +2,11 @@
 _raw/
 _/
 
+# Local Python virtual environment.
+.venv/
+__pycache__/
+*.pyc
+
 # Local agent/tool state.
 .claude/
 .claudian/
