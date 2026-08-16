@@ -1,0 +1,67 @@
+{
+  "date": "2026-08-16",
+  "git_sync_note": "已通过 GIT_SSH_COMMAND='ssh -o ProxyCommand=none' 成功 fetch/pull 远端 origin/main（绕开本地失效的 7890 SOCKS5 代理），本地与远端一致（HEAD 0433978），工作区干净，无冲突。",
+  "report": {
+    "source/CDE/CDE_共性问题-常见一般性技术问题.md": {
+      "status": "checked_no_new",
+      "note": "共278条，最新2026-07-17；较本地新增8条均为「已上市中药药学变更」主题，无符合化学药品制剂主题新增。"
+    },
+    "source/CDE/CDE_共性问题-受理共性问题.md": {
+      "status": "checked_no_new",
+      "note": "共99条，最新2026-07-17，无新增。"
+    },
+    "source/CDE/CDE_共性问题-化学仿制药共性问题.md": {
+      "status": "checked_no_new",
+      "note": "共39条，最新2026-07-06，无新增。"
+    },
+    "source/CPC/CPC_《中国药典》执行专栏.md": {
+      "status": "checked_no_new",
+      "note": "共74条，最新2026-06-17，无新增。"
+    },
+    "source/NIFDC/NIFDC_常见共性问题解答.md": {
+      "status": "checked_no_new",
+      "note": "共3条，最新2026-02-25，均已收录（干细胞合同检验专题已按主题排除），无新增。"
+    },
+    "source/陕西/陕西局CDE_药品上市后变更管理.md": {
+      "status": "checked_no_new",
+      "note": "共5条，最新2025-10-30，均已收录，无新增。"
+    },
+    "source/海南/海南局CDE_服务事项.md": {
+      "status": "checked_no_new",
+      "note": "共37条，最新2025-09-10；较本地新增均为化妆品备案/医疗器械主题，无符合化学药品制剂主题新增。"
+    },
+    "source/安徽/安徽局_许可注册惠企政策超市-药品.md": {
+      "status": "checked_no_new",
+      "note": "全量翻页抓取（6页）去重后共75篇，最新2026-07-02「药品上市后变更备案共性问题解答（五）」已收录，无新增。"
+    },
+    "source/江苏/江苏局CDE_你问我答.md": {
+      "status": "checked_no_new",
+      "note": "共328条，最新2026-02-02；较本地(2025-06-11)新增35条均为化妆品/医疗器械/体外诊断试剂主题，无符合化学药品制剂主题新增。"
+    },
+    "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md": {
+      "status": "checked_no_new",
+      "note": "共45条，最新2026-07-19，无新增。"
+    },
+    "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md": {
+      "status": "checked_no_new",
+      "note": "共18条，最新2025-12-30，无新增。"
+    },
+    "source/北京/北京局_咨询建议.md": {
+      "status": "checked_no_new",
+      "note": "共661条信件；较本地(2026-07-22)新增22条均为医疗器械/化妆品/软件/医疗机构制剂/网络销售主题，无符合化学药品制剂主题新增。"
+    },
+    "source/上海/上海局_信息公开.md": {
+      "status": "checked_no_new",
+      "note": "共204条，最新2026-05-07；较本地未匹配条目均为执业药师注册/牙膏备案/蛋白同化制剂/咖啡因购用证明/医疗机构中药制剂/进口药材/邮寄批件/行政服务中心服务等非化学药品制剂主题，无符合主题新增。"
+    },
+    "source/江苏/江苏局_药小问普法讲堂.md": {
+      "status": "skipped_no_fetch_rule",
+      "reason": "抓取规则尚未固化"
+    },
+    "source/山东/山东局_检问百答.md": {
+      "status": "skipped_no_fetch_rule",
+      "reason": "抓取规则尚未固化"
+    }
+  },
+  "rough_created": []
+}
