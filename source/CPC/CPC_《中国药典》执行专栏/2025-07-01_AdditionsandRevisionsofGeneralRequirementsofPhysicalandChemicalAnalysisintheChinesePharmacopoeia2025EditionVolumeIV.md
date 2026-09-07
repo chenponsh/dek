@@ -3,6 +3,7 @@ source_note: "[[CPC_《中国药典》执行专栏]]"
 source_url: "https://www.chp.org.cn/#/newsDetail?id=8a317b0e-bc74-445e-beb3-25a450b699a5"
 article_title: "Additions and Revisions of General Requirements of Physical and Chemical Analysis in the Chinese Pharmacopoeia 2025 Edition Volume IV"
 date: 2025-07-01
+source_content_hash: "sha256:fdfa152cb49a8c139be8cd7d414ce351751115b526281c66d5a4a214cee13bd7"
 ---
 
 | 问题 | 解答 | 发布日期 |

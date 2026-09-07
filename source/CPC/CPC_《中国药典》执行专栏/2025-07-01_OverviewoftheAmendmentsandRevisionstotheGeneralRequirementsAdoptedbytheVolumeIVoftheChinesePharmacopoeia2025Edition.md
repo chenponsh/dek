@@ -3,6 +3,7 @@ source_note: "[[CPC_《中国药典》执行专栏]]"
 source_url: "https://www.chp.org.cn/#/newsDetail?id=44adf67d-583f-4895-9ae9-93a1dec0394f"
 article_title: "Overview of the Amendments and Revisions to the General Requirements Adopted by the Volume IV of the Chinese Pharmacopoeia 2025 Edition"
 date: 2025-07-01
+source_content_hash: "sha256:d55b30c224484663834f8bfc1a7af5f2b7a06c64d4ff73349f3f39bee16d8cae"
 ---
 
 | 问题 | 解答 | 发布日期 |

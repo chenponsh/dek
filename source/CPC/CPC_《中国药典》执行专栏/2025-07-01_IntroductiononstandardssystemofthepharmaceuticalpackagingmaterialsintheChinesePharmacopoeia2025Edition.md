@@ -3,6 +3,7 @@ source_note: "[[CPC_《中国药典》执行专栏]]"
 source_url: "https://www.chp.org.cn/#/newsDetail?id=7af095e5-59c2-46f1-ac78-a44acbc06cac"
 article_title: "Introduction on standards system of the pharmaceutical packaging materials in the Chinese Pharmacopoeia 2025 Edition"
 date: 2025-07-01
+source_content_hash: "sha256:3e79d8fb42eb09735b103ddecdfb04948ee3d68e4fd3699e1ec2a6b57cd3a3e8"
 ---
 
 | 问题 | 解答 | 发布日期 |

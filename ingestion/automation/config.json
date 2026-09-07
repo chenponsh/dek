@@ -1,0 +1,37 @@
+{
+  "cde": {
+    "enabled": false,
+    "disabled_reason": "CDE browser validation currently returns HTTP 400; do not retry or bypass",
+    "url": "https://www.cde.org.cn/main/xxgk/listpage/07edef25f1e7354bfd8490baa0ce056b",
+    "sources": [
+      {"type": 1, "path": "source/CDE/CDE_共性问题-常见一般性技术问题.md", "auto_classified": false},
+      {"type": 2, "path": "source/CDE/CDE_共性问题-受理共性问题.md", "auto_classified": false},
+      {"type": 4, "path": "source/CDE/CDE_共性问题-化学仿制药共性问题.md", "auto_classified": true}
+    ]
+  },
+  "cpc": {
+    "list_url": "https://www.chp.org.cn/three/sys/news/es/list?blockId=47&pageNo=1&pageSize=1000",
+    "detail_url": "https://www.chp.org.cn/three/sys/news/es/detail?newsId={news_id}",
+    "path": "source/CPC/CPC_《中国药典》执行专栏.md",
+    "included_dir": "source/CPC/CPC_《中国药典》执行专栏",
+    "excluded_dir": "source/CPC/CPC_《中国药典》执行专栏_排除"
+  },
+  "shanghai": {
+    "url": "https://sjcx.yjj.sh.gov.cn/api/v1/qa/list?pageNum=1&pageSize=1000",
+    "path": "source/上海/上海局_信息公开.md"
+  },
+  "known_unautomated": [
+    "source/NIFDC/NIFDC_常见共性问题解答.md",
+    "source/北京/北京局_咨询建议.md",
+    "source/安徽/安徽局_许可注册惠企政策超市-药品.md",
+    "source/江苏/江苏局CDE_你问我答.md",
+    "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md",
+    "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md",
+    "source/海南/海南局CDE_服务事项.md",
+    "source/陕西/陕西局CDE_药品上市后变更管理.md"
+  ],
+  "no_fetch_rule": [
+    "source/江苏/江苏局_药小问普法讲堂.md",
+    "source/山东/山东局_检问百答.md"
+  ]
+}

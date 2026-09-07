@@ -1,0 +1,6 @@
+[Unit]
+Description=Record DEK source ingestion failure for %i
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemd-cat -t dek-source-ingest-alert -p alert /bin/echo "DEK source ingestion stopped; inspect journalctl -u %i"

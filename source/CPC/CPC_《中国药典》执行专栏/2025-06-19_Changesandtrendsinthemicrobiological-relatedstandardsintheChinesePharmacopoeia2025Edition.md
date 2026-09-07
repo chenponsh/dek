@@ -3,6 +3,7 @@ source_note: "[[CPC_《中国药典》执行专栏]]"
 source_url: "https://www.chp.org.cn/#/newsDetail?id=74f270c9-7d0a-43e7-bdad-b4e8ce2fca02"
 article_title: "Changes and trends in the microbiological-related standards in the Chinese Pharmacopoeia 2025 Edition"
 date: 2025-06-19
+source_content_hash: "sha256:fdd2ddd559dd10474db2ac80731d73badb661c8bbe7d7c49d53b562c0790de12"
 ---
 
 | 问题 | 解答 | 发布日期 |

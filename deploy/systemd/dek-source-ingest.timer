@@ -1,0 +1,11 @@
+[Unit]
+Description=Run DEK source ingestion daily at 09:15 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 09:15:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=0
+Unit=dek-source-ingest.service
+
+[Install]
+WantedBy=timers.target

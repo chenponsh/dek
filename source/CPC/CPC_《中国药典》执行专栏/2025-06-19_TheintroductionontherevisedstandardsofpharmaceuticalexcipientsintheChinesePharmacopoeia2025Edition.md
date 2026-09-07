@@ -3,6 +3,7 @@ source_note: "[[CPC_《中国药典》执行专栏]]"
 source_url: "https://www.chp.org.cn/#/newsDetail?id=2c2d7759-3f9d-4bca-ab6c-d10fb05da51b"
 article_title: "The introduction on the revised standards of pharmaceutical excipients in the Chinese Pharmacopoeia 2025 Edition"
 date: 2025-06-19
+source_content_hash: "sha256:b57a4516fbb7bdfc6d46271a301671db9862066b71c4605aead7b9904e113eeb"
 ---
 
 | 问题 | 解答 | 发布日期 |

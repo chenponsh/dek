@@ -3,6 +3,7 @@ source_note: "[[CPC_《中国药典》执行专栏]]"
 source_url: "https://www.chp.org.cn/#/newsDetail?id=19b98794-29ae-4d6d-97b0-7889a7d3bfb5"
 article_title: "The introduction on the standards system of water for pharmaceutical purposes in the Chinese Pharmacopoeia 2025 Edition"
 date: 2025-07-01
+source_content_hash: "sha256:d0928765f755df64bba014b0c36f2f9f82916d216ed1a54463250d4032d45983"
 ---
 
 | 问题 | 解答 | 发布日期 |

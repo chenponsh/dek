@@ -1,0 +1,18 @@
+[Unit]
+Description=DEK conservative source ingestion
+After=network-online.target
+Wants=network-online.target
+OnFailure=dek-source-ingest-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/srv/projects/dek
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/srv/projects/dek/_/python
+UMask=0077
+ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1365x768x24 -nolisten tcp" /usr/bin/python3 -m ingestion.automation.cli run
+SyslogIdentifier=dek-source-ingest
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true

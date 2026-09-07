@@ -3,6 +3,7 @@ source_note: "[[CPC_《中国药典》执行专栏]]"
 source_url: "https://www.chp.org.cn/#/newsDetail?id=f2312b61-5ac7-42e4-8abd-329194bf7df6"
 article_title: "Brief introduction on the development and revision of the Chinese Pharmacopoeia 2025 Edition"
 date: 2025-06-07
+source_content_hash: "sha256:b152939da20afa30fab6cc1b7f308f467aefddb52f861ff6a710825a0f904f1f"
 ---
 
 | 问题 | 解答 | 发布日期 |

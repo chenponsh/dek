@@ -3,6 +3,7 @@ source_note: "[[CPC_《中国药典》执行专栏]]"
 source_url: "https://www.chp.org.cn/#/newsDetail?id=d5b669fa-1843-424d-8042-d4e1ea513665"
 article_title: "The development and characteristics of general notice in Chinese Pharmacopoeia 2025 Edition"
 date: 2025-06-07
+source_content_hash: "sha256:99aa592996a0223b9cd61756712a8b2ef946741d19173996352d03fb05ffe1ee"
 ---
 
 | 问题 | 解答 | 发布日期 |

@@ -1,0 +1,1 @@
+"""Conservative source ingestion automation."""
