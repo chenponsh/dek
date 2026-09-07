@@ -1,4 +1,6 @@
+import hashlib
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -7,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ingestion.automation import cli
-from ingestion.automation.core import Row, SafetyStop, atomic_write_batch, compare_rows, ingestion_lock, insert_rows, last_updated, markdown_cell, parse_table, replace_last_updated
+from ingestion.automation.core import Row, SafetyStop, atomic_write_batch, compare_rows, ingestion_lock, insert_rows, last_updated, markdown_cell, parse_table, replace_last_updated, write_json
 from ingestion.automation.fetchers import (
     CDEBrowserUnavailable, CPCArticle, _safe_public_url,
     assert_cpc_baseline_workspace_safe, fetch_cpc_content_hash,
@@ -269,6 +271,47 @@ class CoreTests(unittest.TestCase):
             with patch.object(cli, "ROOT", root), patch.object(cli, "CONFIG_PATH", root / "config.json"), patch.object(cli, "APPROVAL_PATH", report_dir / "approval.json"), patch.object(cli, "repo_fingerprint", return_value="x"):
                 with self.assertRaisesRegex(SafetyStop, "expired"):
                     cli.approve(report_file)
+
+    def test_dry_run_report_is_created_mode_0600(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = {
+                "mode": "dry-run", "blocking": False, "alerts": [],
+                "planned_writes": [], "report": {}, "rough_created": [],
+            }
+            with patch.object(cli, "ROOT", root), patch.object(cli, "assert_git_safe"), patch.object(cli, "load_config", return_value={}), patch.object(cli, "inspect", return_value=(report, {})):
+                self.assertEqual(cli.execute(real=False), 0)
+            report_file = next((root / "_" / "ingestion").glob("dry-run-*.json"))
+            self.assertEqual(report_file.stat().st_mode & 0o777, 0o600)
+
+    def test_approval_file_is_created_mode_0600_and_binds_report_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report_dir = root / "_" / "ingestion"
+            report_dir.mkdir(parents=True)
+            report_file = report_dir / "dry-run.json"
+            report = {
+                "mode": "dry-run", "blocking": False, "baseline": "baseline",
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "report": {}, "rough_created": [], "planned_writes": [],
+            }
+            write_json(report_file, report)
+            raw = report_file.read_bytes()
+            approval_file = report_dir / "approval.json"
+            with patch.object(cli, "ROOT", root), patch.object(cli, "CONFIG_PATH", root / "config.json"), patch.object(cli, "APPROVAL_PATH", approval_file), patch.object(cli, "repo_fingerprint", return_value="baseline"), patch.object(cli, "assert_git_safe"), patch.object(cli, "workspace_snapshot", return_value="workspace"):
+                self.assertEqual(cli.approve(report_file), 0)
+            approval = json.loads(approval_file.read_text(encoding="utf-8"))
+            self.assertEqual(approval_file.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(approval["report_sha256"], hashlib.sha256(raw).hexdigest())
+
+    def test_secure_json_overwrite_remains_mode_0600(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.json"
+            path.write_text("old\n", encoding="utf-8")
+            os.chmod(path, 0o644)
+            write_json(path, {"value": "new"})
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(path.read_text(encoding="utf-8"), '{\n  "value": "new"\n}\n')
 
     def test_approval_scope_changes_with_planned_result(self):
         report = {"report": {"a": {"status": "checked_no_new"}}, "rough_created": [], "planned_writes": ["a"], "blocking": False}

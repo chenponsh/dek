@@ -32,6 +32,9 @@ approved report hash, 24-hour validity window, clean workspace snapshot, and
 current repository/configuration baseline all still match.
 The approved report also binds the per-source results, planned writes, and
 rough-draft list; a changed remote result requires another dry-run approval.
+Dry-run reports and approval markers are written through a secure temporary
+file and atomically installed with mode `0600`, including when replacing an
+existing file; they do not pass through a world- or group-readable mode.
 
 The CLI holds a non-blocking process lock at `_/ingestion/source-ingest.lock`
 for dry-run, approval, and real runs. Source notes, rough drafts, and the run
@@ -101,3 +104,6 @@ with a dedicated least-privilege service account should be evaluated before
 broadening the automation scope. First-stage failure notification is limited
 to journald through `dek-source-ingest-alert@.service`; no external messaging
 credentials or integrations are configured.
+The service sets both `NO_PROXY` and `no_proxy` only for `www.chp.org.cn` and
+`chp.org.cn`, so CPC requests use the verified direct HTTPS path while other
+sources retain the host's existing proxy environment.
