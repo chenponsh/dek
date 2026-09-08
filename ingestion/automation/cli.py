@@ -41,7 +41,7 @@ def base_report(now: datetime, mode: str) -> dict[str, Any]:
         "generated_at": now.astimezone().isoformat(timespec="seconds"),
         "baseline": repo_fingerprint(ROOT, CONFIG_PATH),
         "report": {}, "rough_created": [], "planned_writes": [],
-        "blocking": False, "alerts": [],
+        "blocking": False, "alerts": [], "auto_write_paths": [],
     }
 
 
@@ -108,7 +108,7 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
                 existing[existing_path.name] = existing_path
         additions = [article for article in articles if article.filename not in existing]
         revisions: list[str] = []
-        unavailable: list[str] = []
+        unavailable: list[dict[str, str]] = []
         verified = 0
         for article in articles:
             local_path = existing.get(article.filename)
@@ -117,12 +117,12 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
             local_note = local_path.read_text(encoding="utf-8")
             match = re.search(r'(?m)^source_content_hash:\s*["\']?(sha256:[0-9a-f]{64})["\']?\s*$', local_note)
             if not match:
-                unavailable.append(article.filename)
+                unavailable.append({"filename": article.filename, "status": "skipped_revision_check_unavailable", "reason": "missing source_content_hash baseline"})
                 continue
             try:
                 remote_hash = fetch_cpc_content_hash(config["cpc"]["detail_url"], article)
             except Exception:
-                unavailable.append(article.filename)
+                unavailable.append({"filename": article.filename, "status": "skipped_revision_check_unavailable", "reason": "remote detail unavailable or cannot be normalized"})
                 continue
             verified += 1
             if remote_hash != match.group(1):
@@ -138,7 +138,7 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
             result["blocking"] = True
             result["alerts"].append(f"manual classification required: {config['cpc']['path']}")
         elif unavailable:
-            entry.update(status="skipped_revision_check_unavailable", reason="既有文章缺少内容哈希基线或详情无法可靠规范化", unverified=unavailable[:20])
+            entry.update(status="skipped_revision_check_unavailable", reason="既有文章缺少内容哈希基线或详情无法可靠规范化", unverified=unavailable)
         else:
             entry["status"] = "no_change"
         result["report"][config["cpc"]["path"]] = entry
@@ -184,6 +184,8 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
                             raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
                         writes[rough_path] = rough_content(source["path"], additions, day)
                         result["rough_created"].append(str(rough_path.relative_to(ROOT)))
+                        if source.get("auto_classified") is True and source.get("auto_ingest") is True:
+                            result["auto_write_paths"].extend((source["path"], str(rough_path.relative_to(ROOT))))
                 result["report"][source["path"]] = entry
         except CDEBrowserUnavailable as exc:
             diagnostics = exc.diagnostics
@@ -201,6 +203,94 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
 
     result["planned_writes"] = sorted(str(p.relative_to(ROOT)) for p, text in writes.items() if not p.exists() or text != p.read_text(encoding="utf-8"))
     return result, writes
+
+
+def automatic_write_allowlist(config: dict[str, Any]) -> set[str]:
+    return {
+        source["path"] for source in config["cde"]["sources"]
+        if source.get("auto_classified") is True and source.get("auto_ingest") is True
+    }
+
+
+def validate_automatic_plan(config: dict[str, Any], report: dict[str, Any], writes: dict[Path, str]) -> set[str]:
+    planned = set(report.get("planned_writes", []))
+    approved = set(report.get("auto_write_paths", []))
+    actual = {str(path.relative_to(ROOT)) for path, content in writes.items() if not path.exists() or path.read_text(encoding="utf-8") != content}
+    if planned != actual or planned != approved:
+        raise SafetyStop("scheduled plan contains a write without an explicit automatic decision")
+    source_allowlist = automatic_write_allowlist(config)
+    source_paths = {path for path in planned if path.startswith("source/")}
+    rough_paths = {path for path in planned if path.startswith("ingestion/rough/")}
+    if source_paths - source_allowlist or planned != source_paths | rough_paths:
+        raise SafetyStop("scheduled plan contains a non-allowlisted path")
+    if rough_paths != set(report.get("rough_created", [])) or len(source_paths) != len(rough_paths):
+        raise SafetyStop("scheduled source and rough writes are not paired")
+    if any(report.get("report", {}).get(path, {}).get("status") != "updated_with_new" for path in source_paths):
+        raise SafetyStop("scheduled source is not explicitly marked updated_with_new")
+    return planned
+
+
+def scheduled_report_path(now: datetime) -> Path:
+    return ROOT / "_" / "ingestion" / f"scheduled-run-{now:%Y%m%d_%H%M}.json"
+
+
+def execute_scheduled() -> int:
+    assert_git_safe(ROOT)
+    start_head = git(ROOT, "rev-parse", "HEAD")
+    now = datetime.now().astimezone()
+    config = load_config()
+    report, writes = inspect(config, now)
+    report["mode"] = "scheduled-run"
+    diagnostic_path = scheduled_report_path(now)
+    write_json(diagnostic_path, report)
+    for alert in report["alerts"]:
+        print(f"ALERT: {alert}", file=sys.stderr)
+    if report["blocking"]:
+        raise SafetyStop(f"blocking findings; no writes performed; report={diagnostic_path.relative_to(ROOT)}")
+    planned = validate_automatic_plan(config, report, writes)
+    if not planned:
+        print(f"no substantive changes; no files, commit, or push; report={diagnostic_path.relative_to(ROOT)}")
+        return 0
+
+    originals = {path: (path.read_bytes() if path.exists() else None) for path in writes}
+    assert_git_safe(ROOT)
+    if git(ROOT, "rev-parse", "HEAD") != start_head:
+        raise SafetyStop("HEAD changed before scheduled write")
+    for path, original in originals.items():
+        current = path.read_bytes() if path.exists() else None
+        if current != original:
+            raise SafetyStop(f"target changed before scheduled write: {path.relative_to(ROOT)}")
+
+    log_path = report_path(ROOT, False, now)
+    if log_path.exists():
+        raise SafetyStop(f"ingestion report already exists: {log_path.relative_to(ROOT)}")
+    writes[log_path] = json_text(report)
+    allowed = planned | {str(log_path.relative_to(ROOT))}
+    committed = False
+    try:
+        with atomic_write_batch(ROOT, writes):
+            changed = git_status_paths(ROOT)
+            if changed != allowed:
+                raise SafetyStop(f"unexpected changed paths during scheduled write: expected={sorted(allowed)} actual={sorted(changed)}")
+            git(ROOT, "fetch", "origin", "--prune")
+            if git(ROOT, "rev-parse", "origin/main") != start_head:
+                raise SafetyStop("origin/main changed before scheduled commit")
+            git(ROOT, "add", "--", *sorted(allowed))
+            git(ROOT, "commit", "-m", f"ingestion: 来源增量摄入 {now:%Y-%m-%d}")
+            committed = True
+    except Exception:
+        if not committed:
+            try:
+                git(ROOT, "restore", "--staged", "--", *sorted(allowed))
+            except SafetyStop:
+                pass
+        raise
+    git(ROOT, "fetch", "origin", "--prune")
+    if git(ROOT, "rev-parse", "origin/main") != start_head:
+        raise SafetyStop("origin/main changed after scheduled commit; local commit retained; push refused")
+    git(ROOT, "push", "origin", "main")
+    print(f"completed and pushed: {log_path.relative_to(ROOT)}")
+    return 0
 
 
 def approve(report_file: Path) -> int:
@@ -288,6 +378,7 @@ def main(argv: list[str] | None = None) -> int:
     dry = sub.add_parser("dry-run")
     dry.add_argument("--commissioning", action="store_true", help="allow only the new implementation files to be uncommitted")
     sub.add_parser("run")
+    sub.add_parser("scheduled-run")
     approval = sub.add_parser("approve")
     approval.add_argument("--report", required=True, type=Path)
     args = parser.parse_args(argv)
@@ -295,6 +386,8 @@ def main(argv: list[str] | None = None) -> int:
         with ingestion_lock(ROOT):
             if args.command == "approve":
                 return approve(args.report)
+            if args.command == "scheduled-run":
+                return execute_scheduled()
             return execute(real=args.command == "run", commissioning=getattr(args, "commissioning", False))
     except SafetyStop as exc:
         print(f"SAFETY STOP: {exc}", file=sys.stderr)

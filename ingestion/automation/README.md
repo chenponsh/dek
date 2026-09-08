@@ -7,6 +7,7 @@ the host systemd timer. The default command is always a dry run.
 python3 -m ingestion.automation.cli dry-run
 python3 -m ingestion.automation.cli approve --report _/ingestion/dry-run-....json
 python3 -m ingestion.automation.cli run
+python3 -m ingestion.automation.cli scheduled-run
 ```
 
 On the current Ubuntu host, dependencies are installed under the ignored
@@ -35,6 +36,36 @@ rough-draft list; a changed remote result requires another dry-run approval.
 Dry-run reports and approval markers are written through a secure temporary
 file and atomically installed with mode `0600`, including when replacing an
 existing file; they do not pass through a world- or group-readable mode.
+
+`scheduled-run` is the separate timer entry point. It never reads or creates
+an approval marker. A write is eligible only when the source is explicitly
+configured with both `auto_classified: true` and `auto_ingest: true`, every
+planned path exactly matches the resulting source/rough pair, all global
+safety checks pass, and the workspace, HEAD, remote head, and target preimages
+remain unchanged immediately before writing. `blocking: false` alone never
+authorizes an automatic write. No-change runs write only a mode-0600 ignored
+diagnostic report and do not commit or push.
+
+Scheduled source, rough draft, and tracked ingestion report writes are one
+atomic batch. Write, staging, or commit failures restore pre-commit files and
+unstage the exact plan. A push failure or a remote change after commit retains
+the local commit, refuses force-push or history rewriting, and causes later
+runs to stop at the ahead/behind gate until an operator resolves it.
+
+At present there are zero active automatic-write sources: the only explicitly
+eligible source is CDE problem type 4, and CDE remains disabled after its HTTP
+400 browser validation failure. Shanghai additions and all new CPC articles
+still require manual classification. Consequently, the current scheduled
+entry point primarily performs checks, exits as a no-op, or stops safely.
+
+When classification is required, candidate metadata is saved in the
+per-source `candidates` field of the mode-0600 ignored report at
+`_/ingestion/scheduled-run-YYYYMMDD_HHMM.json`. The nonzero service result and
+report path are visible with `journalctl -u dek-source-ingest.service`; alerts
+remain journald-only. An administrator must inspect that fixed report, verify
+the source content and classification, make or authorize the appropriate
+source and rough-note changes through the manual workflow, and rerun a dry-run.
+The scheduler never promotes a candidate or creates an approval itself.
 
 The CLI holds a non-blocking process lock at `_/ingestion/source-ingest.lock`
 for dry-run, approval, and real runs. Source notes, rough drafts, and the run
@@ -97,6 +128,11 @@ allowlist of CPC article files for that batch. Any other tracked or untracked
 change, including an unexpected change under `source/`, `wiki/`, or
 `ingestion/rough/`, is a safety stop. This does not weaken the normal clean-tree
 checks used by scheduled ingestion.
+
+Missing CPC baselines are recorded per article as
+`skipped_revision_check_unavailable`; hash-backed articles remain checked.
+CPC additions always require manual classification and block automatic
+writing, regardless of the availability of other article baselines.
 
 The service currently runs as `root` because the repository and Git runtime
 are root-owned. This is a deliberate first-stage deployment risk. Replacing it

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from ingestion.automation import cli
+from ingestion.automation import cli, core
 from ingestion.automation.core import Row, SafetyStop, atomic_write_batch, compare_rows, ingestion_lock, insert_rows, last_updated, markdown_cell, parse_table, replace_last_updated, write_json
 from ingestion.automation.fetchers import (
     CDEBrowserUnavailable, CPCArticle, _safe_public_url,
@@ -30,6 +30,46 @@ last_updated: 2026-01-01
 
 
 class CoreTests(unittest.TestCase):
+    def scheduled_repo(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        base = Path(temporary.name)
+        remote = base / "remote.git"
+        root = base / "repo"
+        subprocess.run(["git", "init", "--bare", "-q", remote], check=True)
+        subprocess.run(["git", "init", "-q", root], check=True)
+        subprocess.run(["git", "-C", root, "branch", "-M", "main"], check=True)
+        subprocess.run(["git", "-C", root, "config", "user.email", "test@example.test"], check=True)
+        subprocess.run(["git", "-C", root, "config", "user.name", "Test"], check=True)
+        (root / ".gitignore").write_text("_/\n", encoding="utf-8")
+        source = root / "source" / "CDE" / "auto.md"
+        source.parent.mkdir(parents=True)
+        source.write_text(NOTE, encoding="utf-8")
+        (root / "ingestion" / "rough").mkdir(parents=True)
+        (root / "ingestion" / "logs").mkdir(parents=True)
+        (root / "ingestion" / "rough" / ".gitkeep").write_text("", encoding="utf-8")
+        (root / "ingestion" / "logs" / ".gitkeep").write_text("", encoding="utf-8")
+        subprocess.run(["git", "-C", root, "add", "."], check=True)
+        subprocess.run(["git", "-C", root, "commit", "-qm", "initial"], check=True)
+        subprocess.run(["git", "-C", root, "remote", "add", "origin", str(remote)], check=True)
+        subprocess.run(["git", "-C", root, "push", "-qu", "origin", "main"], check=True)
+        return root, remote, source
+
+    def scheduled_plan(self, root, source, *, writes=True):
+        rough = root / "ingestion" / "rough" / "rough.md"
+        planned = [str(source.relative_to(root)), str(rough.relative_to(root))] if writes else []
+        report = {
+            "blocking": False, "alerts": [], "planned_writes": planned,
+            "auto_write_paths": planned,
+            "report": {str(source.relative_to(root)): {"status": "updated_with_new"}} if writes else {},
+            "rough_created": planned[1:],
+        }
+        contents = {source: NOTE + "new\n", rough: "rough\n"} if writes else {}
+        config = {"cde": {"sources": [{
+            "path": str(source.relative_to(root)), "auto_classified": True, "auto_ingest": True,
+        }]}}
+        return config, report, contents
+
     def cpc_hash(self, content, *, nested=True, attachments=None, external_url=None):
         article = CPCArticle("id", "药品标准 123", "2026-01-02", "article.md")
         detail = {"newsContent": content, "annexFileList": attachments or []}
@@ -262,6 +302,21 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(failed_report["blocking"])
             self.assertEqual(failed_report["report"]["cde.md"]["status"], "failed")
 
+    def test_cde_unclassified_addition_blocks_scheduled_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            note = "---\nlast_updated: 2026-01-01\n---\n\n## 内容\n\n| 问题 | 解答 | 发布日期 |\n| --- | --- | --- |\n"
+            (root / "shanghai.md").write_text(note, encoding="utf-8")
+            (root / "cde.md").write_text(note, encoding="utf-8")
+            (root / "included").mkdir(); (root / "excluded").mkdir()
+            config = {"no_fetch_rule": [], "known_unautomated": [], "shanghai": {"url": "x", "path": "shanghai.md"}, "cpc": {"list_url": "x", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"enabled": True, "url": "x", "sources": [{"type": 1, "path": "cde.md", "auto_classified": False, "auto_ingest": False}]}}
+            remote = {1: ([Row("新问题", "新解答", "2026-02-01")], {"remote_count": 1})}
+            with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.object(cli, "fetch_shanghai", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cpc", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cde", return_value=(remote, {})):
+                report, writes = cli.inspect(config, datetime.now())
+            self.assertTrue(report["blocking"])
+            self.assertEqual(report["report"]["cde.md"]["status"], "failed")
+            self.assertEqual(writes, {})
+
     def test_expired_approval_report_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -335,6 +390,101 @@ class CoreTests(unittest.TestCase):
         with patch.object(cli, "assert_git_safe"), patch.object(cli, "load_config", return_value={}), patch.object(cli, "inspect", return_value=(report, {})), patch.object(cli, "git") as git_mock:
             self.assertEqual(cli.execute(real=True), 0)
         git_mock.assert_not_called()
+
+    def test_scheduled_low_risk_addition_commits_and_pushes_to_local_remote(self):
+        root, remote, source = self.scheduled_repo()
+        config, report, writes = self.scheduled_plan(root, source)
+        old_head = core.git(root, "rev-parse", "HEAD")
+        with patch.object(cli, "ROOT", root), patch.object(cli, "load_config", return_value=config), patch.object(cli, "inspect", return_value=(report, writes)):
+            self.assertEqual(cli.execute_scheduled(), 0)
+        self.assertNotEqual(core.git(root, "rev-parse", "HEAD"), old_head)
+        self.assertEqual(core.git(root, "rev-parse", "HEAD"), core.git(root, "rev-parse", "origin/main"))
+        self.assertEqual(core.git(root, "status", "--porcelain"), "")
+
+    def test_scheduled_no_change_ignores_approval_and_does_not_commit(self):
+        root, remote, source = self.scheduled_repo()
+        config, report, writes = self.scheduled_plan(root, source, writes=False)
+        approval = root / "_" / "ingestion" / "approval.json"
+        approval.parent.mkdir(parents=True)
+        approval.write_text("invalid", encoding="utf-8")
+        head = core.git(root, "rev-parse", "HEAD")
+        with patch.object(cli, "ROOT", root), patch.object(cli, "APPROVAL_PATH", approval), patch.object(cli, "load_config", return_value=config), patch.object(cli, "inspect", return_value=(report, writes)):
+            self.assertEqual(cli.execute_scheduled(), 0)
+        self.assertEqual(core.git(root, "rev-parse", "HEAD"), head)
+        self.assertEqual(approval.read_text(encoding="utf-8"), "invalid")
+
+    def test_scheduled_rejects_non_allowlisted_path(self):
+        root, remote, source = self.scheduled_repo()
+        other = root / "wiki" / "unexpected.md"
+        report = {"planned_writes": ["wiki/unexpected.md"], "auto_write_paths": ["wiki/unexpected.md"]}
+        config = {"cde": {"sources": []}}
+        with patch.object(cli, "ROOT", root):
+            with self.assertRaisesRegex(SafetyStop, "non-allowlisted"):
+                cli.validate_automatic_plan(config, report, {other: "x"})
+
+    def test_scheduled_nonblocking_without_automatic_decision_is_rejected(self):
+        root, remote, source = self.scheduled_repo()
+        config, report, writes = self.scheduled_plan(root, source)
+        report["auto_write_paths"] = []
+        with patch.object(cli, "ROOT", root):
+            with self.assertRaisesRegex(SafetyStop, "without an explicit automatic decision"):
+                cli.validate_automatic_plan(config, report, writes)
+
+    def test_scheduled_head_change_before_write_blocks(self):
+        root, remote, source = self.scheduled_repo()
+        config, report, writes = self.scheduled_plan(root, source)
+        checks = [None, SafetyStop("HEAD changed before scheduled write")]
+        with patch.object(cli, "ROOT", root), patch.object(cli, "load_config", return_value=config), patch.object(cli, "inspect", return_value=(report, writes)), patch.object(cli, "assert_git_safe", side_effect=checks):
+            with self.assertRaisesRegex(SafetyStop, "HEAD changed"):
+                cli.execute_scheduled()
+        self.assertEqual(source.read_text(encoding="utf-8"), NOTE)
+
+    def test_scheduled_git_add_and_commit_failures_restore_files(self):
+        for failing_command in ("add", "commit"):
+            with self.subTest(command=failing_command):
+                root, remote, source = self.scheduled_repo()
+                config, report, writes = self.scheduled_plan(root, source)
+                original_git = cli.git
+                def fail_selected(repo, *args):
+                    if args and args[0] == failing_command:
+                        raise SafetyStop(f"simulated {failing_command} failure")
+                    return original_git(repo, *args)
+                with patch.object(cli, "ROOT", root), patch.object(cli, "load_config", return_value=config), patch.object(cli, "inspect", return_value=(report, writes)), patch.object(cli, "git", side_effect=fail_selected):
+                    with self.assertRaisesRegex(SafetyStop, f"simulated {failing_command}"):
+                        cli.execute_scheduled()
+                self.assertEqual(source.read_text(encoding="utf-8"), NOTE)
+                self.assertEqual(core.git(root, "status", "--porcelain"), "")
+
+    def test_scheduled_remote_change_before_commit_restores_files(self):
+        root, remote, source = self.scheduled_repo()
+        config, report, writes = self.scheduled_plan(root, source)
+        original_git = cli.git
+        def changed_remote(repo, *args):
+            if args[:2] == ("rev-parse", "origin/main"):
+                return "0" * 40
+            return original_git(repo, *args)
+        with patch.object(cli, "ROOT", root), patch.object(cli, "load_config", return_value=config), patch.object(cli, "inspect", return_value=(report, writes)), patch.object(cli, "git", side_effect=changed_remote):
+            with self.assertRaisesRegex(SafetyStop, "origin/main changed before"):
+                cli.execute_scheduled()
+        self.assertEqual(source.read_text(encoding="utf-8"), NOTE)
+        self.assertEqual(core.git(root, "status", "--porcelain"), "")
+
+    def test_scheduled_push_failure_retains_commit_and_blocks_next_run(self):
+        root, remote, source = self.scheduled_repo()
+        config, report, writes = self.scheduled_plan(root, source)
+        old_head = core.git(root, "rev-parse", "HEAD")
+        original_git = cli.git
+        def fail_push(repo, *args):
+            if args and args[0] == "push":
+                raise SafetyStop("simulated push failure")
+            return original_git(repo, *args)
+        with patch.object(cli, "ROOT", root), patch.object(cli, "load_config", return_value=config), patch.object(cli, "inspect", return_value=(report, writes)), patch.object(cli, "git", side_effect=fail_push):
+            with self.assertRaisesRegex(SafetyStop, "simulated push failure"):
+                cli.execute_scheduled()
+        self.assertNotEqual(core.git(root, "rev-parse", "HEAD"), old_head)
+        self.assertEqual(core.git(root, "rev-parse", "origin/main"), old_head)
+        with self.assertRaisesRegex(SafetyStop, "main differs"):
+            core.assert_git_safe(root)
 
     def test_cpc_new_article_is_blocking_candidate(self):
         report = self.inspect_cpc(article_exists=False)

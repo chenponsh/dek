@@ -124,12 +124,24 @@ def git(root: Path, *args: str) -> str:
     return proc.stdout.strip()
 
 
+def porcelain_path(line: str) -> str:
+    if line.startswith(("?? ", "!! ")):
+        return line[3:]
+    if len(line) >= 3 and line[1:3] == "  ":
+        return line[3:]
+    if len(line) >= 2 and line[1] == " ":
+        return line[2:]
+    if len(line) >= 3 and line[2] == " ":
+        return line[3:]
+    raise SafetyStop(f"unrecognized git status entry: {line!r}")
+
+
 def assert_git_safe(root: Path, allowed_dirty: set[str] | None = None) -> None:
     git(root, "fetch", "origin", "--prune")
     if git(root, "branch", "--show-current") != "main":
         raise SafetyStop("current branch is not main")
     dirty = git(root, "status", "--porcelain").splitlines()
-    unexpected = [line for line in dirty if line[3:] not in (allowed_dirty or set()) and not any(line[3:].startswith(p.rstrip("/") + "/") for p in (allowed_dirty or set()))]
+    unexpected = [line for line in dirty if porcelain_path(line) not in (allowed_dirty or set()) and not any(porcelain_path(line).startswith(p.rstrip("/") + "/") for p in (allowed_dirty or set()))]
     if unexpected:
         raise SafetyStop(f"working tree has unrelated changes: {unexpected}")
     counts = git(root, "rev-list", "--left-right", "--count", "HEAD...origin/main").split()
@@ -172,7 +184,7 @@ def workspace_snapshot(root: Path) -> str:
 
 
 def git_status_paths(root: Path) -> set[str]:
-    return {line[3:] for line in git(root, "status", "--porcelain", "--untracked-files=all").splitlines()}
+    return {porcelain_path(line) for line in git(root, "status", "--porcelain", "--untracked-files=all").splitlines()}
 
 
 @contextmanager
@@ -196,12 +208,13 @@ def ingestion_lock(root: Path):
 def atomic_write_batch(root: Path, writes: dict[Path, str]):
     if git_status_paths(root):
         raise SafetyStop("working tree changed before atomic write")
-    originals = {path: path.read_bytes() if path.exists() else None for path in writes}
+    originals = {path: (path.read_bytes(), path.stat().st_mode & 0o777) if path.exists() else None for path in writes}
     staged: dict[Path, Path] = {}
     try:
         for path, content in writes.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as tmp:
+                os.fchmod(tmp.fileno(), originals[path][1] if originals[path] is not None else 0o644)
                 tmp.write(content)
                 tmp.flush()
                 os.fsync(tmp.fileno())
@@ -215,11 +228,13 @@ def atomic_write_batch(root: Path, writes: dict[Path, str]):
     except Exception:
         for temporary in staged.values():
             temporary.unlink(missing_ok=True)
-        for path, content in originals.items():
-            if content is None:
+        for path, original in originals.items():
+            if original is None:
                 path.unlink(missing_ok=True)
             else:
+                content, mode = original
                 with tempfile.NamedTemporaryFile("wb", dir=path.parent, delete=False) as tmp:
+                    os.fchmod(tmp.fileno(), mode)
                     tmp.write(content)
                     tmp.flush()
                     os.fsync(tmp.fileno())

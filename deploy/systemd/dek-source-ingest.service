@@ -13,7 +13,7 @@ Environment=PYTHONPATH=/srv/projects/dek/_/python
 Environment=NO_PROXY=www.chp.org.cn,chp.org.cn
 Environment=no_proxy=www.chp.org.cn,chp.org.cn
 UMask=0077
-ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1365x768x24 -nolisten tcp" /usr/bin/python3 -m ingestion.automation.cli run
+ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1365x768x24 -nolisten tcp" /usr/bin/python3 -m ingestion.automation.cli scheduled-run
 SyslogIdentifier=dek-source-ingest
 Nice=10
 NoNewPrivileges=true
