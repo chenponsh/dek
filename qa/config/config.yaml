@@ -1,0 +1,34 @@
+group_sessions_per_user: true
+session_reset:
+  mode: daily
+  at_hour: 4
+
+platform_toolsets:
+  dingtalk: []
+
+tools:
+  # With only two MCP tools, progressive disclosure would replace them with
+  # three generic bridge tools. Keep the exact read-only QA surface visible.
+  tool_search:
+    enabled: off
+
+platforms:
+  dingtalk:
+    enabled: false
+    extra:
+      require_mention: true
+      allowed_users: []
+      allowed_chats: []
+
+mcp_servers:
+  dek_kb:
+    command: /var/lib/dek-qa/venv/bin/python
+    args:
+      - -m
+      - qa.dek_qa.mcp_server
+      - --index
+      - /var/lib/dek-qa/index/dek-kb.json
+    env:
+      PYTHONPATH: /opt/dek-qa/app
+    sampling:
+      enabled: false

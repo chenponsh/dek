@@ -1,0 +1,41 @@
+[Unit]
+Description=Hermes DingTalk read-only dek knowledge base
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dek-qa
+Group=dek-qa
+WorkingDirectory=/var/lib/dek-qa
+Environment=HOME=/var/lib/dek-qa
+Environment=HERMES_HOME=/var/lib/dek-qa/hermes
+Environment=HERMES_ENV=/var/lib/dek-qa/secrets/environment
+Environment=PYTHONPATH=/opt/dek-qa/app
+EnvironmentFile=/var/lib/dek-qa/secrets/environment
+ExecStart=/var/lib/dek-qa/venv/bin/hermes -p dek-qa gateway run --external-supervisor
+Restart=on-failure
+RestartSec=10s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/dek-qa/hermes
+ReadOnlyPaths=/var/lib/dek-qa/index /var/lib/dek-qa/secrets
+InaccessiblePaths=/srv/projects/dek /root /etc/systemd/system /run/credentials
+
+[Install]
+WantedBy=multi-user.target
