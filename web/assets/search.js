@@ -113,5 +113,25 @@
     return new URL(document.url, siteRoot).href;
   }
 
-  return { normalize, scoreDocument, searchDocuments, resultSnippet, resultUrl };
+  function isoDay(value) {
+    const parsed = value instanceof Date ? value : new Date(value);
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function recentDocuments(documents, days, asOf) {
+    const end = isoDay(asOf || new Date());
+    const endMs = new Date(`${end}T00:00:00`).getTime();
+    const start = isoDay(new Date(endMs - (days - 1) * 86400000));
+    return documents
+      .filter(document => {
+        const day = String(document.date || "").slice(0, 10);
+        return day >= start && day <= end;
+      })
+      .sort((left, right) => String(right.date || "").localeCompare(String(left.date || "")));
+  }
+
+  return { normalize, scoreDocument, searchDocuments, resultSnippet, resultUrl, recentDocuments };
 });

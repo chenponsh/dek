@@ -115,6 +115,41 @@
     });
   }
 
+  const recentList = document.querySelector("#recent-list");
+  if (recentList) {
+    const indexUrl = new URL(recentList.dataset.index, location.href);
+    const tabs = [...document.querySelectorAll(".recent-tab")];
+    let recentDocs = [];
+
+    function renderRecentList(docs) {
+      if (!docs.length) {
+        recentList.innerHTML = '<div class="muted">该时间段内没有内容</div>';
+        return;
+      }
+      recentList.innerHTML = docs.map(doc => {
+        const href = DEKSearch.resultUrl(doc, indexUrl);
+        const dateLabel = doc.date || "日期待确认";
+        return `<a class="recent-item" href="${href}"><span class="recent-date">${escapeHtml(dateLabel)}</span><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.kind.toUpperCase())} · ${escapeHtml(doc.path)}</small></a>`;
+      }).join("");
+    }
+
+    function renderRecent(days) {
+      tabs.forEach(tab => tab.classList.toggle("active", tab.dataset.days === String(days)));
+      if (days === 0) {
+        renderRecentList([...recentDocs].sort((left, right) => String(right.date || "").localeCompare(String(left.date || ""))));
+        return;
+      }
+      renderRecentList(DEKSearch.recentDocuments(recentDocs, days));
+    }
+
+    fetch(indexUrl, { credentials: "same-origin", cache: "no-store" })
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then(data => { recentDocs = data; renderRecent(7); })
+      .catch(() => { recentList.innerHTML = '<div class="muted">最近信息加载失败，请刷新重试</div>'; });
+
+    tabs.forEach(tab => tab.addEventListener("click", () => renderRecent(Number(tab.dataset.days))));
+  }
+
   document.addEventListener("click", event => {
     if (!event.target.closest(".search-wrap")) results?.classList.remove("open");
   });

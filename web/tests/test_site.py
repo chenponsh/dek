@@ -170,6 +170,32 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn("dataset.authMe", script)
         self.assertNotIn('data.display_name || "同事"', script)
 
+    def test_search_index_includes_publication_date(self):
+        build_site(self.vault, self.out)
+        search = json.loads((self.out / "assets" / "search-index.json").read_text(encoding="utf-8"))
+        wiki = next(d for d in search if d["path"] == "wiki/01_注册/条目.md")
+        self.assertEqual(wiki["date"], "2026-09-10")
+
+    def test_search_index_marks_missing_date_as_none(self):
+        (self.vault / "wiki" / "01_注册" / "无日期.md").write_text(
+            "---\nno: 2\nquestion: 无日期\n---\n\n正文。", encoding="utf-8"
+        )
+        build_site(self.vault, self.out)
+        search = json.loads((self.out / "assets" / "search-index.json").read_text(encoding="utf-8"))
+        missing = next(d for d in search if d["path"].endswith("无日期.md"))
+        source = next(d for d in search if d["path"] == "source/CDE/来源.md")
+        self.assertIsNone(missing["date"])
+        self.assertIsNone(source["date"])
+
+    def test_homepage_has_recent_section_with_day_filters(self):
+        build_site(self.vault, self.out)
+        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        for marker in ("最近信息", "7天", "30天", "90天", "全部"):
+            self.assertIn(marker, homepage)
+        self.assertIn("recentDocuments", script)
+
+
 
 if __name__ == "__main__":
     unittest.main()

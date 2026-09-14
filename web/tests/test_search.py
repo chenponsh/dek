@@ -49,6 +49,39 @@ class FuzzySearchTests(unittest.TestCase):
         hits = self.run_search("注册变更")
         self.assertEqual(hits[0]["url"], "a.html")
 
+    def run_recent(self, documents, days, as_of):
+        script = f"const s=require({json.dumps(str(SEARCH_JS))}); process.stdout.write(JSON.stringify(s.recentDocuments({json.dumps(documents, ensure_ascii=False)}, {days}, {json.dumps(as_of)})));"
+        result = subprocess.run(["node", "-e", script], check=True, text=True, capture_output=True)
+        return json.loads(result.stdout)
+
+    def test_recent_documents_filters_by_publication_date_window(self):
+        documents = [
+            {"path": "a.md", "date": "2026-09-13"},
+            {"path": "b.md", "date": "2026-09-01"},
+            {"path": "c.md", "date": None},
+            {"path": "d.md", "date": "2026-08-01"},
+            {"path": "e.md", "date": "2026-09-10"},
+        ]
+        recent = self.run_recent(documents, 7, "2026-09-14")
+        self.assertEqual([d["path"] for d in recent], ["a.md", "e.md"])
+
+    def test_recent_documents_are_sorted_by_date_descending(self):
+        documents = [
+            {"path": "x.md", "date": "2026-09-01"},
+            {"path": "y.md", "date": "2026-09-13"},
+        ]
+        recent = self.run_recent(documents, 30, "2026-09-14")
+        self.assertEqual([d["path"] for d in recent], ["y.md", "x.md"])
+
+    def test_recent_documents_accepts_date_objects_and_full_timestamps(self):
+        documents = [
+            {"path": "a.md", "date": "2026-09-13 00:00:00"},
+            {"path": "b.md", "date": "2026-09-13"},
+        ]
+        recent = self.run_recent(documents, 7, "2026-09-14")
+        self.assertEqual(len(recent), 2)
+
+
 
 if __name__ == "__main__":
     unittest.main()

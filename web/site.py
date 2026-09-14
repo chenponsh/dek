@@ -6,6 +6,7 @@ import html
 import json
 import re
 import shutil
+from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
@@ -29,6 +30,22 @@ def _split_note(text: str) -> tuple[dict, str]:
     if False in meta and "no" not in meta:
         meta["no"] = meta.pop(False)
     return meta, text[match.end():]
+
+
+def _iso_date(value: object) -> str | None:
+    """Normalize a frontmatter date value to 'YYYY-MM-DD', or None if absent/invalid."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (datetime, date)):
+        return value.strftime("%Y-%m-%d")
+    match = re.match(r"(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})", str(value).strip())
+    if not match:
+        return None
+    year, month, day = (int(part) for part in match.groups())
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
 
 
 def _target_key(raw: str) -> str:
@@ -200,7 +217,7 @@ def build_site(vault: Path, output: Path) -> dict:
             if target and target["kind"] == "source" and target not in refs: refs.append(target)
         dest = output / Path(str(doc["output"])); dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(_page(doc, docs, rendered, backlinks[doc["key"]], by_path, by_stem, refs), encoding="utf-8")
-    public_docs = [{"path": d["path"], "title": d["title"], "kind": d["kind"], "url": str(d["output"])} for d in docs]
+    public_docs = [{"path": d["path"], "title": d["title"], "kind": d["kind"], "url": str(d["output"]), "date": _iso_date(d["meta"].get("date"))} for d in docs]
     tree = _manifest_tree(public_docs)
     (output / "manifest.json").write_text(json.dumps({"documents": public_docs, "tree": tree}, ensure_ascii=False, indent=2), encoding="utf-8")
     search_docs = [{**x, "tags": docs[index]["meta"].get("tags") or [], "text": re.sub(r"\s+", " ", docs[index]["body"])[:5000]} for index, x in enumerate(public_docs)]
@@ -219,7 +236,18 @@ def build_site(vault: Path, output: Path) -> dict:
             href = quote(str(target.get("url", "#")), safe="/.-_")
             cards.append(f'<a class="folder-card" href="{href}"><strong>{html.escape(child["name"])}</strong><span>{child.get("count", 1)} 篇</span></a>')
         home_sections.append(f'<section class="home-section"><h2>{label}<span>{root_node["count"]}</span></h2><div class="folder-grid">{"".join(cards)}</div></section>')
-    home_body = '<p class="home-intro">面向具备 Kbot 使用权限同事的内部只读知识库。按目录浏览，或使用顶部搜索。</p>' + "".join(home_sections)
+    recent_html = (
+        '<section class="recent-section"><h2>最近信息</h2>'
+        '<div class="recent-tabs" role="tablist">'
+        '<button type="button" class="recent-tab active" data-days="7">7天</button>'
+        '<button type="button" class="recent-tab" data-days="30">30天</button>'
+        '<button type="button" class="recent-tab" data-days="90">90天</button>'
+        '<button type="button" class="recent-tab" data-days="0">全部</button>'
+        '</div>'
+        '<div id="recent-list" class="recent-list" data-index="assets/search-index.json">正在加载最近信息…</div>'
+        '</section>'
+    )
+    home_body = '<p class="home-intro">面向具备 Kbot 使用权限同事的内部只读知识库。按目录浏览，或使用顶部搜索。</p>' + recent_html + "".join(home_sections)
     (output / "index.html").write_text(_page(home_doc, docs, home_body, [], by_path, by_stem), encoding="utf-8")
     return {"documents": len(docs), "wiki": sum(d["kind"] == "wiki" for d in docs), "source": sum(d["kind"] == "source" for d in docs)}
 
