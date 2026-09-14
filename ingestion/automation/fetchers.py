@@ -244,9 +244,14 @@ def fetch_cde(url: str, types: list[int], profile_dir: Path) -> tuple[dict[int, 
         context = pw.chromium.launch_persistent_context(
             str(profile_dir), executable_path=str(_full_chromium()), headless=False,
             locale="zh-CN", timezone_id="Asia/Shanghai", viewport={"width": 1365, "height": 768},
+            args=["--disable-blink-features=AutomationControlled"],
         )
+        # CDE 的瑞数反爬会以 navigator.webdriver 判定自动化浏览器并返回 400。
+        # 经用户授权，去掉该标志以通过公开共性问题的访问验证。
+        context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
         try:
             page = context.pages[0] if context.pages else context.new_page()
+            context.clear_cookies()
             def observe(response: Any) -> None:
                 item = {"method": response.request.method, "url": _safe_public_url(response.url), "status": response.status, "resource_type": response.request.resource_type}
                 if response.request.resource_type == "document":

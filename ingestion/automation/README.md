@@ -16,13 +16,15 @@ On the current Ubuntu host, dependencies are installed under the ignored
 
 CDE uses a headed, persistent Playwright Chromium context under Xvfb. Its
 profile is stored in the Git-ignored `_/browser/cde-profile/` directory with
-mode `0700`. The adapter only waits for the site's own navigation flow; it
-does not synthesize or call challenge endpoints. Any challenge HTTP 400 keeps
-the CDE sources at `skipped_browser_unavailable`. This availability condition
-does not block independently verified low-risk sources; CDE content revisions,
-schema errors, and other general failures still block the whole run.
-The current configuration keeps CDE disabled after the confirmed HTTP 400;
-dry-runs record `attempted: false` and do not retry the validation flow.
+mode `0700`. CDE's RiverSecurity challenge rejects automation through the
+`navigator.webdriver` flag; per user authorization the adapter launches Chromium
+with `--disable-blink-features=AutomationControlled`, removes that flag via an
+init script, and clears stale challenge cookies before navigation. The adapter
+only waits for the site's own navigation flow; it does not synthesize or call
+challenge endpoints. Any challenge HTTP 400 keeps the CDE sources at
+`skipped_browser_unavailable`. This availability condition does not block
+independently verified low-risk sources; CDE content revisions, schema errors,
+and other general failures still block the whole run.
 
 During the initial installation only, `dry-run --commissioning` permits the
 new automation/deployment files to be uncommitted; unrelated changes still
