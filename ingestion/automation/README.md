@@ -123,8 +123,18 @@ CPC content hashes use algorithm version `cpc-source-content-v2`. The detail
 parser prefers `result.news` whenever that key exists; the legacy `result`
 object is used only when `result.news` is absent. A present but invalid nested
 object never falls back to legacy fields. Within the selected object,
-`newsContentText` takes precedence over `newsContent`. An absent or empty
-normalized body is a safety failure even when a link or attachment is present.
+`newsContentText` is preferred over `newsContent`. Body-bearing articles retain
+the original v2 canonical form. Articles without an inline body may still be
+hashed when the response provides stable attachment metadata. Object
+attachments use normalized names plus official stable IDs. String media
+entries use a normalized relative storage path as the stable ID and its
+basename as the attachment name; query parameters and fragments are excluded.
+A single leading slash from CPC is treated as a site-relative path, while
+absolute URLs, network-path references and parent traversal are rejected. A detail
+with none of body or attachments remains unavailable even if it provides an
+external target, and is never assigned a baseline. Attachment-only local
+excerpts are verified by exact attachment-name multiset; an unexpected local
+body still fails closed.
 
 Normalization removes script/style content, HTML tags, zero-width markers,
 and non-semantic block/line-break formatting; decodes HTML entities; applies
@@ -151,11 +161,12 @@ separators. Its fields are `algorithm`, normalized `title`, ISO-date `date`,
 normalized `body`, and sorted attachments containing normalized `name` and,
 when present, the official stable `stable_id`. CPC annex IDs are treated as
 stable because they are the official download identifiers and remained equal
-across repeated detail responses. If an attachment has no such ID, the ID
-field is omitted and the normalized official name remains hash-covered.
-External URLs, domains, paths, query parameters, temporary signatures,
-tokens, cookies, response headers, and page-navigation templates are never
-included in the canonical hash.
+across repeated detail responses. If an object attachment has no such ID, the
+ID field is omitted and the normalized official name remains hash-covered.
+String-media relative paths are retained as stable IDs after removing query
+parameters and fragments. External targets are never included because hashing
+a link does not verify its external content. Existing body-bearing v2 hashes
+retain their previous canonical field set, so existing baselines do not drift.
 
 A controlled CPC baseline operation has a separate strict workspace gate. It
 may tolerate only the known untracked commissioning paths `deploy/`,

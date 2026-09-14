@@ -7,6 +7,7 @@ import subprocess
 import time
 import unicodedata
 import urllib.request
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -109,13 +110,22 @@ def _cpc_detail_object(payload: Any, filename: str) -> dict[str, Any]:
 def _cpc_detail_components(payload: Any, filename: str) -> tuple[str, list[dict[str, str]]]:
     data = _cpc_detail_object(payload, filename)
     body = normalize_cpc_content(str(data.get("newsContentText") or data.get("newsContent") or ""))
-    if not body:
-        raise SafetyStop(f"CPC detail has no non-empty normalized body: {filename}")
     attachments = []
     for key in ("annexFileList", "annexPicList", "annexMediaList"):
         for item in data.get(key) or []:
-            name = normalize_cpc_attachment_name(str(item.get("name") or ""))
-            stable_id = str(item.get("id") or "").strip()
+            if isinstance(item, str):
+                raw = item.strip().replace("\\", "/")
+                parsed = urllib.parse.urlsplit(raw)
+                path = parsed.path.lstrip("/")
+                if parsed.scheme or parsed.netloc or not path or ".." in path.split("/"):
+                    raise SafetyStop(f"CPC attachment has unsafe string path: {filename}")
+                stable_id = normalize_cpc_attachment_name(path)
+                name = normalize_cpc_attachment_name(path.rsplit("/", 1)[-1])
+            elif isinstance(item, dict):
+                name = normalize_cpc_attachment_name(str(item.get("name") or ""))
+                stable_id = str(item.get("id") or "").strip()
+            else:
+                raise SafetyStop(f"CPC attachment has unsupported structure: {filename}")
             if not name:
                 raise SafetyStop(f"CPC attachment has no name: {filename}")
             attachment = {"name": name}
@@ -124,6 +134,7 @@ def _cpc_detail_components(payload: Any, filename: str) -> tuple[str, list[dict[
             attachments.append(attachment)
     attachments.sort(key=lambda item: (item.get("stable_id", ""), item["name"]))
     return body, attachments
+
 
 
 def strip_markdown_link_targets(value: str) -> str:
@@ -164,12 +175,15 @@ def validate_cpc_local_excerpt(local_excerpt: str, payload: Any, filename: str) 
     remote_body, remote_attachments = _cpc_detail_components(payload, filename)
     compact = lambda value: re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", value).lower()
     local_compact, remote_compact = compact(local_body), compact(remote_body)
-    if not local_compact or local_compact not in remote_compact:
-        raise SafetyStop(f"CPC local body is not a verified remote-body subset: {filename}")
-    numbers = lambda value: Counter(re.findall(r"\d+(?:[.-]\d+)*", value))
-    local_numbers, remote_numbers = numbers(local_body), numbers(remote_body)
-    if any(remote_numbers[token] < count for token, count in local_numbers.items()):
-        raise SafetyStop(f"CPC body numeric/date/standard identifier mismatch: {filename}")
+    if remote_compact:
+        if not local_compact or local_compact not in remote_compact:
+            raise SafetyStop(f"CPC local body is not a verified remote-body subset: {filename}")
+        numbers = lambda value: Counter(re.findall(r"\d+(?:[.-]\d+)*", value))
+        local_numbers, remote_numbers = numbers(local_body), numbers(remote_body)
+        if any(remote_numbers[token] < count for token, count in local_numbers.items()):
+            raise SafetyStop(f"CPC body numeric/date/standard identifier mismatch: {filename}")
+    elif local_compact:
+        raise SafetyStop(f"CPC local body exists but remote body is empty: {filename}")
     remote_names = [item["name"] for item in remote_attachments]
     if Counter(local_names) != Counter(remote_names):
         raise SafetyStop(f"CPC attachment names differ: {filename}")
@@ -180,6 +194,8 @@ def fetch_cpc_content_hash(detail_url: str, article: CPCArticle) -> str:
 
     payload = get_json(detail_url.format(news_id=article.news_id))
     content, attachments = _cpc_detail_components(payload, article.filename)
+    if not content and not attachments:
+        raise SafetyStop(f"CPC detail has no stable content: {article.filename}")
     canonical = {
         "algorithm": CPC_CONTENT_HASH_VERSION,
         "title": normalize_cpc_content(article.title),
@@ -187,6 +203,7 @@ def fetch_cpc_content_hash(detail_url: str, article: CPCArticle) -> str:
         "body": content,
         "attachments": attachments,
     }
+
     encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 

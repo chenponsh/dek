@@ -102,8 +102,41 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(actual, expected)
 
     def test_cpc_hash_rejects_missing_body(self):
-        with self.assertRaisesRegex(SafetyStop, "no non-empty normalized body"):
+        with self.assertRaisesRegex(SafetyStop, "no stable content"):
             self.cpc_hash("<div> \u200b </div>")
+
+    def test_cpc_hash_accepts_attachment_only_article(self):
+        digest = self.cpc_hash("", attachments=[{"id": "stable", "name": "附件.pdf"}])
+        self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$")
+
+    def test_cpc_hash_accepts_string_media_relative_path(self):
+        article = CPCArticle("id", "宣贯视频", "2021-05-21", "video.md")
+
+        def digest(path):
+            payload = {"result": {"news": {"newsContent": None, "annexMediaList": [path]}}}
+            with patch("ingestion.automation.fetchers.get_json", return_value=payload):
+                return fetch_cpc_content_hash("https://example.test/{news_id}", article)
+
+        self.assertRegex(digest("qkcb.mp4"), r"^sha256:[0-9a-f]{64}$")
+        self.assertNotEqual(digest("first/qkcb.mp4"), digest("second/qkcb.mp4"))
+        self.assertEqual(digest("/u/cms/www/media/qkcb.mp4"), digest("u/cms/www/media/qkcb.mp4"))
+        self.assertEqual(digest("media/qkcb.mp4?token=one#part"), digest("media/qkcb.mp4?token=two"))
+
+    def test_cpc_hash_rejects_unsafe_string_media_paths(self):
+        article = CPCArticle("id", "宣贯视频", "2021-05-21", "video.md")
+        for path in ("", "https://example.test/qkcb.mp4", "//example.test/qkcb.mp4", "../qkcb.mp4"):
+            payload = {"result": {"news": {"newsContent": None, "annexMediaList": [path]}}}
+            with self.subTest(path=path), patch("ingestion.automation.fetchers.get_json", return_value=payload):
+                with self.assertRaisesRegex(SafetyStop, "attachment"):
+                    fetch_cpc_content_hash("https://example.test/{news_id}", article)
+
+    def test_cpc_hash_rejects_external_target_only_article(self):
+        with self.assertRaisesRegex(SafetyStop, "no stable content"):
+            self.cpc_hash("", external_url="https://example.test/notices/123?token=one&sign=x")
+
+    def test_attachment_only_local_excerpt_can_be_validated(self):
+        payload = {"result": {"news": {"newsContent": None, "annexFileList": [{"id": "stable", "name": "附件.pdf"}]}}}
+        validate_cpc_local_excerpt("附件：[附件.pdf](https://host/download?token=x)", payload, "article.md")
 
     def test_cpc_hash_is_repeatable_and_ignores_formatting(self):
         first = self.cpc_hash("<p>药品标准&nbsp;123</p><br>2026-01-02")
