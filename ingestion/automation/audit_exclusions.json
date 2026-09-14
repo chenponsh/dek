@@ -1,0 +1,14 @@
+{
+  "exclusions": [
+    {
+      "date": "2026-08-01",
+      "source": "source/江苏/江苏局CDE_你问我答.md",
+      "reason": "2026-08-01 的 0931/0936 两次报告误报 updated_with_new（new_count=43/2）；同日最终报告 0939 已判为 checked_no_new，source 笔记 last_updated 仍为 2026-07-14，无真实新增。"
+    },
+    {
+      "date": "2026-08-01",
+      "source": "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md",
+      "reason": "2026-08-01 的 0931/0936 两次报告误报 updated_with_new（new_count=1）；同日最终报告 0939 已判为 checked_no_new，source 笔记 last_updated 仍为 2026-07-14，无真实新增。"
+    }
+  ]
+}

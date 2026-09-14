@@ -30,6 +30,19 @@ TOOLS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "dek_kb_recent",
+        "description": "List recent formal wiki changes and recent source publication dates from audited index metadata.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "minimum": 1, "maximum": 365},
+                "as_of": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -48,7 +61,12 @@ def _tool_error(request_id: object, tool_name: str) -> dict[str, Any]:
 
 
 def _validated_tool_call(params: object) -> tuple[str, dict[str, Any]]:
-    if not isinstance(params, dict) or set(params) != {"name", "arguments"}:
+    if (
+        not isinstance(params, dict)
+        or not {"name", "arguments"}.issubset(params)
+        or not set(params).issubset({"name", "arguments", "_meta"})
+        or (params.get("_meta") is not None and not isinstance(params.get("_meta"), dict))
+    ):
         raise ValueError("invalid tool parameters")
     name = params.get("name")
     arguments = params.get("arguments")
@@ -69,6 +87,25 @@ def _validated_tool_call(params: object) -> tuple[str, dict[str, Any]]:
         document_id = arguments["document_id"]
         if not isinstance(document_id, str) or re.fullmatch(r"[0-9a-f]{24}", document_id) is None:
             raise ValueError("invalid document id")
+    elif name == "dek_kb_recent":
+        if not set(arguments).issubset({"days", "as_of", "limit"}):
+            raise ValueError("invalid recent arguments")
+        days = arguments.get("days", 7)
+        limit = arguments.get("limit", 20)
+        as_of = arguments.get("as_of")
+        if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 365:
+            raise ValueError("invalid recent days")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
+            raise ValueError("invalid recent limit")
+        if as_of is not None:
+            if not isinstance(as_of, str) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", as_of) is None:
+                raise ValueError("invalid recent date")
+            try:
+                from datetime import date
+
+                date.fromisoformat(as_of)
+            except ValueError as error:
+                raise ValueError("invalid recent date") from error
     else:
         raise ValueError("unknown tool")
     return name, arguments
@@ -86,19 +123,36 @@ def _reply(request: object, kb: KnowledgeBase) -> dict[str, Any] | None:
     if method == "initialize":
         result = {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": "dek-kb-readonly", "version": "1.0.0"}}
     elif method == "tools/list":
-        if request.get("params") not in (None, {}):
+        params = request.get("params")
+        if (
+            params is not None
+            and (
+                not isinstance(params, dict)
+                or not set(params).issubset({"cursor", "_meta"})
+                or (
+                    params.get("cursor") is not None
+                    and not isinstance(params.get("cursor"), str)
+                )
+                or (
+                    params.get("_meta") is not None
+                    and not isinstance(params.get("_meta"), dict)
+                )
+            )
+        ):
             return _error(request_id, -32602, "invalid method parameters")
         result = {"tools": TOOLS}
     elif method == "tools/call":
         params = request.get("params")
         if (
             not isinstance(params, dict)
-            or set(params) != {"name", "arguments"}
+            or not {"name", "arguments"}.issubset(params)
+            or not set(params).issubset({"name", "arguments", "_meta"})
             or not isinstance(params.get("name"), str)
             or not isinstance(params.get("arguments"), dict)
+            or (params.get("_meta") is not None and not isinstance(params.get("_meta"), dict))
         ):
             return _error(request_id, -32602, "invalid tool parameters")
-        if params["name"] not in {"dek_kb_search", "dek_kb_get"}:
+        if params["name"] not in {"dek_kb_search", "dek_kb_get", "dek_kb_recent"}:
             return _error(request_id, -32601, "tool not found")
         try:
             name, arguments = _validated_tool_call(params)
@@ -108,6 +162,10 @@ def _reply(request: object, kb: KnowledgeBase) -> dict[str, Any] | None:
             value = kb.dek_kb_search(arguments.get("query", ""), arguments.get("limit", 5))
         elif name == "dek_kb_get":
             value = kb.dek_kb_get(arguments.get("document_id", ""))
+        elif name == "dek_kb_recent":
+            value = kb.dek_kb_recent(
+                arguments.get("days", 7), arguments.get("as_of"), arguments.get("limit", 20)
+            )
         result = {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}], "isError": False}
     else:
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "method not found"}}

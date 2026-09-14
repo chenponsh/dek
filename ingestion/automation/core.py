@@ -149,6 +149,38 @@ def assert_git_safe(root: Path, allowed_dirty: set[str] | None = None) -> None:
         raise SafetyStop(f"main differs from origin/main: ahead/behind={counts}")
 
 
+def reconcile_remote(root: Path) -> None:
+    """Align local main with origin/main inside the process lock.
+
+    Called before the scheduled run's safety gate. Recovers the two states a
+    previously interrupted run can leave behind without manual intervention:
+      - behind only (ahead==0, behind>0) with a clean tree -> fast-forward;
+      - ahead only (ahead>0, behind==0) with a clean tree where every ahead
+        commit is an automated ingestion commit -> retry push.
+    Diverged histories, dirty trees, or non-ingestion ahead commits stop.
+    """
+    git(root, "fetch", "origin", "--prune")
+    counts = git(root, "rev-list", "--left-right", "--count", "HEAD...origin/main").split()
+    ahead, behind = int(counts[0]), int(counts[1])
+    if ahead == 0 and behind == 0:
+        return
+    dirty = git(root, "status", "--porcelain").splitlines()
+    if ahead == 0 and behind > 0:
+        if dirty:
+            raise SafetyStop(f"working tree not clean; cannot fast-forward: {dirty}")
+        git(root, "merge", "--ff-only", "origin/main")
+        return
+    if ahead > 0 and behind == 0:
+        if dirty:
+            raise SafetyStop(f"working tree not clean; cannot retry push: {dirty}")
+        subjects = git(root, "log", "--format=%s", "origin/main..HEAD").splitlines()
+        if not subjects or not all(subject.startswith("ingestion:") for subject in subjects):
+            raise SafetyStop("ahead commits are not automated ingestion commits; refusing push")
+        git(root, "push", "origin", "main")
+        return
+    raise SafetyStop(f"local and remote main have diverged: ahead/behind={counts}")
+
+
 def report_path(root: Path, dry_run: bool, now: datetime) -> Path:
     stamp = now.strftime("%Y%m%d_%H%M")
     if dry_run:

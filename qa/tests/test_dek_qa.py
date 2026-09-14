@@ -36,14 +36,14 @@ class DekQaTests(unittest.TestCase):
         (self.root / "wiki" / "01_注册").mkdir(parents=True)
         (self.root / "source" / "CPC").mkdir(parents=True)
         (self.root / "source" / "CPC" / "官方通知.md").write_text(
-            '---\nsource_url: "https://official.example/notice"\n---\n\n来源全文', encoding="utf-8"
+            '---\nsource_url: "https://official.example/notice"\nsource_name: 测试材料\nsource_type: 第三方整理\n---\n\n来源全文', encoding="utf-8"
         )
         (self.root / "source" / "CPC" / "应排除_排除").mkdir()
         (self.root / "source" / "CPC" / "应排除_排除" / "坏.md").write_text(
             '---\nsource_url: "https://excluded.example"\n---\n', encoding="utf-8"
         )
         (self.root / "wiki" / "01_注册" / "0101-0001.md").write_text(
-            '---\nquestion: 药品注册如何申报？\nsource: 官方通知\n---\n\n通过注册系统提交。\n\n![[source/CPC/官方通知]]', encoding="utf-8"
+            '---\ndate: 2026-09-05\nquestion: 药品注册如何申报？\nsource: 官方通知\n---\n\n通过注册系统提交。\n\n![[source/CPC/官方通知]]', encoding="utf-8"
         )
         self.index = self.root / "runtime" / "index.json"
         build_index(self.root, self.index)
@@ -52,12 +52,15 @@ class DekQaTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_index_contains_only_wiki_and_official_source_url(self):
+    def test_index_contains_only_wiki_and_neutral_source_metadata(self):
         data = json.loads(self.index.read_text(encoding="utf-8"))
         self.assertEqual(len(data["documents"]), 1)
         doc = data["documents"][0]
         self.assertTrue(doc["path"].startswith("wiki/"))
-        self.assertEqual(doc["official_urls"], ["https://official.example/notice"])
+        self.assertEqual(doc["source_urls"], ["https://official.example/notice"])
+        self.assertEqual(doc["source_names"], ["测试材料"])
+        self.assertEqual(doc["source_types"], ["第三方整理"])
+        self.assertNotIn("official_urls", doc)
         self.assertNotIn("来源全文", json.dumps(data, ensure_ascii=False))
         self.assertNotIn("excluded.example", json.dumps(data))
 
@@ -70,7 +73,7 @@ class DekQaTests(unittest.TestCase):
 
         payload = build_index(self.root, self.index)
 
-        self.assertEqual(payload["documents"][0]["official_urls"], [])
+        self.assertEqual(payload["documents"][0]["source_urls"], [])
         self.assertEqual(payload["documents"][0]["source_status"], "none")
 
     def test_source_url_requires_valid_host_and_no_credentials(self):
@@ -82,7 +85,7 @@ class DekQaTests(unittest.TestCase):
 
         payload = build_index(self.root, self.index)
 
-        self.assertEqual(payload["documents"][0]["official_urls"], [])
+        self.assertEqual(payload["documents"][0]["source_urls"], [])
         self.assertEqual(payload["documents"][0]["source_status"], "unknown")
 
     def test_path_qualified_source_does_not_fall_back_to_same_stem(self):
@@ -93,7 +96,7 @@ class DekQaTests(unittest.TestCase):
         )
         build_index(self.root, self.index)
         document = json.loads(self.index.read_text(encoding="utf-8"))["documents"][0]
-        self.assertEqual(document["official_urls"], [])
+        self.assertEqual(document["source_urls"], [])
         self.assertEqual(document["source_status"], "unknown")
 
     def test_duplicate_source_stems_fail_closed(self):
@@ -107,7 +110,7 @@ class DekQaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ambiguous source stem"):
             build_index(self.root, self.index)
 
-    def test_unmapped_wiki_urls_are_not_promoted_to_official(self):
+    def test_unmapped_wiki_urls_are_not_promoted_to_source_links(self):
         note = self.root / "wiki" / "01_注册" / "0101-0001.md"
         note.write_text(
             "---\nquestion: 药品注册如何申报？\nsource: 官方通知\n---\n\n"
@@ -117,7 +120,7 @@ class DekQaTests(unittest.TestCase):
 
         payload = build_index(self.root, self.index)
 
-        self.assertEqual(payload["documents"][0]["official_urls"], ["https://official.example/notice"])
+        self.assertEqual(payload["documents"][0]["source_urls"], ["https://official.example/notice"])
 
     def test_index_excludes_any_wiki_path_marked_excluded(self):
         excluded = self.root / "wiki" / "01_注册" / "待复核_排除" / "0101-9999.md"
@@ -138,7 +141,7 @@ class DekQaTests(unittest.TestCase):
         second = build_index(self.root, second_index)
 
         self.assertEqual(first["metadata"], second["metadata"])
-        self.assertEqual(first["metadata"]["builder_version"], "2")
+        self.assertEqual(first["metadata"]["builder_version"], "4")
         self.assertRegex(first["metadata"]["input_sha256"], r"^[0-9a-f]{64}$")
         self.assertRegex(first["metadata"]["builder_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(first["metadata"]["document_count"], len(first["documents"]))
@@ -152,6 +155,74 @@ class DekQaTests(unittest.TestCase):
         self.assertNotIn("content", hits[0])
         self.assertIn("通过注册系统", self.kb.dek_kb_get(hits[0]["id"])["content"])
         self.assertIsNone(self.kb.dek_kb_get("../../source/secret"))
+
+    def test_bare_source_wikilink_resolves_legacy_url_field(self):
+        source = self.root / "source" / "CDE" / "受理共性问题.md"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(
+            "---\nurl: https://official.example/cde/questions\n---\n",
+            encoding="utf-8",
+        )
+        note = self.root / "wiki" / "01_注册" / "0101-0003.md"
+        note.write_text(
+            "---\nquestion: 如何准备资料？\nsource: '[[受理共性问题]]'\n---\n\n按要求准备。",
+            encoding="utf-8",
+        )
+        build_index(self.root, self.index)
+        kb = KnowledgeBase(self.index)
+        result = kb.dek_kb_search("准备资料", 5)
+        document = kb.dek_kb_get(result[0]["id"])
+        self.assertEqual(document["source_status"], "verified")
+        self.assertEqual(
+            document["source_urls"],
+            ["https://official.example/cde/questions"],
+        )
+
+    def test_legacy_indexes_are_normalized_to_neutral_source_urls(self):
+        current = json.loads(self.index.read_text(encoding="utf-8"))
+        for version in (2, 3):
+            with self.subTest(version=version):
+                legacy = json.loads(json.dumps(current))
+                legacy["version"] = version
+                for document in legacy["documents"]:
+                    document["official_urls"] = document.pop("source_urls")
+                    document.pop("source_names", None)
+                    document.pop("source_types", None)
+                self.index.write_text(json.dumps(legacy), encoding="utf-8")
+
+                document = KnowledgeBase(self.index).dek_kb_get(legacy["documents"][0]["id"])
+
+                self.assertIsNotNone(document)
+                self.assertEqual(document["source_urls"], ["https://official.example/notice"])
+                self.assertNotIn("official_urls", document)
+                build_index(self.root, self.index)
+
+    def test_recent_distinguishes_publication_date_from_git_update(self):
+        recent = self.kb.dek_kb_recent(days=7, as_of="2026-09-09")
+        self.assertEqual(recent["knowledge_base_update_count"], 0)
+        self.assertEqual(recent["publication_count"], 1)
+        self.assertEqual(recent["recent_publications"][0]["path"], "wiki/01_注册/0101-0001.md")
+
+    def test_recent_uses_last_git_commit_date_for_formal_wiki_updates(self):
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=QA", "-c", "user.email=qa@example.invalid", "add", "wiki", "source"],
+            cwd=self.root,
+            check=True,
+        )
+        env = os.environ.copy()
+        env["GIT_AUTHOR_DATE"] = "2026-09-07T08:00:00+08:00"
+        env["GIT_COMMITTER_DATE"] = "2026-09-07T08:00:00+08:00"
+        subprocess.run(
+            ["git", "-c", "user.name=QA", "-c", "user.email=qa@example.invalid", "commit", "-qm", "fixture"],
+            cwd=self.root,
+            env=env,
+            check=True,
+        )
+        build_index(self.root, self.index)
+        recent = KnowledgeBase(self.index).dek_kb_recent(days=7, as_of="2026-09-09")
+        self.assertEqual(recent["knowledge_base_update_count"], 1)
+        self.assertTrue(recent["knowledge_base_updates"][0]["updated_at"].startswith("2026-09-07"))
 
     def test_search_requires_meaningful_token_without_crossing_boundaries(self):
         note = self.root / "wiki" / "01_注册" / "0101-0002.md"
@@ -187,10 +258,13 @@ class DekQaTests(unittest.TestCase):
         self.assertEqual(qa.session_messages(first), ("注册",))
         self.assertTrue(all(qa.session_messages(message) == (message.text,) for message in others))
 
-    def test_only_two_mcp_tools_are_exposed(self):
-        self.assertEqual({tool["name"] for tool in TOOLS}, {"dek_kb_search", "dek_kb_get"})
+    def test_only_three_read_only_mcp_tools_are_exposed(self):
+        self.assertEqual(
+            {tool["name"] for tool in TOOLS},
+            {"dek_kb_search", "dek_kb_get", "dek_kb_recent"},
+        )
         response = _reply({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.kb)
-        self.assertEqual(len(response["result"]["tools"]), 2)
+        self.assertEqual(len(response["result"]["tools"]), 3)
 
     def test_mcp_client_sdk_is_installed_for_runtime_discovery(self):
         self.assertIsNotNone(
@@ -209,6 +283,37 @@ class DekQaTests(unittest.TestCase):
             self.kb,
         )
         self.assertEqual(response["error"]["code"], -32602)
+
+    def test_mcp_tools_list_accepts_standard_optional_cursor(self):
+        response = _reply(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {"cursor": None, "_meta": {}},
+            },
+            self.kb,
+        )
+        self.assertEqual(
+            [tool["name"] for tool in response["result"]["tools"]],
+            ["dek_kb_search", "dek_kb_get", "dek_kb_recent"],
+        )
+
+    def test_mcp_call_accepts_standard_optional_meta(self):
+        response = _reply(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "dek_kb_search",
+                    "arguments": {"query": "注册申报", "limit": 1},
+                    "_meta": {},
+                },
+            },
+            self.kb,
+        )
+        self.assertFalse(response["result"]["isError"])
 
     def test_mcp_non_object_request_returns_controlled_error(self):
         response = _reply([], self.kb)
@@ -265,6 +370,33 @@ class DekQaTests(unittest.TestCase):
                 self.assertTrue(response["result"]["isError"])
                 self.assertNotIn("error", response)
 
+    def test_mcp_recent_validates_dates_and_returns_audited_counts(self):
+        valid = _reply(
+            {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "method": "tools/call",
+                "params": {
+                    "name": "dek_kb_recent",
+                    "arguments": {"days": 7, "as_of": "2026-09-09"},
+                },
+            },
+            self.kb,
+        )
+        result = json.loads(valid["result"]["content"][0]["text"])
+        self.assertEqual(result["publication_count"], 1)
+        for arguments in ({"days": 0}, {"days": 7, "as_of": "2026-02-30"}, {"extra": True}):
+            invalid = _reply(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 10,
+                    "method": "tools/call",
+                    "params": {"name": "dek_kb_recent", "arguments": arguments},
+                },
+                self.kb,
+            )
+            self.assertTrue(invalid["result"]["isError"])
+
     def test_mcp_stdio_survives_invalid_input(self):
         requests = [
             [],
@@ -298,7 +430,7 @@ class DekQaTests(unittest.TestCase):
             [-32700, -32600, -32602],
         )
         self.assertTrue(responses[3]["result"]["isError"])
-        self.assertEqual(len(responses[4]["result"]["tools"]), 2)
+        self.assertEqual(len(responses[4]["result"]["tools"]), 3)
 
     def test_unknown_mcp_tool_is_rejected(self):
         response = _reply({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "shell", "arguments": {}}}, self.kb)
@@ -308,12 +440,13 @@ class DekQaTests(unittest.TestCase):
         unit = (Path(__file__).parents[2] / "deploy" / "systemd" / "dek-qa.service").read_text(encoding="utf-8")
         self.assertIn("ReadWritePaths=/var/lib/dek-qa/hermes", unit)
         self.assertIn("ReadOnlyPaths=/var/lib/dek-qa/index /var/lib/dek-qa/secrets", unit)
+        self.assertIn("Environment=HERMES_DISABLE_LAZY_INSTALLS=1", unit)
         self.assertNotIn("ReadWritePaths=/var/lib/dek-qa\n", unit)
 
-    def test_profile_config_is_default_deny_and_only_mcp(self):
+    def test_profile_config_delegates_users_to_dingtalk_and_exposes_only_mcp(self):
         config = (Path(__file__).parents[1] / "config" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("enabled: false", config)
-        self.assertIn("allowed_users: []", config)
+        self.assertIn('allowed_users:\n        - "*"', config)
         self.assertIn("allowed_chats: []", config)
         self.assertIn("dingtalk: []", config)
         self.assertIn("tool_search:\n    enabled: off", config)
@@ -324,12 +457,21 @@ class DekQaTests(unittest.TestCase):
         prompt = (Path(__file__).parents[1] / "config" / "SOUL.md").read_text(encoding="utf-8")
         self.assertIn("wiki/...", prompt)
         self.assertIn(INSUFFICIENT_EVIDENCE, prompt)
-        self.assertIn("每个知识问答都必须先调用知识库搜索工具", prompt)
-        self.assertIn("搜索命中后，再调用知识库读取工具", prompt)
+        self.assertIn("其他知识问答必须先且最多调用一轮知识库搜索工具", prompt)
+        self.assertIn("在下一轮并行读取最相关的 1–3 篇笔记", prompt)
         self.assertIn("source_status=verified", prompt)
         self.assertIn("source_status=unknown", prompt)
+        self.assertIn("source_urls", prompt)
+        self.assertIn("来源链接", prompt)
+        self.assertNotIn("official_urls", prompt)
+        self.assertNotIn("官方 URL", prompt)
+        self.assertNotIn("官方来源链接", prompt)
+        self.assertIn("不显示内部 `wiki/...` 路径", prompt)
+        self.assertIn("用户明确要求内部追溯信息", prompt)
         self.assertIn("知识库查询失败，请联系管理员检查工具状态。", prompt)
         self.assertIn("不得将工具故障伪装成知识库无相关内容", prompt)
+        self.assertIn("最近几天/一周/月新增或更新了什么", prompt)
+        self.assertIn("最多调用一轮知识库搜索工具", prompt)
 
 
 class StreamCollectorTests(unittest.TestCase):

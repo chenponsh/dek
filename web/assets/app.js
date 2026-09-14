@@ -1,0 +1,127 @@
+(() => {
+  const root = document.documentElement;
+  const savedTheme = localStorage.getItem("dek-theme");
+  if (savedTheme) root.dataset.theme = savedTheme;
+
+  document.querySelector("#theme-toggle")?.addEventListener("click", () => {
+    root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+    localStorage.setItem("dek-theme", root.dataset.theme);
+  });
+
+  const sidebar = document.querySelector(".sidebar");
+  document.querySelector("#menu-toggle")?.addEventListener("click", () => sidebar?.classList.toggle("open"));
+
+  const userMenu = document.querySelector(".user-menu");
+  if (userMenu) {
+    fetch(userMenu.dataset.authMe, { credentials: "same-origin", cache: "no-store" })
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then(data => { document.querySelector("#user-name").textContent = data.display_name || "登录信息不可用"; })
+      .catch(() => { document.querySelector("#user-name").textContent = "登录信息不可用"; });
+  }
+
+  const input = document.querySelector("#global-search");
+  const searchButton = document.querySelector("#search-button");
+  const searchStatus = document.querySelector("#search-status");
+  const results = document.querySelector("#search-results");
+  let docs = [];
+  let indexReady = false;
+  if (input) {
+    const indexUrl = new URL(input.dataset.index, location.href);
+    const loadIndex = () => {
+      indexReady = false;
+      searchButton.disabled = true;
+      searchButton.textContent = "加载中…";
+      searchStatus.textContent = "正在加载搜索索引…";
+      return fetch(indexUrl, { credentials: "same-origin", cache: "no-store" })
+        .then(response => response.ok ? response.json() : Promise.reject())
+        .then(data => {
+          docs = data;
+          indexReady = true;
+          searchButton.disabled = false;
+          searchButton.textContent = "搜索";
+          searchStatus.textContent = "";
+          results.classList.remove("open");
+        })
+        .catch(() => {
+          docs = [];
+          searchButton.disabled = false;
+          searchButton.textContent = "重试";
+          searchStatus.textContent = "搜索索引加载失败";
+          results.innerHTML = '<div class="result empty-result">搜索索引加载失败，请点击“重试”</div>';
+          results.classList.add("open");
+        });
+    };
+    loadIndex();
+    const runSearch = () => {
+      if (!indexReady) {
+        loadIndex();
+        return;
+      }
+      const query = input.value.trim();
+      if (!query) {
+        results.classList.remove("open");
+        results.innerHTML = "";
+        searchStatus.textContent = "请输入关键词";
+        return;
+      }
+      searchStatus.textContent = "正在搜索…";
+      const hits = DEKSearch.searchDocuments(docs, query, 30);
+      results.innerHTML = hits.length
+        ? `<div class="result-count">找到 ${hits.length} 条相关结果</div>${hits.map(doc => `<a class="result" href="${DEKSearch.resultUrl(doc, indexUrl)}"><strong>${escapeHtml(doc.title)}</strong><small>${doc.kind.toUpperCase()} · ${escapeHtml(doc.path)}</small><span class="result-snippet">${escapeHtml(DEKSearch.resultSnippet(doc, query))}</span></a>`).join("")}`
+        : '<div class="result empty-result">没有找到相关内容，请尝试缩短关键词</div>';
+      searchStatus.textContent = hits.length ? `搜索完成，共 ${hits.length} 条结果` : "搜索完成，没有结果";
+      results.classList.add("open");
+    };
+    searchButton?.addEventListener("click", runSearch);
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        runSearch();
+      }
+    });
+  }
+
+  const nav = document.querySelector("#nav-tree");
+  if (nav) {
+    const manifestUrl = new URL(nav.dataset.manifest, location.href);
+    const current = nav.dataset.current || "";
+    let savedOpen = [];
+    try { savedOpen = JSON.parse(localStorage.getItem("dek-tree-open") || "[]"); } catch (_) { savedOpen = []; }
+    const openPaths = new Set(savedOpen);
+
+    function renderNode(node, depth = 0) {
+      if (node.type === "document") {
+        const active = node.path === current ? " active" : "";
+        const href = new URL(node.url, manifestUrl).href;
+        return `<a role="treeitem" class="tree-link${active}" style="--depth:${depth}" href="${href}" title="${escapeHtml(node.path)}"><span class="tree-file-icon">◇</span><span class="tree-label">${escapeHtml(node.name)}</span></a>`;
+      }
+      const isRoot = node.path === "wiki" || node.path === "source";
+      const isCurrentAncestor = current === node.path || current.startsWith(node.path + "/");
+      const open = isRoot || isCurrentAncestor || openPaths.has(node.path);
+      const label = node.path === "wiki" ? "Wiki · 正式知识" : node.path === "source" ? "Source · 来源材料" : node.name;
+      return `<details class="tree-folder${isRoot ? " tree-root" : ""}" data-path="${escapeHtml(node.path)}" ${open ? "open" : ""}><summary role="treeitem" style="--depth:${depth}"><span class="tree-chevron">›</span><span class="tree-folder-icon">▱</span><span class="tree-label">${escapeHtml(label)}</span><span class="tree-count">${node.count}</span></summary><div role="group">${node.children.map(child => renderNode(child, depth + 1)).join("")}</div></details>`;
+    }
+
+    fetch(manifestUrl).then(response => response.json()).then(({ tree }) => {
+      nav.innerHTML = `<div role="tree" aria-label="知识库目录">${tree.map(node => renderNode(node)).join("")}</div>`;
+      nav.querySelectorAll("details[data-path]").forEach(folder => {
+        folder.addEventListener("toggle", () => {
+          const path = folder.dataset.path;
+          if (folder.open) openPaths.add(path); else openPaths.delete(path);
+          localStorage.setItem("dek-tree-open", JSON.stringify([...openPaths]));
+        });
+      });
+      nav.querySelector(".tree-link.active")?.scrollIntoView({ block: "center" });
+    });
+  }
+
+  document.addEventListener("click", event => {
+    if (!event.target.closest(".search-wrap")) results?.classList.remove("open");
+  });
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, character => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[character]);
+  }
+})();

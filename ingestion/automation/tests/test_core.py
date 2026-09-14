@@ -376,8 +376,61 @@ class CoreTests(unittest.TestCase):
     def test_rough_content_has_frontmatter_gap_and_source_link(self):
         content = cli.rough_content("source/CDE/example.md", [Row("问题", "解答", "2026-01-02")], "2026-01-03")
         self.assertIn('source: "[[source/CDE/example]]"', content)
+        self.assertIn("status: pending_review", content)
+        self.assertIn("published_date: 2026-01-02", content)
+        self.assertIn("ingested_at: 2026-01-03", content)
+        self.assertIn("source_item_key:", content)
+        self.assertIn("wiki_target:", content)
+        self.assertIn("reviewed_at:", content)
         self.assertIn("---\n\n## 新增问答", content)
         self.assertIn("| 问题 | 解答 | 2026-01-02 |", content)
+
+    def test_updated_with_new_requires_a_rough_draft(self):
+        report = {
+            "report": {"source/example.md": {"status": "updated_with_new"}},
+            "rough_created": [],
+        }
+        with self.assertRaisesRegex(SafetyStop, "updated_with_new requires rough draft"):
+            cli.validate_report_invariants(report)
+
+    def test_updated_with_new_accepts_a_source_linked_rough_draft(self):
+        report = {
+            "report": {"source/example.md": {"status": "updated_with_new"}},
+            "rough_created": ["ingestion/rough/20260103_example.md"],
+            "rough_sources": {"ingestion/rough/20260103_example.md": "source/example.md"},
+        }
+        cli.validate_report_invariants(report)
+
+    def test_pipeline_health_is_recorded_without_blocking_source_checks(self):
+        report = {"alerts": [], "blocking": False}
+        health = {
+            "missing_rough_events": 2,
+            "rough_total": 3,
+            "rough_statuses": {"pending_review": 3},
+            "stale_pending_over_7_days": ["ingestion/rough/old.md"],
+            "rough_lifecycle_errors": [],
+            "report_errors": [],
+        }
+        with patch.object(cli, "audit_history", return_value=health):
+            cli.add_pipeline_health(report)
+        self.assertEqual(report["pipeline_health"]["missing_rough_events"], 2)
+        self.assertFalse(report["blocking"])
+        self.assertIn("pipeline backlog", report["alerts"][-1])
+
+    def test_pipeline_health_blocks_on_audit_integrity_errors(self):
+        report = {"alerts": [], "blocking": False}
+        health = {
+            "missing_rough_events": 0,
+            "rough_total": 1,
+            "rough_statuses": {"promoted": 1},
+            "stale_pending_over_7_days": [],
+            "rough_lifecycle_errors": [{"rough": "bad.md", "reason": "missing target"}],
+            "report_errors": [],
+        }
+        with patch.object(cli, "audit_history", return_value=health):
+            cli.add_pipeline_health(report)
+        self.assertTrue(report["blocking"])
+        self.assertEqual(len(report["pipeline_health"]["rough_lifecycle_errors"]), 1)
 
     def test_only_last_updated_change_is_no_change(self):
         report = self.inspect_cpc(remote_hash="sha256:" + "a" * 64)
@@ -485,6 +538,62 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(core.git(root, "rev-parse", "origin/main"), old_head)
         with self.assertRaisesRegex(SafetyStop, "main differs"):
             core.assert_git_safe(root)
+
+    def test_reconcile_remote_fast_forwards_when_behind(self):
+        root, remote, source = self.scheduled_repo()
+        old_head = core.git(root, "rev-parse", "HEAD")
+        (root / "extra.md").write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "-C", root, "add", "extra.md"], check=True)
+        subprocess.run(["git", "-C", root, "commit", "-qm", "remote advance"], check=True)
+        subprocess.run(["git", "-C", root, "push", "-q", "origin", "main"], check=True)
+        subprocess.run(["git", "-C", root, "reset", "--hard", "-q", old_head], check=True)
+        core.reconcile_remote(root)
+        self.assertEqual(core.git(root, "rev-parse", "HEAD"), core.git(root, "rev-parse", "origin/main"))
+        self.assertNotEqual(core.git(root, "rev-parse", "HEAD"), old_head)
+
+    def test_reconcile_remote_retries_push_for_ingestion_ahead_commit(self):
+        root, remote, source = self.scheduled_repo()
+        (root / "ingestion" / "rough" / "auto.md").write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "-C", root, "add", "ingestion/rough/auto.md"], check=True)
+        subprocess.run(["git", "-C", root, "commit", "-qm", "ingestion: 来源增量摄入 2026-09-14"], check=True)
+        core.reconcile_remote(root)
+        self.assertEqual(core.git(root, "rev-parse", "HEAD"), core.git(root, "rev-parse", "origin/main"))
+
+    def test_reconcile_remote_refuses_non_ingestion_ahead_commit(self):
+        root, remote, source = self.scheduled_repo()
+        (root / "manual.md").write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "-C", root, "add", "manual.md"], check=True)
+        subprocess.run(["git", "-C", root, "commit", "-qm", "manual edit"], check=True)
+        with self.assertRaisesRegex(SafetyStop, "not automated ingestion"):
+            core.reconcile_remote(root)
+
+    def test_reconcile_remote_refuses_diverged_history(self):
+        root, remote, source = self.scheduled_repo()
+        (root / "ingestion" / "rough" / "auto.md").write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "-C", root, "add", "ingestion/rough/auto.md"], check=True)
+        subprocess.run(["git", "-C", root, "commit", "-qm", "ingestion: auto"], check=True)
+        clone = Path(tempfile.mkdtemp())
+        subprocess.run(["git", "clone", "-q", "-b", "main", str(remote), str(clone)], check=True)
+        subprocess.run(["git", "-C", clone, "config", "user.email", "t@e.test"], check=True)
+        subprocess.run(["git", "-C", clone, "config", "user.name", "T"], check=True)
+        (clone / "remote.md").write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "-C", clone, "add", "remote.md"], check=True)
+        subprocess.run(["git", "-C", clone, "commit", "-qm", "remote change"], check=True)
+        subprocess.run(["git", "-C", clone, "push", "-q", "origin", "main"], check=True)
+        with self.assertRaisesRegex(SafetyStop, "diverged"):
+            core.reconcile_remote(root)
+
+    def test_reconcile_remote_refuses_dirty_tree_fast_forward(self):
+        root, remote, source = self.scheduled_repo()
+        old_head = core.git(root, "rev-parse", "HEAD")
+        (root / "extra.md").write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "-C", root, "add", "extra.md"], check=True)
+        subprocess.run(["git", "-C", root, "commit", "-qm", "remote advance"], check=True)
+        subprocess.run(["git", "-C", root, "push", "-q", "origin", "main"], check=True)
+        subprocess.run(["git", "-C", root, "reset", "--hard", "-q", old_head], check=True)
+        (root / "dirty.md").write_text("x\n", encoding="utf-8")
+        with self.assertRaisesRegex(SafetyStop, "not clean"):
+            core.reconcile_remote(root)
 
     def test_cpc_new_article_is_blocking_candidate(self):
         report = self.inspect_cpc(article_exists=False)

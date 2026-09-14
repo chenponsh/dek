@@ -8,6 +8,7 @@ python3 -m ingestion.automation.cli dry-run
 python3 -m ingestion.automation.cli approve --report _/ingestion/dry-run-....json
 python3 -m ingestion.automation.cli run
 python3 -m ingestion.automation.cli scheduled-run
+python3 -m ingestion.automation.audit --root /srv/projects/dek --output _/ingestion/historical-backlog-audit.json
 ```
 
 On the current Ubuntu host, dependencies are installed under the ignored
@@ -74,6 +75,39 @@ check restores the files from that batch.
 Every automatically appended source row is accompanied by a dated rough note
 under `ingestion/rough/`. Remote HTML anchors with HTTP(S) targets are retained
 as Markdown links.
+
+An `updated_with_new` result is invalid unless every updated source is mapped
+to at least one path in `rough_created` through `rough_sources`. The run stops
+before writing when this invariant is violated. Newly generated rough notes use
+`status: pending_review` and record `published_date`, `ingested_at`, a stable
+`source_item_key`, optional recommended tags, the eventual `wiki_target`, and
+`reviewed_at`.
+
+Each inspection also embeds `pipeline_health` in its diagnostic report. This
+summarizes historical source updates missing rough drafts, rough status totals,
+pending drafts older than seven days, and unreadable historical reports. A
+backlog is reported as an alert but does not prevent independent source checks;
+the corresponding source fetch findings retain their own blocking semantics.
+
+The historical audit (`ingestion.automation.audit`) reads every dated ingestion
+report, not only the last one per day, so an earlier real update is never
+dropped by a later re-run. Reports without `rough_sources` keep their legacy
+semantics: a non-empty `rough_created` covered the whole report. Reports with
+`rough_sources` reconcile each updated source against its own mapped rough, so
+one rough never satisfies an unrelated source in the same report. A report
+event is matched to a rough draft by `source_item_key` when both sides carry
+one, and otherwise falls back to the legacy `(date, source)` identity; a keyed
+rough still reconciles a legacy report event through its `(ingested_at,
+source)` fields. Non-object payloads, invalid `date` values, and malformed
+`rough_created`/`rough_sources`/exclusion entries are recorded in
+`report_errors` rather than aborting the audit.
+
+Known false-positive historical events are excluded explicitly in
+`ingestion/automation/audit_exclusions.json`, an object whose `exclusions` list
+holds `{date, source, reason}` entries. Each entry requires a non-empty reason,
+and every matching `(date, source)` event is reported under `excluded_events`
+with that reason instead of the backlog. This makes the exclusion auditable
+instead of silently dropping an earlier report.
 
 Changes limited to `last_updated`, run timestamps, fetch timestamps, or other
 run metadata are reported as `no_change`: they produce no planned writes, log

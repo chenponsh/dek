@@ -38,7 +38,12 @@ class ReadOnlyQa:
         if not hits:
             return {"status": "insufficient_evidence", "answer": INSUFFICIENT_EVIDENCE, "citations": []}
         citations = [
-            {"path": hit["path"], "official_urls": hit["official_urls"]}
+            {
+                "path": hit["path"],
+                "source_urls": hit["source_urls"],
+                "source_names": hit["source_names"],
+                "source_types": hit["source_types"],
+            }
             for hit in hits
         ]
         return {"status": "evidence_found", "hits": hits, "citations": citations}

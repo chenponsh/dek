@@ -7,9 +7,9 @@ OnFailure=dek-source-ingest-alert@%n.service
 [Service]
 Type=oneshot
 User=root
-WorkingDirectory=/srv/projects/dek
+WorkingDirectory=/var/lib/dek-source-ingest/repo
 Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=/srv/projects/dek/_/python
+Environment=PYTHONPATH=/var/lib/dek-source-ingest/repo/_/python
 Environment=NO_PROXY=www.chp.org.cn,chp.org.cn
 Environment=no_proxy=www.chp.org.cn,chp.org.cn
 UMask=0077

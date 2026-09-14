@@ -1,7 +1,18 @@
 group_sessions_per_user: true
 session_reset:
-  mode: daily
+  mode: both
   at_hour: 4
+  idle_minutes: 15
+
+agent:
+  max_turns: 4
+  reasoning_effort: low
+
+display:
+  busy_input_mode: steer
+  platforms:
+    dingtalk:
+      busy_steer_ack_enabled: false
 
 platform_toolsets:
   dingtalk: []
@@ -17,7 +28,9 @@ platforms:
     enabled: false
     extra:
       require_mention: true
-      allowed_users: []
+      # DingTalk application visibility is the user authorization source.
+      allowed_users:
+        - "*"
       allowed_chats: []
 
 mcp_servers:

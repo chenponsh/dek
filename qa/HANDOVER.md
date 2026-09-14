@@ -2,17 +2,17 @@
 
 ## 目标与知识边界
 
-- 目标：钉钉 Kbot 仅依据已经审核的 `wiki/**/*.md` 回答，并在答案中提供正式笔记路径和可追溯的官方 URL；证据不足时明确说明未找到可靠依据，不猜测。
-- `source/` 只用于从正式笔记引用关系中补充官方 URL，不作为回答正文语料。
+- 目标：钉钉 Kbot 仅依据已经审核的 `wiki/**/*.md` 回答，并在答案中提供可追溯的来源链接；来源链接客观表示信息实际取自哪里，不等同于监管机构官方原文。证据不足时明确说明未找到可靠依据，不猜测。
+- `source/` 只用于从正式笔记引用关系中补充来源链接、来源名称和来源类型，不作为回答正文语料。
 - 排除 `ingestion/rough/`、`ingestion/logs/`、`_/`、`_raw/`、审计文件、浏览器 profile、凭据和管理员会话历史。
 
 ## Git 与本地实现状态
 
 - 仓库：`/srv/projects/dek`
 - 分支：`main`
-- HEAD：`a1f6cf7e6172b7094ff539016223dcc2ab57a893`
-- `main...origin/main`：ahead/behind `0/0`（交接前已执行 `git fetch origin --prune`）。
-- 当前没有 tracked 修改；未跟踪内容如下，尚未 `git add`、commit 或 push：
+- 当前 HEAD：`55da7ef57f3c56752e07943432724cf0ad046611`。
+- `HEAD...origin/main`：ahead/behind `0/0`（2026-09-09 依赖修复前已执行 `git fetch origin --prune`）。
+- 下列17项原始 QA 文件已在该 HEAD 中提交并推送。2026-09-09 依赖、部署和 MCP 协议兼容修复另有11个未提交候选文件，见本节末尾；均未 `git add`、commit 或 push：
   - `qa/README.md`：独立只读问答实例的部署、安全和操作说明。
   - `qa/config/config.yaml`：安全默认 profile 模板；默认不连接钉钉且白名单为空，不能直接替代运行中的受保护配置。
   - `qa/config/SOUL.md`：问答边界、引用和证据不足时的回答规则。
@@ -30,6 +30,16 @@
   - `qa/EVIDENCE.md`：脱敏版本、哈希、验证范围和缺失证据清单。
   - `qa/DEPLOYMENT_PLAN.md`：不自动恢复服务的部署及回滚方案。
   - `qa/HANDOVER.md`：本交接记录。
+
+当前依赖兼容性修复候选白名单：
+
+- `qa/dek_qa/dependency_lock.py`：从 Hermes `uv.lock` 生成无同名多版本冲突的基础约束。
+- `qa/tests/test_dependency_lock.py`：组合锁版本、哈希、core+mcp 集合完整性及环境分叉回归测试。
+- `requirements-dek-qa.lock.txt`：重新生成的84包单一带哈希组合锁。
+- `qa/README.md`：可复现锁生成与安装验证命令。
+- `qa/DEPLOYMENT_PLAN.md`：依赖门禁、失败批次及重新授权要求。
+- `qa/EVIDENCE.md`：失败、回滚、锁摘要、测试结果和阻断证据。
+- `qa/HANDOVER.md`：当前状态及历史边界。
 
 ## 管理员 Hermes 与独立 dek-qa（禁止混用）
 
@@ -60,16 +70,18 @@
 - 服务入口：`/var/lib/dek-qa/venv/bin/hermes -p dek-qa gateway run --external-supervisor`
 - 不得复制或复用 `/root/.hermes` 的会话、记忆或凭据；也不得用管理员 Hermes 启动 dek-qa profile。
 
-## 当前服务状态（2026-09-08 17:28 CST 前后）
+## 历史服务状态（2026-09-08 17:28 CST 前后；已被 2026-09-09 回滚后状态取代）
 
 - `hermes-dashboard.service`：`active/running`，`enabled`。
 - `dek-qa.service`：已按修复要求暂停，为 `inactive/dead`、`disabled`、`MainPID=0`；不得自动恢复试用。
 - `dek-source-ingest.timer`：`active`、`enabled`；下一次计划为北京时间 `2026-09-09 09:15`。
 - `dek-source-ingest.service`：当前 `inactive`，由 timer 触发；未被本次问答接入修改。
 
-## 本轮代理与内部提示修复
+## 历史代理与内部提示修复（其中运行状态已被 2026-09-09 回滚后状态取代）
 
 ### 已完成并验证
+
+以下“运行/重启”表述仅记录 2026-09-08 当时证据，不代表当前服务正在运行；当前权威状态见文末依赖兼容性修复章节。
 
 - 仅在 dek-qa 的受保护环境中配置本机 HTTP/HTTPS 代理；未修改系统全局代理。
 - 钉钉域名加入 dek-qa 自身的 `NO_PROXY/no_proxy`，代理绕过判断已验证为 true，保持 Stream 原网络路径。
@@ -197,7 +209,8 @@
 ## 2026-09-08 提交前审查修复（17:28 CST 后）
 
 - 统一 wiki/source 路径排除规则：任一路径段含“排除”即跳过。只读检查当前版本 1 运行索引为 1066 文档，未发现此类路径；没有替换运行索引。
-- `official_urls` 仅从可唯一解析的 source wikilink 与对应 source 文件显式 `source_url` 产生。正文 URL 不再提升；同名 stem 构建失败；带目录错误引用不回退；无法验证时写 `source_status=unknown`。
+- 当前候选索引使用中性字段 `source_urls`；它仅从可唯一解析的 source wikilink 与对应 source 文件显式 `source_url` 或兼容字段 `url` 产生。可选的 `source_names`、`source_types` 来自 source frontmatter。正文 URL 不自动提升；同名 stem 构建失败；带目录错误引用不回退；无法确认时写 `source_status=unknown`。版本 2、3 的旧 `official_urls` 只在读取旧索引时兼容转换，不再向工具输出。
+- 2026-09-10 16:18 +0800 已按用户批准部署版本 4 app、SOUL 和生产索引；备份位于 `/var/backups/dek-qa/source-urls-v4-deploy-20260910_161742_+0800`。生产测试 57/57、dek-qa 用户 search → get 和索引校验通过；服务 active/running，摄入 timer active/enabled。未发送钉钉消息，真实端到端回复仍未知。
 - 版本 2 候选索引仍为 1066 文档，0 个含“排除”路径。旧索引 22 个 URL 在新标准下均不能验证，候选中 946 个来源状态为 unknown、120 个为 none；未修改正式 wiki/source 正文。详细哈希见 `EVIDENCE.md`。
 - MCP 对 JSON-RPC 对象、工具参数、required/additional properties、limit 类型/范围、document ID 格式执行服务端校验。非法 JSON/信封返回标准 JSON-RPC 错误；工具 schema 错误返回 Hermes 可识别的 `result.isError=true`，避免计入服务器熔断；真实 stdio 回归确认后续合法请求继续处理。
 - 搜索 token 不再跨标点连接中文，且至少要求一个有意义的多字符 token 命中；Stream 收集器完成回调改为幂等。
@@ -212,3 +225,31 @@
 
 - 已授权：建立独立账号/profile/运行目录与隔离依赖；配置固定测试白名单；部署但不启用服务；小范围 Stream 在线验收；仅为 dek-qa 配置本机代理；关闭两类内部提示；执行无知识库内容的模型探针并重启 dek-qa。
 - 未授权：扩大用户或群范围、设置 home channel、开放工具、复制管理员凭据或历史、修改知识库/摄入逻辑、修改摄入 timer、自动提交或推送。
+
+## 2026-09-09 依赖兼容性修复
+
+- 固定提交 `55da7ef57f3c56752e07943432724cf0ad046611` 的首次部署在依赖门禁失败。旧 QA 锁只解析 QA 六项直接依赖，把 Hermes 锁中的 20 个重叠传递依赖升级；`uv pip check` 最先报告 certifi、cryptography、pydantic 三项冲突，pydantic-core 也随 pydantic 漂移。
+- 失败批次已完整回滚；当前 app、venv、profile、unit 和版本 1 索引均为部署前状态。未迁移 profile、未替换索引、未安装候选 unit、未启动或 enable 服务。
+- 新组合锁以 `/opt/dek-qa/hermes-agent/uv.lock` 的 core + mcp 锁定导出为基础，再由解析器加入 `requirements-dek-qa.txt` 的 dingtalk-stream 及 QA 直接依赖。它不使用 Hermes dingtalk extra，避免引入本实例不需要且元数据要求 `cryptography<49` 的 Alibaba OpenAPI 依赖树。
+- 新锁包含 84 个带制品哈希的包；全新临时 Python 3.12 seeded venv 从零安装后，再以 `--no-deps` 安装已核验 Hermes Agent 0.21.0 editable 副本。锁文件 84 个包、seed 安装的 pip 和 editable Hermes 合计 86 个，依赖检查无冲突。`qa/tests/test_dependency_lock.py` 同时防止锁文件与 Hermes `uv.lock` 漂移和绝对路径进入生成结果。
+- 最终生产环境的 52 项完整 unittest、DingTalk adapter/配置解析、真实 MCP SDK initialize/list/search/get 和 Hermes 自身的 `mcp test` 均通过。两次在不同目录生成锁文件的 SHA-256 均为 `a86d658421c8f231fd93e91eb791a1ea9a1ee5a87b95c0b723060c0c6e912d14`，达到字节级复现。
+- 使用生产专用 OAuth 状态和 EnvironmentFile 的代理配置执行最小模型生成探针，退出码 0，精确返回 `DEK_QA_MODEL_PROBE_OK`。缺少 EnvironmentFile 的探针会超时，unit 必须继续加载该文件。
+- 2026-09-09 用户随后明确授权继续修复、部署、启动并完成 DingTalk 可用性验收；仍不得扩大既有用户或群白名单。
+
+## 2026-09-09 生产部署结果
+
+- 部署前完整备份位于 `/var/lib/dek-qa/backups/deploy-20260909_141551`，包含 app、venv、profile、Hermes 源、unit 和版本1索引；目录为 root-only。
+- 生产使用版本2索引，1066 文档，SHA-256 为 `49c02890a7e4ff365a5633d08dce6d74cda5021f8a3c9e458175bf931ddd0f4d`。运行 app 为 root 只读副本，索引为 `0600 dek-qa:dek-qa`。
+- 生产 profile 的原白名单值未改变；两组各2项。三项 DingTalk 门控已迁入 adapter 实际读取的 `platforms.dingtalk.extra`，真实 adapter 解析确认默认拒绝、群白名单和必须 @ 生效。
+- 不得用重命名方式切换 uv venv：console-script shebang 含创建时绝对路径。本次已直接在 `/var/lib/dek-qa/venv` 从带哈希锁重建；保留的 `venv.relocated-broken-20260909_141551` 仅用于说明该失败路径，可在稳定观察后由管理员清理。
+- 在线首次启动发现 MCP 2.0 SDK 会在 `tools/list` 和 `tools/call` 参数中发送标准 `_meta`。服务端已兼容 `_meta` 与 list cursor，同时继续拒绝未知字段。真实 MCP SDK 和 `hermes mcp test dek_kb` 均发现且只发现 `dek_kb_search`、`dek_kb_get`。
+- 首次模型探针还发现 Hermes 默认 lazy dependency 会在运行时向 venv 安装6个未纳入组合锁的包。生产 unit 已设置 `HERMES_DISABLE_LAZY_INSTALLS=1`，生产 venv 已按锁重新构建；启动前、启动30秒后及最终 MCP/模型探针后均保持86包。
+- 模型端到端验收实际执行 search→get，返回预期不透明 ID 和内部路径；OAuth 最小生成探针也精确成功。`dek-qa.service` 已 `enabled` 且稳定 `active/running`，DingTalk Stream 维持外部 TLS 长连接；`dek-source-ingest.timer` 保持 `active/enabled`。
+- 当前 Python 3.12.3 链接 SQLite 3.45.1，Hermes 因已知 WAL-reset 风险自动使用 `journal_mode=DELETE`。这不会阻止当前问答，但应在系统提供 SQLite 3.51.3+ 或对应回移版本时升级并复测。
+
+## 2026-09-09 钉钉可见范围作为人员权限源
+
+- 用户已明确授权取消 Hermes 逐人名单，人员权限改由钉钉应用可见范围唯一管理。生产 profile 使用 `allowed_users: ["*"]`，EnvironmentFile 使用 `DINGTALK_ALLOWED_USERS=*` 与 `DINGTALK_ALLOW_ALL_USERS=true`。
+- 群边界没有扩大：原 2 个允许群保持不变，群消息仍必须 `@机器人`；每位群成员仍使用独立会话。钉钉平台内置工具集为空，DEK MCP 仍只有 search/get。
+- 切换备份为 `/var/lib/dek-qa/backups/dingtalk-visibility-20260909_164020`。真实解析器检查、52/52 回归、systemd unit 校验和重启后 TLS 连接均通过。
+- 用户已使用未曾列入旧 Hermes 名单、但处于钉钉应用可见范围的账号完成私聊测试，并确认机器人正常响应。钉钉可见范围与本地通配配置的完整链路已人工在线验收通过；后续人员增删只在钉钉应用可见范围中维护，不再添加 Hermes 用户名单。

@@ -9,10 +9,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from .audit import audit_history
 from .core import (
     SafetyStop, assert_git_safe, atomic_write_batch, compare_rows, git,
     git_status_paths, ingestion_lock, insert_rows, json_text, last_updated, markdown_cell,
-    parse_table, replace_last_updated, repo_fingerprint, report_path,
+    parse_table, reconcile_remote, replace_last_updated, repo_fingerprint, report_path,
     workspace_snapshot, write_json,
 )
 from .fetchers import CDEBrowserUnavailable, fetch_cde, fetch_cpc, fetch_cpc_content_hash, fetch_shanghai
@@ -41,12 +42,16 @@ def base_report(now: datetime, mode: str) -> dict[str, Any]:
         "generated_at": now.astimezone().isoformat(timespec="seconds"),
         "baseline": repo_fingerprint(ROOT, CONFIG_PATH),
         "report": {}, "rough_created": [], "planned_writes": [],
-        "blocking": False, "alerts": [], "auto_write_paths": [],
+        "blocking": False, "alerts": [], "auto_write_paths": [], "rough_sources": {},
     }
 
 
 def rough_content(source_path: str, rows: list[Any], day: str) -> str:
     source_link = source_path.removesuffix(".md")
+    published_date = max((str(row.date)[:10] for row in rows), default="")
+    source_item_key = hashlib.sha256(
+        json.dumps([row.key for row in rows], ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()
     rendered = "".join(
         f"| {markdown_cell(row.question)} | {markdown_cell(row.answer)} | {row.date[:10]} |\n"
         for row in rows
@@ -54,8 +59,14 @@ def rough_content(source_path: str, rows: list[Any], day: str) -> str:
     return (
         "---\n"
         f"date: {day}\n"
+        f"published_date: {published_date}\n"
+        f"ingested_at: {day}\n"
         f'source: "[[{source_link}]]"\n'
-        "status: rough\n"
+        "status: pending_review\n"
+        f"source_item_key: sha256:{source_item_key}\n"
+        "recommended_tags:\n"
+        "wiki_target:\n"
+        "reviewed_at:\n"
         "---\n\n"
         "## 新增问答\n\n"
         "| 问题 | 解答 | 发布日期 |\n"
@@ -183,7 +194,9 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
                         if rough_path.exists():
                             raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
                         writes[rough_path] = rough_content(source["path"], additions, day)
-                        result["rough_created"].append(str(rough_path.relative_to(ROOT)))
+                        rough_relative = str(rough_path.relative_to(ROOT))
+                        result["rough_created"].append(rough_relative)
+                        result["rough_sources"][rough_relative] = source["path"]
                         if source.get("auto_classified") is True and source.get("auto_ingest") is True:
                             result["auto_write_paths"].extend((source["path"], str(rough_path.relative_to(ROOT))))
                 result["report"][source["path"]] = entry
@@ -202,7 +215,43 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
             result["alerts"].append(f"CDE source failure: {exc}")
 
     result["planned_writes"] = sorted(str(p.relative_to(ROOT)) for p, text in writes.items() if not p.exists() or text != p.read_text(encoding="utf-8"))
+    validate_report_invariants(result)
+    add_pipeline_health(result)
     return result, writes
+
+
+def validate_report_invariants(report: dict[str, Any]) -> None:
+    updated = {
+        path for path, entry in report.get("report", {}).items()
+        if isinstance(entry, dict) and entry.get("status") == "updated_with_new"
+    }
+    rough_created = set(report.get("rough_created", []) or [])
+    rough_sources = report.get("rough_sources", {}) or {}
+    covered = {source for rough, source in rough_sources.items() if rough in rough_created}
+    missing = updated - covered
+    if missing:
+        raise SafetyStop(f"updated_with_new requires rough draft: {sorted(missing)}")
+
+
+def add_pipeline_health(report: dict[str, Any]) -> None:
+    audit = audit_history(ROOT)
+    health = {
+        key: audit[key] for key in (
+            "missing_rough_events", "rough_total", "rough_statuses",
+            "stale_pending_over_7_days", "rough_lifecycle_errors", "report_errors",
+        )
+    }
+    report["pipeline_health"] = health
+    if health["missing_rough_events"] or health["stale_pending_over_7_days"] or health["rough_lifecycle_errors"] or health["report_errors"]:
+        report["alerts"].append(
+            "pipeline backlog: "
+            f"missing_rough={health['missing_rough_events']} "
+            f"stale_pending={len(health['stale_pending_over_7_days'])} "
+            f"lifecycle_errors={len(health['rough_lifecycle_errors'])} "
+            f"report_errors={len(health['report_errors'])}"
+        )
+    if health["rough_lifecycle_errors"] or health["report_errors"]:
+        report["blocking"] = True
 
 
 def automatic_write_allowlist(config: dict[str, Any]) -> set[str]:
@@ -235,6 +284,7 @@ def scheduled_report_path(now: datetime) -> Path:
 
 
 def execute_scheduled() -> int:
+    reconcile_remote(ROOT)
     assert_git_safe(ROOT)
     start_head = git(ROOT, "rev-parse", "HEAD")
     now = datetime.now().astimezone()
