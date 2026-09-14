@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .core import Row, SafetyStop
+from .core import Row, SafetyStop, merge_duplicate_rows
 
 
 class CDEBrowserUnavailable(SafetyStop):
@@ -297,7 +297,7 @@ def fetch_cde(url: str, types: list[int], profile_dir: Path) -> tuple[dict[int, 
                 records = payload.get("records", [])
                 if int(payload.get("total", 0)) != len(records):
                     raise SafetyStop(f"CDE type {kind} response count mismatch")
-                rows = [Row(str(x["probleContent"]), str(x["answerContent"]), str(x["publishTime"])[:10]) for x in records]
+                rows = merge_duplicate_rows([Row(str(x["probleContent"]), str(x["answerContent"]), str(x["publishTime"])[:10]) for x in records])
                 result[kind] = (rows, {"remote_count": len(rows), "latest_date": max((r.date for r in rows), default=None)})
         finally:
             context.close()

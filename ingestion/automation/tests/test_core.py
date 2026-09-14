@@ -401,6 +401,19 @@ class CoreTests(unittest.TestCase):
         }
         cli.validate_report_invariants(report)
 
+    def test_merge_duplicate_rows_joins_answers_with_br(self):
+        from ingestion.automation.core import Row, merge_duplicate_rows
+        rows = [
+            Row("问题A", "答案1", "2025-01-10"),
+            Row("问题A", "答案2", "2025-01-10"),
+            Row("问题B", "答案B", "2025-01-10"),
+        ]
+        merged = merge_duplicate_rows(rows)
+        self.assertEqual(len(merged), 2)
+        self.assertEqual(merged[0].question, "问题A")
+        self.assertEqual(merged[0].answer, "答案1<br>答案2")
+        self.assertEqual(merged[1].answer, "答案B")
+
     def test_pipeline_health_is_recorded_without_blocking_source_checks(self):
         report = {"alerts": [], "blocking": False}
         health = {
