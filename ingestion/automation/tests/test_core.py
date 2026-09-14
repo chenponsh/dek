@@ -55,6 +55,13 @@ class CoreTests(unittest.TestCase):
         subprocess.run(["git", "-C", root, "push", "-qu", "origin", "main"], check=True)
         return root, remote, source
 
+    def test_git_status_paths_decodes_non_ascii_paths(self):
+        root, _remote, _source = self.scheduled_repo()
+        chinese = root / "ingestion" / "rough" / "中文草稿.md"
+        chinese.write_text("草稿\n", encoding="utf-8")
+
+        self.assertIn("ingestion/rough/中文草稿.md", core.git_status_paths(root))
+
     def scheduled_plan(self, root, source, *, writes=True):
         rough = root / "ingestion" / "rough" / "rough.md"
         planned = [str(source.relative_to(root)), str(rough.relative_to(root))] if writes else []

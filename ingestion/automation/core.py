@@ -253,7 +253,10 @@ def workspace_snapshot(root: Path) -> str:
 
 
 def git_status_paths(root: Path) -> set[str]:
-    return {porcelain_path(line) for line in git(root, "status", "--porcelain", "--untracked-files=all").splitlines()}
+    return {
+        porcelain_path(line)
+        for line in git(root, "-c", "core.quotePath=false", "status", "--porcelain", "--untracked-files=all").splitlines()
+    }
 
 
 @contextmanager
