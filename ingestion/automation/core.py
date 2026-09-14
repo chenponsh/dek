@@ -133,6 +133,17 @@ def merge_duplicate_rows(rows: list[Row]) -> list[Row]:
     return result
 
 
+def restore_book_titles(text: str) -> str:
+    """Restore CDE's angle-bracketed document titles <名称> to 《名称》.
+
+    CDE encodes book titles (文件/程序/通告名称) as <中文内容>, which would
+    otherwise be stripped as HTML tags. Only angle brackets whose content
+    starts with a non-ASCII character are treated as book titles; real HTML
+    tags such as <br> and <a href=...> are left untouched.
+    """
+    return re.sub(r"<([^\x00-\x7f][^<>]*)>", r"《\1》", text)
+
+
 def repo_fingerprint(root: Path, config_path: Path) -> str:
     head = git(root, "rev-parse", "HEAD")
     digest = hashlib.sha256()

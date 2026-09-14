@@ -425,6 +425,17 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(len(merged), 1)
         self.assertEqual(merged[0].answer, "答案1<br>答案2")
 
+    def test_restore_book_titles_converts_angle_bracketed_names(self):
+        from ingestion.automation.core import restore_book_titles
+        self.assertEqual(
+            restore_book_titles("发布<突破性治疗药物审评工作程序（试行）>等三个文件"),
+            "发布《突破性治疗药物审评工作程序（试行）》等三个文件",
+        )
+
+    def test_restore_book_titles_leaves_html_tags_untouched(self):
+        from ingestion.automation.core import restore_book_titles
+        self.assertEqual(restore_book_titles("正文<br>内容<a href=\"x\">链接</a>"), "正文<br>内容<a href=\"x\">链接</a>")
+
     def test_pipeline_health_is_recorded_without_blocking_source_checks(self):
         report = {"alerts": [], "blocking": False}
         health = {
