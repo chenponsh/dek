@@ -414,6 +414,17 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(merged[0].answer, "答案1<br>答案2")
         self.assertEqual(merged[1].answer, "答案B")
 
+    def test_merge_duplicate_rows_drops_identical_answers(self):
+        from ingestion.automation.core import Row, merge_duplicate_rows
+        rows = [
+            Row("问题A", "答案1", "2025-01-10"),
+            Row("问题A", "答案1", "2025-01-10"),
+            Row("问题A", "答案2", "2025-01-10"),
+        ]
+        merged = merge_duplicate_rows(rows)
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].answer, "答案1<br>答案2")
+
     def test_pipeline_health_is_recorded_without_blocking_source_checks(self):
         report = {"alerts": [], "blocking": False}
         health = {

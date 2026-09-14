@@ -110,19 +110,27 @@ def compare_rows(local: list[Row], remote: list[Row]) -> tuple[list[Row], list[d
 def merge_duplicate_rows(rows: list[Row]) -> list[Row]:
     """Merge rows sharing the same (question, date) key, joining answers with <br>.
 
-    CDE can return the same question split across several records. Joining them
-    here keeps a single row per key so compare_rows treats them as one entry.
+    CDE can return the same question split across several records, and can also
+    return fully identical duplicates. Distinct answers are joined in order;
+    identical answers are dropped. Keeps a single row per key so compare_rows
+    treats them as one entry.
     """
-    merged: dict[tuple[str, str], Row] = {}
+    groups: dict[tuple[str, str], list[Row]] = {}
     order: list[tuple[str, str]] = []
     for row in rows:
-        if row.key not in merged:
-            merged[row.key] = row
+        if row.key not in groups:
+            groups[row.key] = []
             order.append(row.key)
-        else:
-            old = merged[row.key]
-            merged[row.key] = Row(old.question, old.answer + "<br>" + row.answer, old.date)
-    return [merged[key] for key in order]
+        groups[row.key].append(row)
+    result: list[Row] = []
+    for key in order:
+        group = groups[key]
+        seen: list[str] = []
+        for row in group:
+            if row.answer not in seen:
+                seen.append(row.answer)
+        result.append(Row(group[0].question, "<br>".join(seen), group[0].date))
+    return result
 
 
 def repo_fingerprint(root: Path, config_path: Path) -> str:
