@@ -49,9 +49,20 @@ def _proxy_env() -> dict:
 def _run(arguments, *, cwd: Path | None = None, env=None, timeout=120) -> bytes:
     # FIXED_COMMANDS' web/tests needs `node` (test_search.py runs search.js for
     # real) and qa/tests needs `uv` (test_dependency_lock.py); neither lives
-    # under /usr/bin or /bin on this host, so every build silently failed
-    # those steps regardless of what was actually being released.
-    safe_env = {"HOME":"/var/empty", "PATH":"/usr/bin:/bin:/usr/local/bin:/root/.local/bin:/root/.hermes/bin", "LANG":"C.UTF-8", "LC_ALL":"C.UTF-8", "GIT_CONFIG_NOSYSTEM":"1", "GIT_CONFIG_SYSTEM":"/dev/null", "GIT_CONFIG_GLOBAL":"/dev/null", "GIT_ATTR_NOSYSTEM":"1", "GIT_TERMINAL_PROMPT":"0", "GIT_ASKPASS":"/bin/false", "SSH_ASKPASS":"/bin/false"}
+    # under /usr/bin or /bin on this host. /usr/local/bin/node is a symlink
+    # into /root, which dek-builder.service's sandbox hides (ProtectHome=true
+    # plus an explicit InaccessiblePaths=/root) -- a hole into the operator's
+    # home directory is the wrong fix, so a standalone copy of the node
+    # binary is vendored to /opt/dek-node/bin instead, a location the
+    # sandbox can actually read (see deploy/systemd/dek-builder.service's
+    # ReadOnlyPaths=). uv still resolves via /root/.local/bin for now.
+    # dek-builder.service is PrivateNetwork=true (fully networkless), so
+    # qa/tests' uv-based dependency-lock check can only work against a
+    # pre-warmed, offline cache -- never a live resolve. UV_CACHE_DIR points
+    # at that cache (populated once, with network, as a one-time vendoring
+    # step) and UV_OFFLINE forces uv to fail closed rather than hang trying
+    # to reach a network this sandbox blocks.
+    safe_env = {"HOME":"/var/empty", "PATH":"/opt/dek-vendor/bin:/usr/bin:/bin", "UV_CACHE_DIR":"/opt/dek-vendor/uv-cache", "UV_OFFLINE":"1", "LANG":"C.UTF-8", "LC_ALL":"C.UTF-8", "GIT_CONFIG_NOSYSTEM":"1", "GIT_CONFIG_SYSTEM":"/dev/null", "GIT_CONFIG_GLOBAL":"/dev/null", "GIT_ATTR_NOSYSTEM":"1", "GIT_TERMINAL_PROMPT":"0", "GIT_ASKPASS":"/bin/false", "SSH_ASKPASS":"/bin/false"}
     if env:
         safe_env.update({key:value for key,value in env.items() if key.startswith("GIT_CONFIG_KEY_") or key.startswith("GIT_CONFIG_VALUE_") or key=="GIT_CONFIG_COUNT" or key in PROXY_ENV_KEYS})
     completed = subprocess.run(arguments, cwd=cwd, env=safe_env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False)
