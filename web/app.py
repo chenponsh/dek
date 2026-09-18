@@ -50,7 +50,7 @@ def generation_proof_secret(environment) -> str:
 
 class ActiveSite:
     """Atomically pins one immutable release for the duration of one request."""
-    def __init__(self, active_path: Path, releases_root: Path, maximum: int = 65536):
+    def __init__(self, active_path: Path, releases_root: Path, maximum: int = 8 * 1024 * 1024):
         self.active_path = Path(active_path)
         self.releases_root = Path(releases_root).resolve(strict=True)
         self.maximum = maximum

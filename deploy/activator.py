@@ -115,7 +115,7 @@ class Activator:
     def _read_active(self, *, required=True) -> dict | None:
         try:
             raw = self.config.active.read_bytes()
-            if len(raw) > 65536: raise ActivationError("active metadata too large")
+            if len(raw) > 8 * 1024 * 1024: raise ActivationError("active metadata too large")
             value = json.loads(raw)
             self._validate_metadata(value)
             return value
@@ -264,10 +264,26 @@ class Activator:
             try:
                 shutil.copytree(source, staging, copy_function=shutil.copy2)
                 if self._validate_release(staging, confined=False) != source_metadata: raise ActivationError("copied release metadata changed")
-                if json.loads((staging/"release.json").read_text(encoding="utf-8")) != expected:
-                    os.replace(staging/"release.json",staging/"build-release.json")
-                    atomic_json(staging/"release.json",expected,0o440)
-                (staging/"release.lock").touch(exist_ok=True)
+                # shutil.copytree's final copystat(source, staging) matches
+                # staging's mode -- including the setgid bit -- to source's,
+                # which is not setgid. Any file written into staging after
+                # this point loses the group inherited from self.config.releases
+                # (still setgid) instead of getting it. dek-web later can't
+                # read a group-mismatched release.lock/release.json and every
+                # request 503s. Write these two files into a fresh sibling
+                # under self.config.releases (still setgid, so still correctly
+                # group-inherited) and move them in -- os.replace preserves
+                # the group the file was created with, unlike shutil.copy2.
+                meta=Path(tempfile.mkdtemp(prefix=".ingest-meta-",dir=self.config.releases))
+                try:
+                    if json.loads((staging/"release.json").read_text(encoding="utf-8")) != expected:
+                        atomic_json(meta/"release.json",expected,0o440)
+                        os.replace(staging/"release.json",staging/"build-release.json")
+                        os.replace(meta/"release.json",staging/"release.json")
+                    (meta/"release.lock").touch(exist_ok=True); os.chmod(meta/"release.lock",0o440)
+                    os.replace(meta/"release.lock",staging/"release.lock")
+                finally:
+                    shutil.rmtree(meta, ignore_errors=True)
                 for path in sorted(staging.rglob("*"), reverse=True): os.chmod(path, 0o550 if path.is_dir() else 0o440)
                 os.chmod(staging,0o550)
                 fsync_tree(staging)

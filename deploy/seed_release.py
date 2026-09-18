@@ -113,9 +113,22 @@ def install_generation(src, target, descriptor, *, verify_release=None):
   shutil.copytree(src,staging,copy_function=shutil.copy2)
   if verify_release is not None and verify_release(staging) != json.loads((src/"release.json").read_text()):
    raise SystemExit("copied release metadata changed")
-  os.replace(staging/"release.json",staging/"build-release.json")
-  atomic_json(staging/"release.json",descriptor,0o440)
-  (staging/"release.lock").touch(exist_ok=True)
+  # shutil.copytree's final copystat(src, staging) matches staging's mode --
+  # including the setgid bit -- to src's, which is not setgid. Anything
+  # written into staging after this point loses the group inherited from
+  # target.parent (still setgid) instead of getting it, so dek-web can't
+  # read a group-mismatched release.lock/release.json. Write these two into
+  # a fresh sibling under target.parent (still setgid) and move them in --
+  # os.replace preserves the group the file was created with.
+  meta=pathlib.Path(tempfile.mkdtemp(prefix=".seed-meta-",dir=target.parent))
+  try:
+   atomic_json(meta/"release.json",descriptor,0o440)
+   os.replace(staging/"release.json",staging/"build-release.json")
+   os.replace(meta/"release.json",staging/"release.json")
+   (meta/"release.lock").touch(exist_ok=True); os.chmod(meta/"release.lock",0o440)
+   os.replace(meta/"release.lock",staging/"release.lock")
+  finally:
+   shutil.rmtree(meta,ignore_errors=True)
   for x in sorted(staging.rglob("*"),reverse=True): os.chmod(x,0o550 if x.is_dir() else 0o440)
   os.chmod(staging,0o550); fsync_tree(staging); os.replace(staging,target)
   descriptor_fd=os.open(target.parent,os.O_RDONLY|os.O_DIRECTORY)
