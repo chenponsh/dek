@@ -26,7 +26,7 @@ from fsutil import atomic_write_bytes, atomic_write_json, fsync_dir
 SERVICES = {
     "dek-web": ("web/",), "dek-qa": ("qa/",), "dek-review": ("web/", "deploy/"),
     "dek-publisher": ("deploy/", "web/"),
-    "dek-source-ingest": ("deploy/", "ingestion/automation/"),
+    "dek-source-ingest": ("deploy/", "ingestion/__init__.py", "ingestion/automation/"),
     "dek-builder": ("deploy/", "qa/", "web/", "ingestion/automation/"),
     "dek-activator": ("deploy/",),
 }
