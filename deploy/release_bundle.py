@@ -402,12 +402,21 @@ class ReleasePublisher:
         return final
 
     def publish(self, package: Path, *, queue_snapshot: dict | None = None) -> dict:
-        """Idempotently push a fixed-build-gated signed package."""
-        # A prior or partial gate must never survive a new push attempt.  The
-        # signature makes the eventual gate publisher-owned even though the
-        # build directory is group writable by the builder.
-        for name in ("activation-ready.sig", "activation-ready.json"):
-            (package/name).unlink(missing_ok=True)
+        """Idempotently push a fixed-build-gated signed package.
+
+        process_decision() calls this unconditionally on every publisher run
+        for every decision still in the approved queue, by design -- there is
+        no separate "already published" memory anywhere else. This used to
+        unconditionally delete any existing gate before attempting a fresh
+        push; if that push then failed (non-fast-forward, because
+        origin/main had moved on for any reason -- another decision, an
+        unrelated commit), the gate was gone and never recreated, permanently
+        stranding an already fully, successfully published decision at the
+        activation step. A push attempt -- and the gate deletion that must
+        precede a *new* one -- only happens now if no already-valid,
+        already-matching gate is sitting there proving this exact release
+        was already pushed.
+        """
         if not (package/"release.json").is_file() or not (package/"release.sig").is_file():
             raise BundleError("final release build gate missing")
         approval=json.loads((package/"approval.json").read_text(encoding="utf-8"))
@@ -419,13 +428,6 @@ class ReleasePublisher:
         if any(final.get(key)!=value for key,value in approval.items()): raise BundleError("final release approval mismatch")
         bundle=package/"repository.bundle"
         if _digest(bundle)!=approval.get("bundle_sha256") or approval.get("origin")!=self.origin: raise BundleError("prepared bundle binding invalid")
-        with tempfile.TemporaryDirectory(prefix="dek-publisher-push-") as temporary:
-            clone=Path(temporary)/"clone"
-            _run((*GIT,"-c","protocol.file.allow=always","clone","--no-checkout","--",str(bundle),str(clone)))
-            commit=_run((*GIT,"rev-parse",f'{approval["commit"]}^{{commit}}'),cwd=clone).decode().strip()
-            tree=_run((*GIT,"rev-parse",f'{commit}^{{tree}}'),cwd=clone).decode().strip()
-            if commit!=approval["commit"] or tree!=approval["tree"]: raise BundleError("prepared Git identity mismatch")
-            self._push_remote(clone,commit)
         gate={"schema_version":1,"status":"pushed","generation":final["generation"],
               "commit":final["commit"],"tree":final["tree"],"bundle_sha256":final["bundle_sha256"],
               "release_sha256":_digest(package/"release.json"),
@@ -436,6 +438,30 @@ class ReleasePublisher:
             gate.update(queue_snapshot)
         if "parent_commit" in final:
             gate["parent_commit"] = final["parent_commit"]
+        existing_gate_path=package/"activation-ready.json"
+        existing_sig_path=package/"activation-ready.sig"
+        if existing_gate_path.is_file() and existing_sig_path.is_file():
+            try:
+                existing_gate=json.loads(existing_gate_path.read_text(encoding="utf-8"))
+                self.signing_key.public_key().verify(existing_sig_path.read_bytes(),_canonical_activation_ready(existing_gate))
+            except Exception:
+                existing_gate=None
+            if existing_gate==gate:
+                return approval
+        with tempfile.TemporaryDirectory(prefix="dek-publisher-push-") as temporary:
+            clone=Path(temporary)/"clone"
+            _run((*GIT,"-c","protocol.file.allow=always","clone","--no-checkout","--",str(bundle),str(clone)))
+            commit=_run((*GIT,"rev-parse",f'{approval["commit"]}^{{commit}}'),cwd=clone).decode().strip()
+            tree=_run((*GIT,"rev-parse",f'{commit}^{{tree}}'),cwd=clone).decode().strip()
+            if commit!=approval["commit"] or tree!=approval["tree"]: raise BundleError("prepared Git identity mismatch")
+            self._push_remote(clone,commit)
+        # A prior or partial gate must never survive a new push attempt.  The
+        # signature makes the eventual gate publisher-owned even though the
+        # build directory is group writable by the builder.  Deliberately
+        # deferred until here: only once a fresh push has actually succeeded,
+        # never before, so a failed retry can never destroy a still-valid gate.
+        for name in ("activation-ready.sig", "activation-ready.json"):
+            (package/name).unlink(missing_ok=True)
         signature=self.signing_key.sign(_canonical_activation_ready(gate))
         _atomic_bytes(package/"activation-ready.json",json.dumps(gate,sort_keys=True,separators=(",",":")).encode()+b"\n")
         _atomic_bytes(package/"activation-ready.sig",signature)

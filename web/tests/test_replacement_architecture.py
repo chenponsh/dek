@@ -1271,3 +1271,104 @@ class ActivateCandidatesDiagnosticsTests(unittest.TestCase):
                 with self.assertRaises(ActivationError):
                     activate_candidates(FailingActivator(), [({}, candidate)])
         self.assertIn("fresh web proof mismatch", stderr.getvalue())
+
+
+class PublishIdempotencyTests(unittest.TestCase):
+    """process_decision() calls publish() unconditionally on every publisher
+    run for every decision still in the approved queue -- by design, per
+    publish()'s own docstring ("re-verifies the signed bundle before an
+    idempotent push"). But publish() unconditionally deleted the existing
+    activation-ready gate FIRST, then attempted a fresh push; if that push
+    then failed (non-fast-forward, because origin/main had moved on for any
+    reason -- another decision, an unrelated commit), the gate was gone and
+    never recreated, permanently stranding an already fully, successfully
+    published decision at the activation step. Live symptom: a decision
+    published cleanly, then a later unrelated publisher run (triggered by my
+    own subsequent code pushes) silently destroyed its gate."""
+
+    def _origin(self, root: Path) -> Path:
+        # A real remote (a genuine GitHub repo, in production) has no
+        # working tree, so an ordinary push to its current branch is never
+        # refused the way a non-bare repo's `receive.denyCurrentBranch`
+        # default refuses it. A bare repo here is what actually matches
+        # that, instead of a checked-out repo publish() would never be
+        # able to push into more than once in reality either.
+        work = root / "origin-work"
+        (work / "ingestion/rough").mkdir(parents=True)
+        (work / "wiki").mkdir()
+        text = "---\nstatus: pending_review\nwiki_target:\n---\n\nbody\n"
+        (work / "ingestion/rough/a.md").write_text(text, encoding="utf-8")
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=work, check=True)
+        subprocess.run(["git", "add", "."], cwd=work, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@i", "commit", "-qm", "init"], cwd=work, check=True)
+        origin = root / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True)
+        subprocess.run(["git", "push", "-q", str(origin), "main"], cwd=work, check=True)
+        return origin
+
+    def _checkout(self, root: Path, origin: Path, name: str) -> Path:
+        checkout = root / name
+        subprocess.run(["git", "clone", "-q", str(origin), str(checkout)], check=True)
+        return checkout
+
+    def _publish_a_real_decision(self, root: Path, origin: Path, key):
+        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=origin, text=True).strip()
+        tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=origin, text=True).strip()
+        rough_bytes = subprocess.check_output(["git", "show", "HEAD:ingestion/rough/a.md"], cwd=origin)
+        rough_sha256 = "sha256:" + hashlib.sha256(rough_bytes).hexdigest()
+        decision = {"decision_id": "d" * 20, "action": "approve",
+                    "snapshot_commit": commit, "snapshot_tree": tree,
+                    "rough_path": "ingestion/rough/a.md", "rough_sha256": rough_sha256,
+                    "wiki_path": "wiki/x.md", "candidate_markdown": "# x\n"}
+        publisher = ReleasePublisher(str(origin), key, root / "missing-credential", test_only_local_origin=True)
+        package = root / "package"
+        approval = publisher.prepare_change(package, decision)
+        (package / "site").mkdir()
+        (package / "site/index.html").write_text("ok", encoding="utf-8")
+        (package / "dek-kb.json").write_text('{"version":4,"documents":[]}', encoding="utf-8")
+        artifacts = {"dek-kb.json": hashlib.sha256((package / "dek-kb.json").read_bytes()).hexdigest(),
+                     "site/index.html": hashlib.sha256((package / "site/index.html").read_bytes()).hexdigest()}
+        generation = f"{approval['decision_id']}-{approval['nonce']}"
+        claimed = {**approval, "generation": generation, "artifacts": artifacts}
+        (package / "release.json").write_text(json.dumps(claimed, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+        publisher.finalize(package)
+        publisher.publish(package)
+        return publisher, package
+
+    def test_a_second_publish_after_origin_advances_leaves_an_already_valid_gate_untouched(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            origin = self._origin(root)
+            key = Ed25519PrivateKey.generate()
+            publisher, package = self._publish_a_real_decision(root, origin, key)
+
+            gate_before = (package / "activation-ready.json").read_bytes()
+            sig_before = (package / "activation-ready.sig").read_bytes()
+            self.assertTrue(gate_before)
+
+            # Something else lands on origin/main -- another decision, an
+            # unrelated infra commit -- after this decision already published.
+            other = self._checkout(root, origin, "other-checkout")
+            subprocess.run(["git", "-c", "user.name=other", "-c", "user.email=o@i", "commit", "--allow-empty", "-q", "-m", "unrelated"],
+                           cwd=other, check=True)
+            subprocess.run(["git", "push", "-q", str(origin), "main"], cwd=other, check=True)
+
+            # A later publisher run re-processes this same already-published
+            # decision (process_decision() has no "already done" memory of
+            # its own and calls publish() unconditionally every time).
+            publisher.publish(package)
+
+            self.assertEqual((package / "activation-ready.json").read_bytes(), gate_before,
+                             "an already-valid gate must survive a later re-publish call")
+            self.assertEqual((package / "activation-ready.sig").read_bytes(), sig_before)
+
+    def test_a_first_time_publish_still_creates_a_fresh_valid_gate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            origin = self._origin(root)
+            key = Ed25519PrivateKey.generate()
+            publisher, package = self._publish_a_real_decision(root, origin, key)
+            gate = json.loads((package / "activation-ready.json").read_text(encoding="utf-8"))
+            self.assertEqual(gate["status"], "pushed")
+            key.public_key().verify((package / "activation-ready.sig").read_bytes(),
+                                    __import__("deploy.release_bundle", fromlist=["_canonical_activation_ready"])._canonical_activation_ready(gate))
