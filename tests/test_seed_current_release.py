@@ -1,4 +1,6 @@
+import contextlib
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +13,23 @@ from deploy.seed_current_release import SEED_GENERATION, SEED_NONCE, build_seed_
 
 
 GIT_ENV = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
+
+
+@contextlib.contextmanager
+def _cwd_outside_any_git_repo():
+    """seed_release.py's `git bundle verify` subprocess call has no explicit
+    cwd, so it inherits whatever directory the caller happens to be in --
+    this repo (/srv/projects/dek) IS a git repo, which silently hid a real
+    bug (git bundle verify fails outright, "need a repository", from any
+    non-repo cwd -- exactly dek-activator's real runtime working directory)
+    until it was run for real. Force a non-repo cwd so this regresses loudly."""
+    previous = os.getcwd()
+    with tempfile.TemporaryDirectory() as outside:
+        os.chdir(outside)
+        try:
+            yield
+        finally:
+            os.chdir(previous)
 
 
 def _init_repo(root: Path) -> str:
@@ -109,12 +128,13 @@ class SeedReleaseInstallerAcceptanceTests(unittest.TestCase):
                 serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
 
             config = ActivatorConfig.under(root / "activate"); config.prepare()
-            self.assertEqual(seed_release_main([
-                "--release", str(output), "--public-key", str(public_key_path),
-                "--releases", str(config.releases), "--active", str(config.active),
-                "--expected-commit", release["commit"], "--expected-tree", release["tree"],
-                "--expected-bundle-sha256", release["bundle_sha256"],
-            ]), 0)
+            with _cwd_outside_any_git_repo():
+                self.assertEqual(seed_release_main([
+                    "--release", str(output), "--public-key", str(public_key_path),
+                    "--releases", str(config.releases), "--active", str(config.active),
+                    "--expected-commit", release["commit"], "--expected-tree", release["tree"],
+                    "--expected-bundle-sha256", release["bundle_sha256"],
+                ]), 0)
 
             active = json.loads(config.active.read_text())
             self.assertEqual(active["generation"], SEED_GENERATION)
@@ -123,12 +143,13 @@ class SeedReleaseInstallerAcceptanceTests(unittest.TestCase):
             self.assertTrue((config.releases / SEED_GENERATION / "release.lock").exists())
 
             # Re-running with the identical inputs must be idempotent, not fail.
-            self.assertEqual(seed_release_main([
-                "--release", str(output), "--public-key", str(public_key_path),
-                "--releases", str(config.releases), "--active", str(config.active),
-                "--expected-commit", release["commit"], "--expected-tree", release["tree"],
-                "--expected-bundle-sha256", release["bundle_sha256"],
-            ]), 0)
+            with _cwd_outside_any_git_repo():
+                self.assertEqual(seed_release_main([
+                    "--release", str(output), "--public-key", str(public_key_path),
+                    "--releases", str(config.releases), "--active", str(config.active),
+                    "--expected-commit", release["commit"], "--expected-tree", release["tree"],
+                    "--expected-bundle-sha256", release["bundle_sha256"],
+                ]), 0)
 
 
 if __name__ == "__main__":

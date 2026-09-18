@@ -135,9 +135,16 @@ def main(argv=None):
   if meta.get(k)!=v: raise SystemExit(k+" mismatch")
  bundle=src/"repository.bundle"
  if file_digest(bundle)!=a.expected_bundle_sha256: raise SystemExit("bundle digest mismatch")
- subprocess.run(["git","bundle","verify",str(bundle)],check=True,env={"PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_GLOBAL":"/dev/null"})
+ git_env={"PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_GLOBAL":"/dev/null"}
  with tempfile.TemporaryDirectory() as td:
-  subprocess.run(["git","clone","--quiet",str(bundle),td],check=True,env={"PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_GLOBAL":"/dev/null"})
+  # `git bundle verify` requires running from inside some existing git
+  # repository -- even a self-contained, no-prerequisite bundle -- or it
+  # fails outright with "need a repository to verify a bundle" regardless
+  # of cwd permissions. Clone first (which creates one and independently
+  # validates the bundle's objects), then also run the explicit verify
+  # from inside that fresh clone for its extra "complete history" check.
+  subprocess.run(["git","clone","--quiet",str(bundle),td],check=True,env=git_env)
+  subprocess.run(["git","bundle","verify",str(bundle)],check=True,cwd=td,env=git_env)
   got_commit=subprocess.check_output(["git","-C",td,"rev-parse",a.expected_commit+"^{commit}"],text=True).strip()
   got_tree=subprocess.check_output(["git","-C",td,"rev-parse",a.expected_commit+"^{tree}"],text=True).strip()
  if got_commit!=a.expected_commit or got_tree!=a.expected_tree: raise SystemExit("bundle object mismatch")
