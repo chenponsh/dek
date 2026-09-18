@@ -57,6 +57,17 @@
       .catch(() => { document.querySelector("#user-name").textContent = "登录信息不可用"; });
   }
 
+  const sharedIndexCache = new Map();
+  function loadSharedIndex(url) {
+    const key = url.href;
+    if (!sharedIndexCache.has(key)) {
+      sharedIndexCache.set(key, fetch(url, { credentials: "same-origin", cache: "no-store" })
+        .then(response => response.ok ? response.json() : Promise.reject())
+        .catch(error => { sharedIndexCache.delete(key); throw error; }));
+    }
+    return sharedIndexCache.get(key);
+  }
+
   const input = document.querySelector("#global-search");
   const searchButton = document.querySelector("#search-button");
   const searchStatus = document.querySelector("#search-status");
@@ -70,8 +81,7 @@
       searchButton.disabled = true;
       searchButton.textContent = "加载中…";
       searchStatus.textContent = "正在加载搜索索引…";
-      return fetch(indexUrl, { credentials: "same-origin", cache: "no-store" })
-        .then(response => response.ok ? response.json() : Promise.reject())
+      return loadSharedIndex(indexUrl)
         .then(data => {
           docs = data;
           indexReady = true;
@@ -131,7 +141,7 @@
       if (node.type === "document") {
         const active = node.path === current ? " active" : "";
         const href = new URL(node.url, manifestUrl).href;
-        return `<a role="treeitem" class="tree-link${active}" href="${href}" title="${escapeHtml(node.path)}"><span class="tree-file-icon">◇</span><span class="tree-label">${escapeHtml(node.name)}</span></a>`;
+        return `<a role="treeitem" class="tree-link${active}" href="${href}" title="${escapeHtml(node.name)}"><span class="tree-file-icon">◇</span><span class="tree-label">${escapeHtml(node.name)}</span></a>`;
       }
       const isRoot = node.path === "wiki" || node.path === "source";
       const isCurrentAncestor = current === node.path || current.startsWith(node.path + "/");
@@ -180,10 +190,16 @@
       renderRecentList(DEKSearch.recentDocuments(recentDocs, days));
     }
 
-    fetch(indexUrl, { credentials: "same-origin", cache: "no-store" })
-      .then(response => response.ok ? response.json() : Promise.reject())
-      .then(data => { recentDocs = data; renderRecent(7); })
-      .catch(() => { recentList.innerHTML = '<div class="muted">最近信息加载失败，请刷新重试</div>'; });
+    function loadRecent() {
+      recentList.innerHTML = '<div class="muted">正在加载最近信息…</div>';
+      loadSharedIndex(indexUrl)
+        .then(data => { recentDocs = data; renderRecent(7); })
+        .catch(() => {
+          recentList.innerHTML = '<div class="muted">最近信息加载失败，<button type="button" id="recent-retry">点击重试</button></div>';
+          document.querySelector("#recent-retry")?.addEventListener("click", loadRecent);
+        });
+    }
+    loadRecent();
 
     tabs.forEach(tab => tab.addEventListener("click", () => renderRecent(Number(tab.dataset.days))));
   }

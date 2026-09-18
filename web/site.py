@@ -308,7 +308,10 @@ def _property_value(value: object, doc: dict, by_path: dict[str, dict], by_stem:
 
 
 def _note_properties(doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[dict]]) -> str:
-    labels = (("no", "编号"), ("date", "日期"), ("question", "问题"), ("source", "来源"), ("tag_pages", "标签页面"), ("tags", "标签"))
+    # "question" duplicates the <h1> title directly above this table, and "tags"
+    # duplicates "tag_pages" (and the badge chips under the title); both are
+    # dropped here so the table doesn't push the article below the fold.
+    labels = (("no", "编号"), ("date", "日期"), ("source", "来源"), ("tag_pages", "标签页面"))
     rows = []
     for key, label in labels:
         value = doc["meta"].get(key)
@@ -319,12 +322,32 @@ def _note_properties(doc: dict, by_path: dict[str, dict], by_stem: dict[str, lis
     return f'<details class="note-properties" open><summary>笔记信息</summary><dl>{"".join(rows)}</dl></details>'
 
 
+def _breadcrumb_html(doc: dict, by_path: dict[str, dict]) -> str:
+    """Link every breadcrumb segment except the current (leaf) page: the first
+    segment ("wiki"/"source") goes home, and each folder segment goes to its
+    same-named overview note when one exists, else stays plain text."""
+    parts = PurePosixPath(doc["path"]).with_suffix("").parts
+    segments = []
+    for index, part in enumerate(parts):
+        text = html.escape(part)
+        href = None
+        if index == len(parts) - 1:
+            pass
+        elif index == 0:
+            href = _relative_href(doc["output"], PurePosixPath("index.html"))
+        else:
+            target = by_path.get("/".join(parts[:index + 1] + (part,)))
+            if target: href = _relative_href(doc["output"], target["output"])
+        segments.append(f'<a href="{href}">{text}</a>' if href else text)
+    return " / ".join(segments)
+
+
 def _page(doc: dict, docs: list[dict], rendered: str, backlinks: list[dict], by_path: dict[str, dict], by_stem: dict[str, list[dict]], source_refs: list[dict] | None = None) -> str:
     assets = _relative_href(doc["output"], PurePosixPath("assets/style.css"))
     script = _relative_href(doc["output"], PurePosixPath("assets/app.js"))
     search = _relative_href(doc["output"], PurePosixPath("assets/search-index.json"))
     manifest = _relative_href(doc["output"], PurePosixPath("manifest.json"))
-    crumbs = " / ".join(html.escape(p) for p in PurePosixPath(doc["path"]).with_suffix("").parts)
+    crumbs = _breadcrumb_html(doc, by_path)
     tags = doc["meta"].get("tags") or []
     if isinstance(tags, str): tags = [tags]
     badges = "".join(f'<span class="badge">#{html.escape(str(tag))}</span>' for tag in tags)

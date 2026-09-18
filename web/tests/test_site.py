@@ -212,10 +212,45 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn(">1<", wiki)
         self.assertIn("日期", wiki)
         self.assertIn("2026-09-10", wiki)
-        self.assertIn("问题", wiki)
-        self.assertIn("申报要求", wiki)
         self.assertIn("标签页面", wiki)
-        self.assertIn("注册/受理", wiki)
+        # "问题" duplicates the <h1> title directly above the table, and "标签"
+        # duplicates "标签页面" (and the badge chips under the title); dropping
+        # both keeps the property table from pushing the article below the fold.
+        self.assertNotIn("<dt>问题</dt>", wiki)
+        self.assertNotIn("<dt>标签</dt>", wiki)
+
+    def test_breadcrumb_segments_link_to_their_folder_overview_note(self):
+        (self.vault / "wiki" / "01_注册" / "01_注册.md").write_text(
+            "---\nsource_name: 分类总览\n---\n\n# 01_注册", encoding="utf-8",
+        )
+        build_site(self.vault, self.out)
+        wiki = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        self.assertIn('<div class="breadcrumbs">', wiki)
+        self.assertIn('<a href="../../index.html">wiki</a>', wiki)
+        self.assertIn('<a href="01_%E6%B3%A8%E5%86%8C.html">01_注册</a>', wiki)
+        # The leaf segment is the current page itself and stays plain text.
+        self.assertNotIn('<a href="%E6%9D%A1%E7%9B%AE.html">条目</a>', wiki)
+
+    def test_breadcrumb_segment_without_an_overview_note_stays_plain_text(self):
+        build_site(self.vault, self.out)
+        wiki = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        self.assertIn('<div class="breadcrumbs">', wiki)
+        self.assertIn("01_注册", wiki)
+        self.assertNotIn('<a href="01_注册.html">01_注册</a>', wiki)
+
+    def test_tree_node_title_is_the_full_label_not_the_file_path(self):
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("title=\"${escapeHtml(node.name)}\"", script)
+        self.assertNotIn("title=\"${escapeHtml(node.path)}\"", script)
+
+    def test_recent_and_search_share_a_single_index_fetch_with_retry(self):
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("loadSharedIndex", script)
+        self.assertEqual(script.count("fetch(url,"), 1)
+        self.assertEqual(script.count("fetch(indexUrl"), 0)
+        self.assertIn("recent-retry", script)
 
     def test_explicit_source_wikilink_is_clickable_and_source_lists_referring_wiki(self):
         build_site(self.vault, self.out)
