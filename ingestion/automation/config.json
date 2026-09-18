@@ -3,7 +3,7 @@
     "enabled": true,
     "url": "https://www.cde.org.cn/main/xxgk/listpage/07edef25f1e7354bfd8490baa0ce056b",
     "sources": [
-      {"type": 1, "path": "source/CDE/CDE_共性问题-常见一般性技术问题.md", "auto_classified": true, "auto_ingest": true},
+      {"type": 1, "path": "source/CDE/CDE_共性问题-常见一般性技术问题.md", "auto_classified": false},
       {"type": 2, "path": "source/CDE/CDE_共性问题-受理共性问题.md", "auto_classified": false},
       {"type": 4, "path": "source/CDE/CDE_共性问题-化学仿制药共性问题.md", "auto_classified": true, "auto_ingest": true}
     ]
