@@ -20,6 +20,7 @@ APP_TOKEN_URL = "https://api.dingtalk.com/v1.0/oauth2/accessToken"
 SCOPE_URL = "https://api.dingtalk.com/v1.0/microApp/apps/{agent_id}/scopes"
 USER_BY_UNION_URL = "https://oapi.dingtalk.com/topapi/user/getbyunionid?access_token={token}"
 USER_DETAIL_URL = "https://oapi.dingtalk.com/topapi/v2/user/get?access_token={token}"
+WORK_NOTIFICATION_URL = "https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token={token}"
 
 
 class LoginError(RuntimeError): pass
@@ -169,6 +170,31 @@ class DingTalkClient:
         if allowed:
             user["_dek_enterprise_user_id"] = str(user_id)
         return allowed
+    def send_work_notification(self, user_ids: list[str], content: str) -> None:
+        """Push a plain-text work notification to specific enterprise userids.
+
+        Requires the app to have the "工作通知" (work notification) API
+        permission granted in the DingTalk admin console -- a one-time,
+        human-only step this code cannot perform on its own.
+        """
+        ids = [str(value) for value in user_ids if _is_identifier(value)]
+        if not ids:
+            return
+        token = self._app_token()
+        body = json.dumps({
+            "agent_id": int(self.agent_id),
+            "userid_list": ",".join(ids),
+            "msg": {"msgtype": "text", "text": {"content": content}},
+        }).encode()
+        data = self._json(urllib.request.Request(
+            WORK_NOTIFICATION_URL.format(token=urllib.parse.quote(token, safe="")),
+            body, {"Content-Type": "application/json"}, method="POST",
+        ))
+        if data.get("errcode") != 0:
+            error_code = data.get("errcode")
+            if isinstance(error_code, (str, int)) and re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", str(error_code)):
+                raise LoginError(f"work_notification_failed:errcode_{error_code}")
+            raise LoginError("work_notification_failed")
 
 
 @dataclass(frozen=True)

@@ -116,7 +116,13 @@ def _environment(path: Path, kind: str) -> dict[str, bytes]:
 
     required = {
         "web": {"DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET", "DINGTALK_AGENT_ID", "DEK_WEB_REDIRECT_URI", "DEK_WEB_CLAIM_SECRET"},
-        "review": {"DEK_REVIEW_AUDIT_KEY", "DEK_WEB_CLAIM_SECRET", "DEK_REVIEWER_IDS"},
+        "review": {
+            "DEK_REVIEW_AUDIT_KEY", "DEK_WEB_CLAIM_SECRET", "DEK_REVIEWER_IDS",
+            # Used by deploy/notify_entrypoint.py (dek-notify.service, same
+            # identity and secrets file as dek-review) to push work
+            # notifications for new pending reviews and stuck publishes.
+            "DEK_REVIEW_DINGTALK_CLIENT_ID", "DEK_REVIEW_DINGTALK_CLIENT_SECRET", "DEK_REVIEW_DINGTALK_AGENT_ID",
+        },
         # No agent ID: unlike web/app.py's DingTalk OAuth login flow (which
         # needs one for its enterprise-internal AgentId-scoped API calls),
         # Hermes's DingTalk bot adapter authenticates over a different

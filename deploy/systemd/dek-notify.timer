@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodically check for new pending reviews or a stuck publish
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+Unit=dek-notify.service
+
+[Install]
+WantedBy=timers.target

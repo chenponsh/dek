@@ -1,5 +1,6 @@
 import unittest
 import io
+import json
 from email.message import Message
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -38,6 +39,49 @@ class ScopeClient(DingTalkClient):
 
     def _json(self, request):
         return next(self.responses)
+
+
+class WorkNotificationTests(unittest.TestCase):
+    def test_send_work_notification_posts_agent_id_and_recipients(self):
+        captured = []
+
+        class RecordingClient(DingTalkClient):
+            def __init__(self):
+                super().__init__("client-id", "client-secret", agent_id="123")
+            def _json(self, request):
+                captured.append(request)
+                if len(captured) == 1:
+                    return {"accessToken": "app-token"}
+                return {"errcode": 0, "errmsg": "ok"}
+
+        RecordingClient().send_work_notification(["u1", "u2"], "有新内容待审核")
+        send_request = captured[1]
+        body = json.loads(send_request.data.decode())
+        self.assertEqual(body["agent_id"], 123)
+        self.assertEqual(body["userid_list"], "u1,u2")
+        self.assertEqual(body["msg"], {"msgtype": "text", "text": {"content": "有新内容待审核"}})
+        self.assertIn("access_token=app-token", send_request.full_url)
+
+    def test_send_work_notification_is_a_noop_with_no_recipients(self):
+        class ExplodingClient(DingTalkClient):
+            def __init__(self):
+                super().__init__("client-id", "client-secret", agent_id="123")
+            def _json(self, request):
+                raise AssertionError("must not call DingTalk with an empty recipient list")
+
+        ExplodingClient().send_work_notification([], "无人收")
+
+    def test_send_work_notification_raises_on_a_dingtalk_error_code(self):
+        class FailingClient(DingTalkClient):
+            def __init__(self):
+                super().__init__("client-id", "client-secret", agent_id="123")
+                self.calls = 0
+            def _json(self, request):
+                self.calls += 1
+                return {"accessToken": "app-token"} if self.calls == 1 else {"errcode": 40004, "errmsg": "invalid agent"}
+
+        with self.assertRaisesRegex(LoginError, "40004"):
+            FailingClient().send_work_notification(["u1"], "x")
 
 
 class DingTalkScopeTests(unittest.TestCase):

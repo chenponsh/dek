@@ -1,0 +1,33 @@
+[Unit]
+Description=DEK DingTalk reviewer notifier
+
+[Service]
+Type=oneshot
+User=dek-review
+Group=dek-review
+WorkingDirectory=/var/lib/dek-review
+Environment=PYTHONPATH=/opt/dek-review/app
+EnvironmentFile=/var/lib/dek-review/secrets/environment
+LoadCredential=review-decision-key:/var/lib/dek-review/secrets/review-decision-key
+Environment=DEK_REVIEW_DECISION_KEY_FILE=%d/review-decision-key
+ExecStart=/usr/bin/python3 -I /opt/dek-review/app/deploy/notify_entrypoint.py --bundle /var/lib/dek-review/input/repository.bundle --clones /var/lib/dek-review/clones --queue /var/lib/dek-review/decisions/decisions.jsonl --pending-state /var/lib/dek-review/state/notify-pending-seen.json --stuck-state /var/lib/dek-review/state/notify-stuck-seen.json
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+ReadOnlyPaths=/opt/dek-review/app /var/lib/dek-review/secrets /var/lib/dek-review/input /var/lib/dek-review/decisions
+ReadWritePaths=/var/lib/dek-review/state /var/lib/dek-review/clones
+InaccessiblePaths=/srv/projects/dek /var/lib/dek-web /var/lib/dek-publisher /var/lib/dek-activate /var/spool/dek-build /var/lib/dek-qa /root
