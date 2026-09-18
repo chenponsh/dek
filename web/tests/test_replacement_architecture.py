@@ -565,7 +565,12 @@ class Round3SliceTests(unittest.TestCase):
         # PATH="/usr/bin:/bin" doesn't cover either -- every build silently
         # failed those steps regardless of what was actually being released.
         from deploy.release_bundle import _run
-        output = _run(("/bin/sh", "-c", "command -v node && command -v uv")).decode()
+        try:
+            output = _run(("/bin/sh", "-c", "command -v node && command -v uv")).decode()
+        except Exception as exc:
+            import os as _os
+            diag = _run(("/bin/sh", "-c", "echo PATH=$PATH; ls -la /opt/dek-vendor/bin 2>&1; /opt/dek-vendor/bin/uv --version 2>&1; echo uv_rc=$?")).decode() if True else ""
+            raise AssertionError(f"orig={exc!r} cwd={_os.getcwd()!r} diag={diag!r}") from exc
         self.assertIn("node", output)
         self.assertIn("uv", output)
 
