@@ -175,6 +175,8 @@ runuser -u dek-publisher -- test -r /var/lib/dek-activate/outcomes
 ! runuser -u dek-web -- test -r /var/lib/dek-publisher/secrets/approval-signing-key.pem
 ! runuser -u dek-builder -- test -r /var/lib/dek-git-auth/git-credentials
 ! runuser -u dek-source-ingest -- test -r /var/lib/dek-web/secrets/environment
+runuser -u dek-builder -- test -x /var/lib/dek-qa/venv/bin/python
+! runuser -u dek-builder -- test -r /var/lib/dek-qa/secrets
 ```
 
 ## Checkpoint A3 — exact, digest-addressed code and configuration installs

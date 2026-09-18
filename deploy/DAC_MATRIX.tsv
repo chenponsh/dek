@@ -11,6 +11,7 @@ activator-to-web-qa	dek-activator	dek-web,dek-qa	/var/lib/dek-activate/releases	
 outcome-to-publisher	dek-activator	dek-publisher	/var/lib/dek-activate/outcomes	dek-activator:dek-outcome-read	2750	write	read-only
 ingestion-to-review	dek-source-ingest	dek-review	/var/lib/dek-review/input	dek-source-ingest:dek-review-input	2750	atomic-write	read-only
 qa-to-activator-proof	dek-qa	dek-activator	/run/dek-proofs/qa	dek-qa:dek-proof-read	2750	atomic-write	read-only
+qa-venv-to-builder	dek-qa	dek-builder	/var/lib/dek-qa/venv	dek-qa:dek-qa-venv-read	0710 parent, 0750 dirs, 0640-0750 files	install (dek-qa's own runtime venv)	read+execute only; /var/lib/dek-qa/secrets stays 0400 dek-qa:dek-qa, unaffected
 # secret-boundary	owner	consumer	path	owner:group	mode	allowed	all-other-services
 secret-review-environment	root	dek-review	/var/lib/dek-review/secrets/environment	dek-review:dek-review	0400	read-only	deny
 secret-review-decision	root	dek-review	/var/lib/dek-review/secrets/review-decision-key	dek-review:dek-review	0400	read-only	deny
