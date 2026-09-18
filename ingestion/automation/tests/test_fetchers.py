@@ -13,7 +13,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
@@ -26,6 +26,13 @@ class FetchCdeDisablesCrashReporterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             profile_dir = Path(temporary) / "cde-profile"
             captured = {}
+            # _full_chromium() globs Path.home()/.cache/ms-playwright for a real
+            # binary; under a sandboxed build gate (HOME=/var/empty, no cached
+            # Chromium) it raises SafetyStop before launch_persistent_context is
+            # ever called, so without patching it the assertion below silently
+            # never exercised the mock at all -- it only "passed" in a dev shell
+            # that happened to have a real cached Chromium under $HOME.
+            self.enterContext(patch.object(fetchers, "_full_chromium", return_value=Path("/fake/chromium")))
 
             def fake_launch_persistent_context(user_data_dir, **kwargs):
                 captured["args"] = kwargs.get("args", [])
@@ -67,6 +74,7 @@ class FetchCdeLaunchFailureIsASafeSkipTests(unittest.TestCase):
         already handled this way -- it must not propagate as a bare error."""
         with tempfile.TemporaryDirectory() as temporary:
             profile_dir = Path(temporary) / "cde-profile"
+            self.enterContext(patch.object(fetchers, "_full_chromium", return_value=Path("/fake/chromium")))
 
             fake_module = types.ModuleType("playwright.sync_api")
             fake_module.Error = RuntimeError
