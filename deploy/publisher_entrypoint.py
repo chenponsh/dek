@@ -7,6 +7,7 @@ import shutil
 import sys
 import hashlib
 import re
+import traceback
 from pathlib import Path
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
@@ -122,6 +123,11 @@ def process_records(decisions, worker, write_state) -> None:
             if status=="pushed": write_state(decision_id,{"status":"published","decision_id":decision_id})
             elif isinstance(status,dict): write_state(decision_id,status)
         except (Exception, SystemExit) as exc:
+            # error_type alone (no message/traceback) gave no way to diagnose
+            # a real retryable failure from the journal -- this masked the
+            # actual cause (a permission bug) behind an apparently-successful
+            # oneshot unit exit the first time this pipeline ran for real.
+            traceback.print_exc(file=sys.stderr)
             write_state(decision_id,{"status":"failed","decision_id":decision_id,"error_type":type(exc).__name__,"retryable":True})
 
 

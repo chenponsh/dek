@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import threading
 import fcntl
+from contextlib import redirect_stderr
 from pathlib import Path, PurePosixPath
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
@@ -724,6 +725,19 @@ class Round5SliceTests(unittest.TestCase):
         process_records([{"decision_id":"bad"},{"decision_id":"good"}],worker,lambda k,v:states.__setitem__(k,v))
         self.assertEqual(calls,["bad","good"]); self.assertEqual(states["bad"]["error_type"],"SystemExit")
         with self.assertRaises(KeyboardInterrupt): process_records([{"decision_id":"x"}],lambda _: (_ for _ in ()).throw(KeyboardInterrupt()),lambda *_:None)
+
+    def test_process_records_prints_the_real_traceback_on_a_retryable_failure(self):
+        """error_type alone (e.g. "PermissionError", with no message or
+        traceback) gave no way to diagnose a real production failure from
+        the journal -- every decision looked like a generic retryable
+        failure while dek-review-publish.service itself exited 0, masking
+        the actual cause behind an apparently-successful oneshot unit."""
+        def worker(d): raise PermissionError("[Errno 13] Permission denied: '/var/lib/dek-activate/outcomes'")
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            process_records([{"decision_id":"bad"}], worker, lambda k, v: None)
+        self.assertIn("PermissionError", stderr.getvalue())
+        self.assertIn("/var/lib/dek-activate/outcomes", stderr.getvalue())
 
     def test_spent_without_outcome_is_reconstructed_and_mismatch_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
