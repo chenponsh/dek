@@ -21,7 +21,7 @@ from pathlib import Path
 _INSTALL_ROOT = Path(__file__).resolve().parent.parent
 if str(_INSTALL_ROOT) not in sys.path:
     sys.path.insert(0, str(_INSTALL_ROOT))
-from deploy.release_bundle import validate_systemd_credential
+from deploy.release_bundle import validate_systemd_credential, PROXY_ENV_KEYS
 from deploy.fsutil import atomic_write_bytes, atomic_write_json, read_bounded_regular
 if not Path(sys.modules[validate_systemd_credential.__module__].__file__).resolve(strict=True).is_relative_to(_INSTALL_ROOT):
     raise SystemExit("security-critical import escaped installed root")
@@ -184,6 +184,12 @@ def main(argv=None):
     auth="Authorization: Basic "+base64.b64encode(f"{parsed.username}:{parsed.password}".encode()).decode()
     git=("/usr/bin/git","--no-pager","-c","core.hooksPath=/dev/null","-c","credential.helper=","-c","credential.interactive=never","-c","core.fsmonitor=false","-c","core.sshCommand=","-c","diff.external=","-c","protocol.allow=never","-c","protocol.https.allow=always")
     environment={"HOME":"/var/empty/dek-source-ingest","PATH":"/usr/bin:/bin","LANG":"C.UTF-8","LC_ALL":"C.UTF-8","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_SYSTEM":"/dev/null","GIT_CONFIG_GLOBAL":"/dev/null","GIT_ATTR_NOSYSTEM":"1","GIT_TERMINAL_PROMPT":"0","GIT_ASKPASS":"/bin/false","SSH_ASKPASS":"/bin/false"}
+    # subprocess.run(env=...) replaces the whole environment rather than
+    # inheriting it, so without this the clone below silently drops the
+    # systemd unit's HTTP(S)_PROXY -- this server cannot reach github.com
+    # directly, and the clone hung for ~90s before a TLS reset the first
+    # time this ran against the real network.
+    environment.update({key: os.environ[key] for key in PROXY_ENV_KEYS if key in os.environ})
     environment.update({"GIT_CONFIG_COUNT":"2","GIT_CONFIG_KEY_0":"credential.helper","GIT_CONFIG_VALUE_0":"","GIT_CONFIG_KEY_1":f"http.{fixed}.extraHeader","GIT_CONFIG_VALUE_1":auth})
     def run(*command):
         result=subprocess.run(command,cwd=repo if repo.exists() else clone_root,env=environment,stdin=subprocess.DEVNULL,check=False)
