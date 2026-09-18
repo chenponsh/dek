@@ -7,6 +7,7 @@ import shutil
 import sys
 import hashlib
 import stat
+import traceback
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve(strict=True).parents[1]))
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
@@ -97,6 +98,7 @@ def process_packages(builder, approved: Path, builds: Path, failures: Path) -> N
             if not target.exists():
                 build_atomically(builder, package, target)
         except (Exception, SystemExit) as exc:
+            traceback.print_exc(file=sys.stderr)
             _record_failure(failures, package, exc)
 
 

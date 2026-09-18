@@ -737,6 +737,31 @@ class Round5SliceTests(unittest.TestCase):
         self.assertEqual(calls,["bad","good"]); self.assertEqual(states["bad"]["error_type"],"SystemExit")
         with self.assertRaises(KeyboardInterrupt): process_records([{"decision_id":"x"}],lambda _: (_ for _ in ()).throw(KeyboardInterrupt()),lambda *_:None)
 
+    def test_process_packages_prints_the_real_traceback_on_a_retryable_failure(self):
+        """Same masking problem as process_records: builder_entrypoint.py's
+        quarantine record was {"error_type": "BundleError"/"PermissionError",
+        ...} with no message or traceback, and dek-builder.service itself
+        exits 0 either way -- every real cause (a failing test, a permission
+        bug) looked identical from the journal."""
+        from deploy.builder_entrypoint import process_packages
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            approved = root / "approved"; approved.mkdir()
+            builds = root / "builds"; builds.mkdir()
+            failures = root / "failures"; failures.mkdir()
+            package = approved / "pkg"; package.mkdir()
+            (package / "approval.json").write_text(json.dumps({"decision_id": "d" * 20, "nonce": "n" * 20}))
+
+            class FailingBuilder:
+                def build(self, package, output):
+                    raise PermissionError("[Errno 13] Permission denied: '/var/spool/dek-build/approved/.builder-failures'")
+
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                process_packages(FailingBuilder(), approved, builds, failures)
+            self.assertIn("PermissionError", stderr.getvalue())
+            self.assertIn(".builder-failures", stderr.getvalue())
+
     def test_process_records_prints_the_real_traceback_on_a_retryable_failure(self):
         """error_type alone (e.g. "PermissionError", with no message or
         traceback) gave no way to diagnose a real production failure from
