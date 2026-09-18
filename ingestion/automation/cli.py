@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -37,13 +38,17 @@ def load_config() -> dict[str, Any]:
 
 
 def base_report(now: datetime, mode: str) -> dict[str, Any]:
-    return {
+    report = {
         "date": now.strftime("%Y-%m-%d"), "mode": mode,
-        "generated_at": now.astimezone().isoformat(timespec="seconds"),
+        "generated_at": now.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
         "baseline": repo_fingerprint(ROOT, CONFIG_PATH),
         "report": {}, "rough_created": [], "planned_writes": [],
         "blocking": False, "alerts": [], "auto_write_paths": [], "rough_sources": {},
     }
+    run_nonce = os.environ.get("DEK_INGEST_RUN_NONCE")
+    if run_nonce:
+        report["run_nonce"] = run_nonce
+    return report
 
 
 def rough_content(source_path: str, rows: list[Any], day: str) -> str:
@@ -283,8 +288,9 @@ def scheduled_report_path(now: datetime) -> Path:
     return ROOT / "_" / "ingestion" / f"scheduled-run-{now:%Y%m%d_%H%M}.json"
 
 
-def execute_scheduled() -> int:
-    reconcile_remote(ROOT)
+def execute_scheduled(*, no_publication: bool = False) -> int:
+    if not no_publication:
+        reconcile_remote(ROOT)
     assert_git_safe(ROOT)
     start_head = git(ROOT, "rev-parse", "HEAD")
     now = datetime.now().astimezone()
@@ -322,6 +328,9 @@ def execute_scheduled() -> int:
             changed = git_status_paths(ROOT)
             if changed != allowed:
                 raise SafetyStop(f"unexpected changed paths during scheduled write: expected={sorted(allowed)} actual={sorted(changed)}")
+            if no_publication:
+                print(f"candidate results written locally; publication disabled; report={diagnostic_path.relative_to(ROOT)}")
+                return 0
             git(ROOT, "fetch", "origin", "--prune")
             if git(ROOT, "rev-parse", "origin/main") != start_head:
                 raise SafetyStop("origin/main changed before scheduled commit")
@@ -428,7 +437,8 @@ def main(argv: list[str] | None = None) -> int:
     dry = sub.add_parser("dry-run")
     dry.add_argument("--commissioning", action="store_true", help="allow only the new implementation files to be uncommitted")
     sub.add_parser("run")
-    sub.add_parser("scheduled-run")
+    scheduled = sub.add_parser("scheduled-run")
+    scheduled.add_argument("--no-publication", action="store_true")
     approval = sub.add_parser("approve")
     approval.add_argument("--report", required=True, type=Path)
     args = parser.parse_args(argv)
@@ -437,7 +447,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "approve":
                 return approve(args.report)
             if args.command == "scheduled-run":
-                return execute_scheduled()
+                return execute_scheduled(no_publication=args.no_publication)
             return execute(real=args.command == "run", commissioning=getattr(args, "commissioning", False))
     except SafetyStop as exc:
         print(f"SAFETY STOP: {exc}", file=sys.stderr)
