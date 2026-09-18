@@ -49,20 +49,28 @@ def _proxy_env() -> dict:
 def _run(arguments, *, cwd: Path | None = None, env=None, timeout=120) -> bytes:
     # FIXED_COMMANDS' web/tests needs `node` (test_search.py runs search.js for
     # real) and qa/tests needs `uv` (test_dependency_lock.py); neither lives
-    # under /usr/bin or /bin on this host. /usr/local/bin/node is a symlink
-    # into /root, which dek-builder.service's sandbox hides (ProtectHome=true
-    # plus an explicit InaccessiblePaths=/root) -- a hole into the operator's
-    # home directory is the wrong fix, so a standalone copy of the node
-    # binary is vendored to /opt/dek-node/bin instead, a location the
-    # sandbox can actually read (see deploy/systemd/dek-builder.service's
-    # ReadOnlyPaths=). uv still resolves via /root/.local/bin for now.
-    # dek-builder.service is PrivateNetwork=true (fully networkless), so
-    # qa/tests' uv-based dependency-lock check can only work against a
+    # under /usr/bin or /bin on this host, and their real locations
+    # (/usr/local/bin/node, /root/.local/bin/uv) are symlinks/paths into
+    # /root, which this sandbox hides (ProtectHome=true plus an explicit
+    # InaccessiblePaths=/root) -- a hole into the operator's home directory
+    # is the wrong fix, so standalone copies of both are vendored to
+    # /opt/dek-vendor/bin instead, a location the sandbox can actually read
+    # (see deploy/systemd/dek-builder.service's ReadOnlyPaths=).
+    #
+    # dek-builder.service is also PrivateNetwork=true (fully networkless),
+    # so qa/tests' uv-based dependency-lock check can only work against a
     # pre-warmed, offline cache -- never a live resolve. UV_CACHE_DIR points
     # at that cache (populated once, with network, as a one-time vendoring
     # step) and UV_OFFLINE forces uv to fail closed rather than hang trying
     # to reach a network this sandbox blocks.
-    safe_env = {"HOME":"/var/empty", "PATH":"/opt/dek-vendor/bin:/usr/bin:/bin", "UV_CACHE_DIR":"/opt/dek-vendor/uv-cache", "UV_OFFLINE":"1", "LANG":"C.UTF-8", "LC_ALL":"C.UTF-8", "GIT_CONFIG_NOSYSTEM":"1", "GIT_CONFIG_SYSTEM":"/dev/null", "GIT_CONFIG_GLOBAL":"/dev/null", "GIT_ATTR_NOSYSTEM":"1", "GIT_TERMINAL_PROMPT":"0", "GIT_ASKPASS":"/bin/false", "SSH_ASKPASS":"/bin/false"}
+    #
+    # HOME is a per-service subdirectory (already provisioned for every DEK
+    # service the same way), not the bare /var/empty: dek-qa's real Hermes
+    # runtime state lives at /var/empty/.hermes (root-only, 0700). qa/tests
+    # imports Hermes code that checks $HOME/.hermes/.env at import time; a
+    # bare HOME=/var/empty collides with that real path and PermissionErrors
+    # on dek-qa's private data instead of cleanly finding nothing there.
+    safe_env = {"HOME":"/var/empty/dek-builder", "PATH":"/opt/dek-vendor/bin:/usr/bin:/bin", "UV_CACHE_DIR":"/opt/dek-vendor/uv-cache", "UV_OFFLINE":"1", "LANG":"C.UTF-8", "LC_ALL":"C.UTF-8", "GIT_CONFIG_NOSYSTEM":"1", "GIT_CONFIG_SYSTEM":"/dev/null", "GIT_CONFIG_GLOBAL":"/dev/null", "GIT_ATTR_NOSYSTEM":"1", "GIT_TERMINAL_PROMPT":"0", "GIT_ASKPASS":"/bin/false", "SSH_ASKPASS":"/bin/false"}
     if env:
         safe_env.update({key:value for key,value in env.items() if key.startswith("GIT_CONFIG_KEY_") or key.startswith("GIT_CONFIG_VALUE_") or key=="GIT_CONFIG_COUNT" or key in PROXY_ENV_KEYS})
     completed = subprocess.run(arguments, cwd=cwd, env=safe_env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False)
