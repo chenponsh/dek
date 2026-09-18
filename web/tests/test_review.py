@@ -299,6 +299,17 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(item.reviewer, "彭文艳")
         self.assertEqual(item.decided_at, "2030-03-17T17:46:40+00:00")
 
+    def test_return_or_reject_ignores_leftover_wiki_path_and_candidate(self):
+        # The three decision buttons (批准/退回/拒绝) share one <form>; a
+        # reviewer who typed a candidate then clicked 退回/拒绝 without
+        # clearing those fields used to get a 400 ("non-approve decision
+        # cannot include a candidate") instead of the decision going through.
+        self.decide(action="return", wiki_path="wiki/01_Test/01-0001.md", candidate_markdown=CANDIDATE)
+        record = json.loads(self.queue.read_text(encoding="utf-8"))
+        self.assertEqual(record["action"], "return")
+        self.assertEqual(record["wiki_path"], "")
+        self.assertEqual(record["candidate_markdown"], "")
+
     def test_decision_time_displays_in_beijing_time_not_stored_utc(self):
         # Stored/audited value stays UTC (decision_mac, queue records); only
         # the reviewer-facing table and history switch to +08:00 for display.
@@ -419,7 +430,9 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_item("opaque-session", identity).decode("utf-8")
         self.assertIn('name="form_nonce"', page)
         self.assertIn("ingestion/rough/", page)
-        self.assertIn("提交决定", page)
+        self.assertIn('<button type="submit" name="action" value="approve">批准发布</button>', page)
+        self.assertIn('<button type="submit" name="action" value="return" class="action-return">退回澄清</button>', page)
+        self.assertIn('<button type="submit" name="action" value="reject" class="action-reject">拒绝</button>', page)
         self.assertIsNone(self.service.render_item("opaque-session", "0" * 16))
         self.assertIsNone(self.service.render_item("opaque-session", "not-an-identity"))
 

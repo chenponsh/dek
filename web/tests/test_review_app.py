@@ -196,7 +196,7 @@ class ReviewAppTests(unittest.TestCase):
         # direct app tests exercise the corresponding internal route.
         status, _, detail = self.call("/item/" + identity, cookie=session)
         self.assertEqual(status, "200 OK")
-        self.assertIn("提交决定", detail.decode("utf-8"))
+        self.assertIn('<button type="submit" name="action" value="approve">批准发布</button>', detail.decode("utf-8"))
 
         status, headers, _ = self.call("/item/" + identity)
         self.assertEqual(status, "302 Found")
