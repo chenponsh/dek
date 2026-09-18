@@ -113,11 +113,20 @@ class ActiveIndex:
         if not self.refresh(): raise ValueError("no valid active index")
 
     def _candidate(self) -> tuple[KnowledgeBase, dict]:
+        # Matches activator.py's own _read_active() bound: a real active.json
+        # lists one SHA-256 digest per static site artifact and can
+        # legitimately run into the hundreds of kilobytes for a real release.
+        maximum = 8 * 1024 * 1024
         descriptor = os.open(self.active_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         try:
             details = os.fstat(descriptor)
-            if not stat.S_ISREG(details.st_mode) or details.st_size > 65536: raise ValueError("invalid active metadata")
-            active = json.loads(os.read(descriptor, 65537))
+            if not stat.S_ISREG(details.st_mode) or details.st_size > maximum: raise ValueError("invalid active metadata")
+            raw = bytearray()
+            while len(raw) < details.st_size:
+                chunk = os.read(descriptor, details.st_size - len(raw))
+                if not chunk: break
+                raw.extend(chunk)
+            active = json.loads(raw)
         finally: os.close(descriptor)
         name = active.get("generation")
         if not isinstance(name, str) or re.fullmatch(r"[A-Za-z0-9_-]{2,160}", name) is None: raise ValueError("invalid generation")

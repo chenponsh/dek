@@ -16,7 +16,7 @@ from pathlib import Path
 
 from qa.dek_qa.access import INSUFFICIENT_EVIDENCE, Message, ReadOnlyQa
 from qa.dek_qa.index import KnowledgeBase, build_index
-from qa.dek_qa.mcp_server import TOOLS, _reply, load_knowledge_base
+from qa.dek_qa.mcp_server import TOOLS, ActiveIndex, _reply, load_knowledge_base
 from qa.dek_qa.stream_id_collector import (
     CandidateCollector,
     CollectorLimits,
@@ -663,6 +663,46 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("调用失败或结果不可解析属于查询失败，不得表述为 0", prompt)
         self.assertIn("即使用户明确要求内部追溯信息，也不显示内部路径", prompt)
         self.assertIn("最多调用一轮知识库搜索工具", prompt)
+
+
+class ActiveIndexTests(unittest.TestCase):
+    """A real production active.json lists one SHA-256 digest per static
+    site artifact and can legitimately run into the hundreds of kilobytes
+    (activator.py's own _validate_metadata accepts up to 8 MiB). This never
+    surfaced before the auto-publish pipeline's first successful end-to-end
+    run this session -- every earlier test used a tiny fixture."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.releases = self.root / "releases"; self.releases.mkdir()
+        self.active_path = self.root / "active.json"
+
+    def tearDown(self): self.temp.cleanup()
+
+    def _install(self, generation: str, *, padding_bytes: int) -> None:
+        release = self.releases / generation
+        (release).mkdir()
+        (release / "dek-kb.json").write_text('{"version":4,"documents":[]}', encoding="utf-8")
+        digest = hashlib.sha256((release / "dek-kb.json").read_bytes()).hexdigest()
+        descriptor = {
+            "schema_version": 2, "sequence": 1, "nonce": "nonce-" + generation, "generation": generation,
+            "previous_generation": None, "commit": "1" * 40, "tree": "2" * 40, "bundle_sha256": "3" * 64,
+            "artifacts": {"dek-kb.json": digest, "padding": "x" * padding_bytes},
+        }
+        (release / "release.json").write_text(json.dumps(descriptor), encoding="utf-8")
+        self.active_path.write_text(json.dumps(descriptor), encoding="utf-8")
+
+    def test_active_index_loads_a_descriptor_larger_than_64kib(self):
+        self._install("gen-large", padding_bytes=200_000)
+        self.assertGreater(self.active_path.stat().st_size, 65536)
+        index = ActiveIndex(self.active_path, self.releases)
+        self.assertEqual(index.generation["generation"], "gen-large")
+
+    def test_active_index_still_loads_a_small_descriptor(self):
+        self._install("gen-small", padding_bytes=0)
+        index = ActiveIndex(self.active_path, self.releases)
+        self.assertEqual(index.generation["generation"], "gen-small")
 
 
 class StreamCollectorTests(unittest.TestCase):
