@@ -17,6 +17,11 @@ INDEX_VERSION = 4
 BUILDER_VERSION = "4"
 WIKILINK_RE = re.compile(r"!?\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
 SEGMENT_RE = re.compile(r"[a-z0-9]+|[\u3400-\u9fff]+", re.IGNORECASE)
+TITLE_TOKEN_WEIGHT = 6
+CATEGORY_TOKEN_WEIGHT = 3
+CONTENT_TOKEN_WEIGHT = 1
+TITLE_PHRASE_BONUS = 10
+CATEGORY_PHRASE_BONUS = 5
 
 
 def _frontmatter(text: str) -> tuple[dict[str, str], str]:
@@ -102,6 +107,24 @@ def _tokens(text: str) -> Counter[str]:
         else:
             result.append(segment)
     return Counter(result)
+
+
+def _contains_complete_phrase(text: str, phrase: str) -> bool:
+    normalized_phrase = unicodedata.normalize("NFKC", phrase).lower()
+    phrase_segments = SEGMENT_RE.findall(normalized_phrase)
+    if len(phrase_segments) != 1 or phrase_segments[0] != normalized_phrase:
+        return False
+    normalized_text = unicodedata.normalize("NFKC", text).lower()
+    return any(normalized_phrase in segment for segment in SEGMENT_RE.findall(normalized_text))
+
+
+def _token_coverage(wanted: Counter[str], observed: Counter[str]) -> int:
+    return sum(1 for token in wanted if observed[token])
+
+
+def _is_tag_page(path: str) -> bool:
+    note_path = Path(path)
+    return note_path.stem == note_path.parent.name
 
 
 def _source_catalog(source_root: Path) -> dict[str, dict[str, str]]:
@@ -240,7 +263,15 @@ def build_index(vault: Path, output: Path) -> dict[str, Any]:
 
 class KnowledgeBase:
     def __init__(self, index_path: Path):
-        data = json.loads(index_path.read_text(encoding="utf-8"))
+        self._load(json.loads(index_path.read_text(encoding="utf-8")))
+
+    @classmethod
+    def from_bytes(cls, raw: bytes) -> "KnowledgeBase":
+        instance = cls.__new__(cls)
+        instance._load(json.loads(raw.decode("utf-8")))
+        return instance
+
+    def _load(self, data: dict) -> None:
         version = data.get("version")
         if version not in {2, 3, INDEX_VERSION}:
             raise ValueError("unsupported index version")
@@ -261,10 +292,29 @@ class KnowledgeBase:
             return []
         scored = []
         for doc in self._documents.values():
-            haystack = _tokens(f'{doc["title"]}\n{doc["content"]}')
-            if not any(haystack[token] for token in required):
+            if _is_tag_page(doc["path"]):
                 continue
-            score = sum(min(count, haystack[token]) for token, count in wanted.items())
+            title_tokens = _tokens(doc["title"])
+            category_text = "\n".join(Path(doc["path"]).parent.parts)
+            category_tokens = _tokens(category_text)
+            content_tokens = _tokens(doc["content"])
+            if not any(
+                title_tokens[token] or category_tokens[token] or content_tokens[token]
+                for token in required
+            ):
+                continue
+            score = (
+                TITLE_TOKEN_WEIGHT * _token_coverage(wanted, title_tokens)
+                + CATEGORY_TOKEN_WEIGHT * _token_coverage(wanted, category_tokens)
+                + CONTENT_TOKEN_WEIGHT * _token_coverage(wanted, content_tokens)
+            )
+            if _contains_complete_phrase(doc["title"], query):
+                score += TITLE_PHRASE_BONUS
+            if any(
+                _contains_complete_phrase(part, query)
+                for part in Path(doc["path"]).parent.parts
+            ):
+                score += CATEGORY_PHRASE_BONUS
             if score:
                 scored.append((score, doc["path"], doc))
         scored.sort(key=lambda item: (-item[0], item[1]))
@@ -316,6 +366,10 @@ class KnowledgeBase:
                 "path": doc["path"],
                 "publication_date": doc.get("publication_date"),
                 "updated_at": doc.get("updated_at"),
+                "source_urls": list(doc.get("source_urls") or []),
+                "source_names": list(doc.get("source_names") or []),
+                "source_types": list(doc.get("source_types") or []),
+                "source_status": doc.get("source_status", "unknown"),
             }
 
         return {

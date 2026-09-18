@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
+import secrets
+import stat
 import sys
+import tempfile
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -32,18 +39,126 @@ TOOLS = [
     },
     {
         "name": "dek_kb_recent",
-        "description": "List recent formal wiki changes and recent source publication dates from audited index metadata.",
+        "description": (
+            "List recent reviewed information: recent_publications is based on source "
+            "publication dates, while knowledge_base_updates is based on formal wiki Git "
+            "last-commit timestamps."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "days": {"type": "integer", "minimum": 1, "maximum": 365},
-                "as_of": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 50},
             },
             "additionalProperties": False,
         },
     },
 ]
+
+
+def _read_opened_index(index_path: Path, maximum: int = 128 * 1024 * 1024) -> tuple[Path, bytes]:
+    descriptor = os.open(index_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        details = os.fstat(descriptor)
+        if not stat.S_ISREG(details.st_mode) or details.st_size > maximum:
+            raise ValueError("index is not a bounded regular file")
+        resolved = Path(f"/proc/self/fd/{descriptor}").resolve(strict=True)
+        raw = bytearray()
+        while len(raw) <= maximum:
+            chunk = os.read(descriptor, min(65536, maximum + 1 - len(raw)))
+            if not chunk: return resolved, bytes(raw)
+            raw.extend(chunk)
+        raise ValueError("index is too large")
+    finally: os.close(descriptor)
+
+
+def load_knowledge_base(index_path: Path, proof_path: Path | None = None, *, boot_nonce: str = "", release_sha256: str = "", pid: int | None = None) -> tuple[KnowledgeBase, bytes]:
+    resolved, raw = _read_opened_index(index_path)
+    kb = KnowledgeBase.from_bytes(raw)
+    if proof_path is None: return kb, raw
+    digest = hashlib.sha256(raw).hexdigest()
+    proof_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=proof_path.parent, delete=False) as handle:
+            temporary = Path(handle.name)
+            json.dump({"index_path": str(resolved), "release": str(resolved.parent), "index_sha256": digest,
+                       "release_sha256": release_sha256, "boot_nonce": boot_nonce, "pid": pid or os.getpid()}, handle, sort_keys=True, separators=(",", ":"))
+            handle.write("\n"); handle.flush(); os.fsync(handle.fileno())
+        os.chmod(temporary, 0o640)
+        os.replace(temporary, proof_path); temporary = None
+        descriptor = os.open(proof_path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try: os.fsync(descriptor)
+        finally: os.close(descriptor)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return kb, raw
+
+
+def write_generation_proof(index_path: Path, proof_path: Path) -> None:
+    """Compatibility wrapper; production uses the live load path below."""
+    load_knowledge_base(index_path, proof_path, boot_nonce=secrets.token_urlsafe(24))
+
+
+class ActiveIndex:
+    """Pollable index holder; a failed candidate never displaces last-known-good."""
+    def __init__(self, active_path: Path, releases_root: Path, proof_path: Path | None = None):
+        self.active_path = Path(active_path)
+        self.releases_root = Path(releases_root).resolve(strict=True)
+        self.proof_path = Path(proof_path) if proof_path else None
+        self._lock = threading.Lock()
+        self._kb: KnowledgeBase | None = None
+        self._generation: dict | None = None
+        if not self.refresh(): raise ValueError("no valid active index")
+
+    def _candidate(self) -> tuple[KnowledgeBase, dict]:
+        descriptor = os.open(self.active_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            details = os.fstat(descriptor)
+            if not stat.S_ISREG(details.st_mode) or details.st_size > 65536: raise ValueError("invalid active metadata")
+            active = json.loads(os.read(descriptor, 65537))
+        finally: os.close(descriptor)
+        name = active.get("generation")
+        if not isinstance(name, str) or re.fullmatch(r"[A-Za-z0-9_-]{2,160}", name) is None: raise ValueError("invalid generation")
+        release = (self.releases_root/name).resolve(strict=True)
+        if release.parent != self.releases_root or release.is_symlink(): raise ValueError("generation escapes release root")
+        if json.loads((release/"release.json").read_text(encoding="utf-8")) != active: raise ValueError("release metadata mismatch")
+        index = release/"dek-kb.json"; kb, raw = load_knowledge_base(index)
+        if hashlib.sha256(raw).hexdigest() != active.get("artifacts",{}).get("dek-kb.json"): raise ValueError("index digest mismatch")
+        return kb, active
+
+    def refresh(self) -> bool:
+        try: candidate, generation = self._candidate()
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError, UnicodeDecodeError): return False
+        with self._lock:
+            self._kb, self._generation = candidate, generation
+            if self.proof_path:
+                proof = dict(generation); proof["pid"] = os.getpid()
+                self.proof_path.parent.mkdir(parents=True, exist_ok=True)
+                temporary=None
+                try:
+                    with tempfile.NamedTemporaryFile("w",encoding="utf-8",dir=self.proof_path.parent,delete=False) as handle:
+                        temporary=Path(handle.name); json.dump(proof,handle,sort_keys=True,separators=(",",":")); handle.write("\n"); handle.flush(); os.fsync(handle.fileno())
+                    os.chmod(temporary,0o640); os.replace(temporary,self.proof_path); temporary=None
+                    descriptor=os.open(self.proof_path.parent,os.O_RDONLY|getattr(os,"O_DIRECTORY",0))
+                    try: os.fsync(descriptor)
+                    finally: os.close(descriptor)
+                finally:
+                    if temporary is not None: temporary.unlink(missing_ok=True)
+        return True
+
+    def current(self) -> KnowledgeBase:
+        with self._lock:
+            if self._kb is None: raise ValueError("no active index")
+            return self._kb
+
+    @property
+    def generation(self) -> dict:
+        with self._lock: return dict(self._generation or {})
+
+    def watch(self, stop: threading.Event, interval: float = 1.0) -> None:
+        while not stop.wait(interval): self.refresh()
 
 
 def _error(request_id: object, code: int, message: str) -> dict[str, Any]:
@@ -88,24 +203,14 @@ def _validated_tool_call(params: object) -> tuple[str, dict[str, Any]]:
         if not isinstance(document_id, str) or re.fullmatch(r"[0-9a-f]{24}", document_id) is None:
             raise ValueError("invalid document id")
     elif name == "dek_kb_recent":
-        if not set(arguments).issubset({"days", "as_of", "limit"}):
+        if not set(arguments).issubset({"days", "limit"}):
             raise ValueError("invalid recent arguments")
         days = arguments.get("days", 7)
         limit = arguments.get("limit", 20)
-        as_of = arguments.get("as_of")
         if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 365:
             raise ValueError("invalid recent days")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
             raise ValueError("invalid recent limit")
-        if as_of is not None:
-            if not isinstance(as_of, str) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", as_of) is None:
-                raise ValueError("invalid recent date")
-            try:
-                from datetime import date
-
-                date.fromisoformat(as_of)
-            except ValueError as error:
-                raise ValueError("invalid recent date") from error
     else:
         raise ValueError("unknown tool")
     return name, arguments
@@ -164,7 +269,7 @@ def _reply(request: object, kb: KnowledgeBase) -> dict[str, Any] | None:
             value = kb.dek_kb_get(arguments.get("document_id", ""))
         elif name == "dek_kb_recent":
             value = kb.dek_kb_recent(
-                arguments.get("days", 7), arguments.get("as_of"), arguments.get("limit", 20)
+                days=arguments.get("days", 7), limit=arguments.get("limit", 20)
             )
         result = {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}], "isError": False}
     else:
@@ -174,18 +279,37 @@ def _reply(request: object, kb: KnowledgeBase) -> dict[str, Any] | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--index", type=Path, required=True)
+    parser.add_argument("--index", type=Path)
+    parser.add_argument("--active", type=Path)
+    parser.add_argument("--releases", type=Path)
+    parser.add_argument("--generation-proof", type=Path)
+    parser.add_argument("--boot-generation", type=Path)
     args = parser.parse_args()
-    kb = KnowledgeBase(args.index)
-    for line in sys.stdin:
-        try:
-            response = _reply(json.loads(line), kb)
-        except json.JSONDecodeError:
-            response = _error(None, -32700, "parse error")
-        except (ValueError, TypeError):
-            response = _error(None, -32600, "invalid request")
-        if response is not None:
-            print(json.dumps(response, ensure_ascii=False), flush=True)
+    live = ActiveIndex(args.active,args.releases,args.generation_proof) if args.active and args.releases else None
+    boot_nonce = ""
+    if live is None and args.boot_generation:
+        generation = json.loads(args.boot_generation.read_text(encoding="utf-8"))
+        boot_nonce = generation.get("boot_nonce", "")
+    if live is None:
+        if args.index is None: raise SystemExit("--active/--releases or --index is required")
+        kb, _loaded = load_knowledge_base(args.index, args.generation_proof, boot_nonce=boot_nonce, release_sha256=generation.get("release_sha256", "") if args.boot_generation else "")
+    stop=threading.Event(); watcher=None
+    if live is not None:
+        watcher=threading.Thread(target=live.watch,args=(stop,),name="dek-index-watch",daemon=True); watcher.start()
+    try:
+        for line in sys.stdin:
+            try:
+                if live is not None: live.refresh()
+                response = _reply(json.loads(line), live.current() if live is not None else kb)
+            except json.JSONDecodeError:
+                response = _error(None, -32700, "parse error")
+            except (ValueError, TypeError):
+                response = _error(None, -32600, "invalid request")
+            if response is not None:
+                print(json.dumps(response, ensure_ascii=False), flush=True)
+    finally:
+        stop.set()
+        if watcher is not None: watcher.join(timeout=2)
     return 0
 
 

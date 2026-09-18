@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import io
 import importlib.util
 import json
@@ -15,7 +16,7 @@ from pathlib import Path
 
 from qa.dek_qa.access import INSUFFICIENT_EVIDENCE, Message, ReadOnlyQa
 from qa.dek_qa.index import KnowledgeBase, build_index
-from qa.dek_qa.mcp_server import TOOLS, _reply
+from qa.dek_qa.mcp_server import TOOLS, _reply, load_knowledge_base
 from qa.dek_qa.stream_id_collector import (
     CandidateCollector,
     CollectorLimits,
@@ -63,6 +64,20 @@ class DekQaTests(unittest.TestCase):
         self.assertNotIn("official_urls", doc)
         self.assertNotIn("来源全文", json.dumps(data, ensure_ascii=False))
         self.assertNotIn("excluded.example", json.dumps(data))
+
+    def test_live_mcp_load_emits_proof_for_exact_loaded_bytes(self):
+        proof_path = self.root / "run" / "generation.json"
+        kb, loaded = load_knowledge_base(self.index, proof_path, boot_nonce="boot-1", release_sha256="f" * 64, pid=4321)
+        self.index.write_text('{"version":4,"documents":[]}', encoding="utf-8")
+        proof = json.loads(proof_path.read_text(encoding="utf-8"))
+        self.assertEqual(proof["index_sha256"], hashlib.sha256(loaded).hexdigest())
+        self.assertEqual(Path(proof["index_path"]), self.index.resolve())
+        self.assertEqual(proof["release"], str(self.index.resolve().parent))
+        self.assertEqual(proof["boot_nonce"], "boot-1")
+        self.assertEqual(proof["release_sha256"], "f" * 64)
+        self.assertEqual(proof["pid"], 4321)
+        self.assertTrue(kb.dek_kb_search("药品注册"))
+        self.assertEqual(proof_path.stat().st_mode & 0o777, 0o640)
 
     def test_wiki_wikilink_with_source_stem_is_not_a_source_mapping(self):
         note = self.root / "wiki" / "01_注册" / "0101-0001.md"
@@ -201,7 +216,12 @@ class DekQaTests(unittest.TestCase):
         recent = self.kb.dek_kb_recent(days=7, as_of="2026-09-09")
         self.assertEqual(recent["knowledge_base_update_count"], 0)
         self.assertEqual(recent["publication_count"], 1)
-        self.assertEqual(recent["recent_publications"][0]["path"], "wiki/01_注册/0101-0001.md")
+        item = recent["recent_publications"][0]
+        self.assertEqual(item["path"], "wiki/01_注册/0101-0001.md")
+        self.assertEqual(item["source_urls"], ["https://official.example/notice"])
+        self.assertEqual(item["source_names"], ["测试材料"])
+        self.assertEqual(item["source_types"], ["第三方整理"])
+        self.assertEqual(item["source_status"], "verified")
 
     def test_recent_uses_last_git_commit_date_for_formal_wiki_updates(self):
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
@@ -222,7 +242,12 @@ class DekQaTests(unittest.TestCase):
         build_index(self.root, self.index)
         recent = KnowledgeBase(self.index).dek_kb_recent(days=7, as_of="2026-09-09")
         self.assertEqual(recent["knowledge_base_update_count"], 1)
-        self.assertTrue(recent["knowledge_base_updates"][0]["updated_at"].startswith("2026-09-07"))
+        item = recent["knowledge_base_updates"][0]
+        self.assertTrue(item["updated_at"].startswith("2026-09-07"))
+        self.assertEqual(item["source_urls"], ["https://official.example/notice"])
+        self.assertEqual(item["source_names"], ["测试材料"])
+        self.assertEqual(item["source_types"], ["第三方整理"])
+        self.assertEqual(item["source_status"], "verified")
 
     def test_search_requires_meaningful_token_without_crossing_boundaries(self):
         note = self.root / "wiki" / "01_注册" / "0101-0002.md"
@@ -232,6 +257,116 @@ class DekQaTests(unittest.TestCase):
 
         self.assertEqual(kb.dek_kb_search("甲乙"), [])
         self.assertEqual(kb.dek_kb_search("药"), [])
+
+    def test_search_prefers_complete_query_phrase_in_title_over_body_only_match(self):
+        generic = self.root / "wiki" / "01_注册" / "0101-0002.md"
+        generic.write_text(
+            "---\nquestion: 常规注册检验如何办理？\n---\n\n本文泛化讨论辅料变更。",
+            encoding="utf-8",
+        )
+        direct = self.root / "wiki" / "01_注册" / "0101-0003.md"
+        direct.write_text(
+            "---\nquestion: 辅料变更如何申报？\n---\n\n请按变更要求准备资料。",
+            encoding="utf-8",
+        )
+        build_index(self.root, self.index)
+
+        hits = KnowledgeBase(self.index).dek_kb_search("辅料变更")
+
+        self.assertEqual(hits[0]["title"], "辅料变更如何申报？")
+
+    def test_search_weights_title_and_parent_categories_above_saturated_body(self):
+        category = self.root / "wiki" / "16_上市后变更" / "1609_辅料变更"
+        category.mkdir(parents=True)
+        (category / "1609-0001.md").write_text(
+            "---\nquestion: 如何准备申报材料？\n---\n\n按要求准备。",
+            encoding="utf-8",
+        )
+        title_match = self.root / "wiki" / "01_注册" / "0101-0002.md"
+        title_match.write_text(
+            "---\nquestion: 辅料变更申报\n---\n\n按要求准备。",
+            encoding="utf-8",
+        )
+        body_once = self.root / "wiki" / "01_注册" / "0101-0003.md"
+        body_once.write_text(
+            "---\nquestion: 通用变更问题甲\n---\n\n辅料变更。",
+            encoding="utf-8",
+        )
+        body_repeated = self.root / "wiki" / "01_注册" / "0101-0004.md"
+        body_repeated.write_text(
+            "---\nquestion: 通用变更问题乙\n---\n\n" + "辅料变更。" * 50,
+            encoding="utf-8",
+        )
+        build_index(self.root, self.index)
+
+        hits = KnowledgeBase(self.index).dek_kb_search("辅料变更", limit=10)
+        positions = {hit["title"]: position for position, hit in enumerate(hits)}
+        scores = {hit["title"]: hit["score"] for hit in hits}
+
+        self.assertLess(positions["辅料变更申报"], positions["通用变更问题甲"])
+        self.assertLess(positions["如何准备申报材料？"], positions["通用变更问题甲"])
+        self.assertEqual(scores["通用变更问题甲"], scores["通用变更问题乙"])
+
+    def test_search_excludes_tag_page_candidates_but_keeps_them_indexed(self):
+        category = self.root / "wiki" / "16_上市后变更" / "1609_辅料变更"
+        category.mkdir(parents=True)
+        tag_page = category / "1609_辅料变更.md"
+        tag_page.write_text(
+            "---\naliases:\n  - '#16_上市后变更/1609_辅料变更'\n---\n\n```dataview\nTABLE file.link\n```",
+            encoding="utf-8",
+        )
+        answer = category / "1609-0001.md"
+        answer.write_text(
+            "---\nquestion: 辅料变更应如何申报？\n---\n\n按指导原则准备申报资料。",
+            encoding="utf-8",
+        )
+
+        payload = build_index(self.root, self.index)
+        hits = KnowledgeBase(self.index).dek_kb_search("辅料变更", limit=10)
+
+        indexed_paths = {doc["path"] for doc in payload["documents"]}
+        self.assertIn("wiki/16_上市后变更/1609_辅料变更/1609_辅料变更.md", indexed_paths)
+        self.assertNotIn(tag_page.relative_to(self.root).as_posix(), {hit["path"] for hit in hits})
+        self.assertIn(answer.relative_to(self.root).as_posix(), {hit["path"] for hit in hits})
+
+    def test_complete_phrase_bonus_does_not_cross_punctuation_segments(self):
+        punctuated = self.root / "wiki" / "01_注册" / "0101-0002.md"
+        punctuated.write_text(
+            "---\nquestion: 辅料，变更（料变）\n---\n\n按要求准备。",
+            encoding="utf-8",
+        )
+        contiguous = self.root / "wiki" / "01_注册" / "0101-0003.md"
+        contiguous.write_text(
+            "---\nquestion: 辅料变更\n---\n\n按要求准备。",
+            encoding="utf-8",
+        )
+        build_index(self.root, self.index)
+
+        hits = KnowledgeBase(self.index).dek_kb_search("辅料变更", limit=10)
+        positions = {hit["title"]: position for position, hit in enumerate(hits)}
+
+        self.assertLess(positions["辅料变更"], positions["辅料，变更（料变）"])
+
+    def test_search_keeps_typo_and_omission_recall_for_answerable_category_notes(self):
+        category = self.root / "wiki" / "16_上市后变更" / "1609_辅料变更"
+        category.mkdir(parents=True)
+        answer = category / "1609-0001.md"
+        answer.write_text(
+            "---\nquestion: 申报资料应如何准备？\n---\n\n按指导原则准备。",
+            encoding="utf-8",
+        )
+        generic = self.root / "wiki" / "01_注册" / "0101-0002.md"
+        generic.write_text(
+            "---\nquestion: 常见问题示例\n---\n\n辅科变更；辅料变。",
+            encoding="utf-8",
+        )
+        build_index(self.root, self.index)
+        kb = KnowledgeBase(self.index)
+
+        for query in ("辅科变更", "辅料变"):
+            with self.subTest(query=query):
+                hits = kb.dek_kb_search(query, limit=10)
+                self.assertEqual(hits[0]["path"], answer.relative_to(self.root).as_posix())
 
     def test_insufficient_evidence_does_not_guess(self):
         qa = ReadOnlyQa(self.kb, {"u1"}, {"c1"})
@@ -265,6 +400,9 @@ class DekQaTests(unittest.TestCase):
         )
         response = _reply({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.kb)
         self.assertEqual(len(response["result"]["tools"]), 3)
+        recent = next(tool for tool in TOOLS if tool["name"] == "dek_kb_recent")
+        self.assertEqual(set(recent["inputSchema"]["properties"]), {"days", "limit"})
+        self.assertFalse(recent["inputSchema"]["additionalProperties"])
 
     def test_mcp_client_sdk_is_installed_for_runtime_discovery(self):
         self.assertIsNotNone(
@@ -370,32 +508,61 @@ class DekQaTests(unittest.TestCase):
                 self.assertTrue(response["result"]["isError"])
                 self.assertNotIn("error", response)
 
-    def test_mcp_recent_validates_dates_and_returns_audited_counts(self):
-        valid = _reply(
+    def test_mcp_recent_is_exposed_and_called_with_defaults(self):
+        class RecordingKnowledgeBase:
+            def __init__(self):
+                self.calls = []
+
+            def dek_kb_recent(self, **kwargs):
+                self.calls.append(kwargs)
+                return {
+                    "publication_count": 0,
+                    "knowledge_base_update_count": 0,
+                    "recent_publications": [],
+                    "knowledge_base_updates": [],
+                }
+
+        kb = RecordingKnowledgeBase()
+        response = _reply(
             {
                 "jsonrpc": "2.0",
                 "id": 9,
                 "method": "tools/call",
-                "params": {
-                    "name": "dek_kb_recent",
-                    "arguments": {"days": 7, "as_of": "2026-09-09"},
-                },
+                "params": {"name": "dek_kb_recent", "arguments": {}},
             },
-            self.kb,
+            kb,
         )
-        result = json.loads(valid["result"]["content"][0]["text"])
-        self.assertEqual(result["publication_count"], 1)
-        for arguments in ({"days": 0}, {"days": 7, "as_of": "2026-02-30"}, {"extra": True}):
-            invalid = _reply(
-                {
-                    "jsonrpc": "2.0",
-                    "id": 10,
-                    "method": "tools/call",
-                    "params": {"name": "dek_kb_recent", "arguments": arguments},
-                },
-                self.kb,
-            )
-            self.assertTrue(invalid["result"]["isError"])
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(kb.calls, [{"days": 7, "limit": 20}])
+        result = json.loads(response["result"]["content"][0]["text"])
+        self.assertEqual(result["publication_count"], 0)
+
+    def test_mcp_recent_validates_parameters(self):
+        invalid_arguments = [
+            {"days": True},
+            {"days": 0},
+            {"days": 366},
+            {"days": 7.0},
+            {"limit": False},
+            {"limit": 0},
+            {"limit": 51},
+            {"limit": "20"},
+            {"as_of": "2026-09-09"},
+            {"extra": True},
+        ]
+        for arguments in invalid_arguments:
+            with self.subTest(arguments=arguments):
+                response = _reply(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 10,
+                        "method": "tools/call",
+                        "params": {"name": "dek_kb_recent", "arguments": arguments},
+                    },
+                    self.kb,
+                )
+                self.assertTrue(response["result"]["isError"])
+                self.assertNotIn("error", response)
 
     def test_mcp_stdio_survives_invalid_input(self):
         requests = [
@@ -439,12 +606,20 @@ class DekQaTests(unittest.TestCase):
     def test_systemd_unit_limits_writes_to_profile_state(self):
         unit = (Path(__file__).parents[2] / "deploy" / "systemd" / "dek-qa.service").read_text(encoding="utf-8")
         self.assertIn("ReadWritePaths=/var/lib/dek-qa/hermes", unit)
-        self.assertIn("ReadOnlyPaths=/var/lib/dek-qa/index /var/lib/dek-qa/secrets", unit)
+        self.assertIn("ReadOnlyPaths=/var/lib/dek-activate/control/active.json /var/lib/dek-activate/releases /var/lib/dek-qa/secrets", unit)
         self.assertIn("Environment=HERMES_DISABLE_LAZY_INSTALLS=1", unit)
         self.assertNotIn("ReadWritePaths=/var/lib/dek-qa\n", unit)
 
+    def test_qa_activation_synchronously_opens_and_proves_selected_index(self):
+        unit = (Path(__file__).parents[2] / "deploy" / "systemd" / "dek-qa.service").read_text(encoding="utf-8")
+        self.assertNotIn("ExecStartPre=", unit)
+        config = (Path(__file__).parents[1] / "config" / "config.yaml").read_text(encoding="utf-8")
+        self.assertIn("--generation-proof", config)
+
     def test_profile_config_delegates_users_to_dingtalk_and_exposes_only_mcp(self):
         config = (Path(__file__).parents[1] / "config" / "config.yaml").read_text(encoding="utf-8")
+        self.assertIn("/var/lib/dek-activate/control/active.json", config)
+        self.assertIn("/var/lib/dek-activate/releases", config)
         self.assertIn("enabled: false", config)
         self.assertIn('allowed_users:\n        - "*"', config)
         self.assertIn("allowed_chats: []", config)
@@ -471,6 +646,22 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("知识库查询失败，请联系管理员检查工具状态。", prompt)
         self.assertIn("不得将工具故障伪装成知识库无相关内容", prompt)
         self.assertIn("最近几天/一周/月新增或更新了什么", prompt)
+        self.assertIn("默认查看 `recent_publications`，按来源发布日期回答", prompt)
+        self.assertIn("查看 `knowledge_base_updates`，按正式 wiki 的 Git 更新时间回答", prompt)
+        self.assertIn("逐字使用工具返回的 `title`", prompt)
+        self.assertIn("不得改写、润色、补充或删减标题", prompt)
+        self.assertIn("每个列出的条目都必须按该条目的来源证据处理", prompt)
+        self.assertIn("展示工具返回的来源名称（若有）和至少一个公开来源链接", prompt)
+        self.assertIn("只有工具结果为 `source_status=verified` 且 `source_urls` 非空时", prompt)
+        self.assertIn("多个条目共享同一已确认来源", prompt)
+        self.assertIn("明确说明适用于哪些条目或全部条目", prompt)
+        self.assertIn("来源链接尚未确认", prompt)
+        self.assertIn("未提供来源链接", prompt)
+        self.assertIn("两者均不得补造链接", prompt)
+        self.assertIn("即使只报告数量和标题，也必须提供上述来源证据", prompt)
+        self.assertIn("数量为 0 必须明确回答 0", prompt)
+        self.assertIn("调用失败或结果不可解析属于查询失败，不得表述为 0", prompt)
+        self.assertIn("即使用户明确要求内部追溯信息，也不显示内部路径", prompt)
         self.assertIn("最多调用一轮知识库搜索工具", prompt)
 
 

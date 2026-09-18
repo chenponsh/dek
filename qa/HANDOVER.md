@@ -1,4 +1,7 @@
-# dek-qa 钉钉只读知识库问答交接
+> [!warning] Superseded architecture evidence
+> 仅保留历史证据。后续交接使用新的 Stage A 手册。
+
+# dek-qa 钉钉只读知识库问答交接（已废止）
 
 ## 目标与知识边界
 
@@ -20,7 +23,7 @@
   - `qa/dek_qa/access.py`：用户/会话白名单校验和访问控制。
   - `qa/dek_qa/build_index.py`：仅从正式知识范围构建只读索引。
   - `qa/dek_qa/index.py`：只读索引查询与正式来源引用处理。
-  - `qa/dek_qa/mcp_server.py`：只暴露 `dek_kb_search`、`dek_kb_get`。
+  - `qa/dek_qa/mcp_server.py`：只暴露 `dek_kb_search`、`dek_kb_get`、`dek_kb_recent`。
   - `qa/dek_qa/stream_id_collector.py`：一次性 Stream 候选 ID 收集器；不授权、不调用模型、不检索或回复。
   - `qa/tests/test_dek_qa.py`：索引、引用、越权拒绝、会话隔离、收集器与日志脱敏测试。
   - `qa/tests/test_hermes_dingtalk_boundary.py`：针对实际独立 Hermes DingTalk adapter 和 gateway 鉴权层的脱敏合成输入集成测试。
@@ -121,7 +124,7 @@
 
 - 白名单仅包含本轮批准的 1 名测试用户和 2 个测试会话；配置中保存适配器所需的两种等价用户字段，但没有扩大为额外人员。
 - `ALLOW_ALL=false`；群聊 `require_mention=true`；`group_sessions_per_user=true`。
-- 钉钉平台工具集为空，唯一 MCP 为 `dek_kb`，仅提供 `dek_kb_search` 和 `dek_kb_get`。
+- 钉钉平台工具集为空，唯一 MCP 为 `dek_kb`，仅提供 `dek_kb_search`、`dek_kb_get` 和 `dek_kb_recent`。
 - Shell、任意文件、Git、浏览器、代码执行、摄入、cron、delegation、memory 和跨会话搜索等工具不开放。
 - systemd 以 `dek-qa:dek-qa` 运行，`NoNewPrivileges=true`、`ProtectSystem=strict`、`ProtectHome=true`；`/srv/projects/dek`、`/root`、systemd 配置及运行凭据目录对模型进程不可访问。
 - 凭据文件和运行配置为 `0600 dek-qa:dek-qa`；不得在日志、聊天、Git 或命令行中打印其内容。
@@ -147,9 +150,10 @@
 - MCP 服务端本身没有故障：修复前已在 `dek-qa` 账号下完成 `initialize`、`tools/list`、`dek_kb_search` 和 `dek_kb_get` 的真实 stdio 通道测试。
 - 已在独立 venv 安装与当前独立 Hermes `pyproject.toml` 一致的固定版本：`mcp==2.0.0`、`httpx2==2.7.0`、`starlette==1.3.1`；未修改管理员 Hermes 环境。
 - 已将上述依赖写入 `requirements-dek-qa.txt`，并增加 MCP SDK 运行时依赖回归测试。
-- Hermes 的渐进式工具发现默认会把两个 MCP 工具替换为 `tool_search`、`tool_describe`、`tool_call` 三个桥接工具。独立 profile 已设置 `tools.tool_search.enabled: off`，因此模型工具定义现在严格只有：
+- Hermes 的渐进式工具发现默认会把知识库 MCP 工具替换为 `tool_search`、`tool_describe`、`tool_call` 三个桥接工具。独立 profile 已设置 `tools.tool_search.enabled: off`，因此模型工具定义现在严格只有：
   - `mcp__dek_kb__dek_kb_search`
   - `mcp__dek_kb__dek_kb_get`
+  - `mcp__dek_kb__dek_kb_recent`
 - `platform_toolsets.dingtalk` 仍为空，所有内置工具继续禁用；MCP server 通过独立的全局 MCP 配置注入，没有开放其他工具。
 
 ### 指令与安全语义
@@ -165,8 +169,8 @@
 
 - dek-qa 单元测试：`24/24` 通过。
 - 在运行中 `dek-qa.service` 的 mount namespace、`dek-qa` 服务账号及相同 profile 下验证：
-  - MCP discovery：2 个工具；
-  - 模型工具定义：2 个，且仅为上述 search/get；
+  - MCP discovery：3 个工具；
+  - 模型工具定义：3 个，且仅为上述 search/get/recent；
   - `search` 实际命中后使用返回的不透明 ID 调用 `get` 成功；
   - 读取结果路径属于 `wiki/`，引用 URL 字段来自工具返回值。
 - `dek-qa.service` 重启后为 `active/running`、`disabled`，MCP watchdog/stdio 子进程正在运行。
@@ -242,7 +246,7 @@
 - 生产使用版本2索引，1066 文档，SHA-256 为 `49c02890a7e4ff365a5633d08dce6d74cda5021f8a3c9e458175bf931ddd0f4d`。运行 app 为 root 只读副本，索引为 `0600 dek-qa:dek-qa`。
 - 生产 profile 的原白名单值未改变；两组各2项。三项 DingTalk 门控已迁入 adapter 实际读取的 `platforms.dingtalk.extra`，真实 adapter 解析确认默认拒绝、群白名单和必须 @ 生效。
 - 不得用重命名方式切换 uv venv：console-script shebang 含创建时绝对路径。本次已直接在 `/var/lib/dek-qa/venv` 从带哈希锁重建；保留的 `venv.relocated-broken-20260909_141551` 仅用于说明该失败路径，可在稳定观察后由管理员清理。
-- 在线首次启动发现 MCP 2.0 SDK 会在 `tools/list` 和 `tools/call` 参数中发送标准 `_meta`。服务端已兼容 `_meta` 与 list cursor，同时继续拒绝未知字段。真实 MCP SDK 和 `hermes mcp test dek_kb` 均发现且只发现 `dek_kb_search`、`dek_kb_get`。
+- 在线首次启动发现 MCP 2.0 SDK 会在 `tools/list` 和 `tools/call` 参数中发送标准 `_meta`。服务端已兼容 `_meta` 与 list cursor，同时继续拒绝未知字段。真实 MCP SDK 和 `hermes mcp test dek_kb` 均发现且只发现 `dek_kb_search`、`dek_kb_get`、`dek_kb_recent`。
 - 首次模型探针还发现 Hermes 默认 lazy dependency 会在运行时向 venv 安装6个未纳入组合锁的包。生产 unit 已设置 `HERMES_DISABLE_LAZY_INSTALLS=1`，生产 venv 已按锁重新构建；启动前、启动30秒后及最终 MCP/模型探针后均保持86包。
 - 模型端到端验收实际执行 search→get，返回预期不透明 ID 和内部路径；OAuth 最小生成探针也精确成功。`dek-qa.service` 已 `enabled` 且稳定 `active/running`，DingTalk Stream 维持外部 TLS 长连接；`dek-source-ingest.timer` 保持 `active/enabled`。
 - 当前 Python 3.12.3 链接 SQLite 3.45.1，Hermes 因已知 WAL-reset 风险自动使用 `journal_mode=DELETE`。这不会阻止当前问答，但应在系统提供 SQLite 3.51.3+ 或对应回移版本时升级并复测。
@@ -250,6 +254,7 @@
 ## 2026-09-09 钉钉可见范围作为人员权限源
 
 - 用户已明确授权取消 Hermes 逐人名单，人员权限改由钉钉应用可见范围唯一管理。生产 profile 使用 `allowed_users: ["*"]`，EnvironmentFile 使用 `DINGTALK_ALLOWED_USERS=*` 与 `DINGTALK_ALLOW_ALL_USERS=true`。
-- 群边界没有扩大：原 2 个允许群保持不变，群消息仍必须 `@机器人`；每位群成员仍使用独立会话。钉钉平台内置工具集为空，DEK MCP 仍只有 search/get。
+- 正式 QA EnvironmentFile 已改为 fail-closed 字段 allowlist；`XAI_API_KEY`、其他 provider key、工具控制、Hermes 运行位置、未知字段及非 DingTalk 平台字段均在 credential gate 阶段拒绝且不输出值。A6 必须通过 systemd 的 `EnvironmentFile=` 加载正式文件并执行真实 Hermes parser、DingTalk adapter、MCP discovery 与最终模型工具组装，最终工具只能是三个 dek MCP 工具。
+- 群边界没有扩大：原 2 个允许群保持不变，群消息仍必须 `@机器人`；每位群成员仍使用独立会话。钉钉平台内置工具集为空，DEK MCP 仍只有 search/get/recent。
 - 切换备份为 `/var/lib/dek-qa/backups/dingtalk-visibility-20260909_164020`。真实解析器检查、52/52 回归、systemd unit 校验和重启后 TLS 连接均通过。
 - 用户已使用未曾列入旧 Hermes 名单、但处于钉钉应用可见范围的账号完成私聊测试，并确认机器人正常响应。钉钉可见范围与本地通配配置的完整链路已人工在线验收通过；后续人员增删只在钉钉应用可见范围中维护，不再添加 Hermes 用户名单。

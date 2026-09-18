@@ -1,4 +1,7 @@
-# dek-qa 修复部署与回滚方案
+> [!warning] Superseded architecture evidence
+> 仅保留历史证据。已批准的替代架构以 `deploy/PRODUCTION_ROLLOUT.md` 为准。
+
+# dek-qa 修复部署与回滚方案（已废止）
 
 状态：已于 2026-09-09 按用户明确授权执行；`dek-qa.service` 已启动并 enable，`dek-source-ingest.timer` 未停止或修改。实际结果见 `EVIDENCE.md` 与 `HANDOVER.md`。
 
@@ -28,8 +31,9 @@
 1. 将当前 `/opt/dek-qa/app`、已安装 unit 和运行索引分别备份到新建的 root-only/dek-qa-only 时间戳目录，禁止覆盖旧备份。
 2. 把仓库 `qa/` 同步到新的只读 staging app 目录；不把 `EVIDENCE.md` 中引用的运行数据或 `/tmp` 候选索引复制进 app。
 3. 核对 staging app 中 `index.py`、`mcp_server.py`、`SOUL.md` 和测试文件哈希。
-4. 运行 profile 含秘密，不用仓库模板覆盖；只对明确允许的非秘密键做结构化差异检查。人员授权由钉钉应用可见范围负责：将 DingTalk 的 `allowed_users` 设为 `[*]`，并设置 `DINGTALK_ALLOWED_USERS=*`、`DINGTALK_ALLOW_ALL_USERS=true`。原有 `allowed_chats` 必须逐值保持不变，`require_mention=true`；这些 adapter 门控均位于 `platforms.dingtalk.extra`。`group_sessions_per_user`、`platform_toolsets.dingtalk` 和 `tools.tool_search.enabled` 不变。
-5. 用实际 `load_gateway_config()` 解析迁移后的受保护配置，断言 adapter 收到用户通配符、非空群白名单及 `require_mention=true`，gateway 对 DingTalk 使用显式 allow-all；失败则不继续部署。
+4. 运行 profile 含秘密，不用仓库模板覆盖；结构化迁移保留必要会话、秘密及未知非工具键。人员授权由钉钉应用可见范围负责：将 DingTalk 的 `allowed_users` 设为 `[*]`，并设置 `DINGTALK_ALLOWED_USERS=*`、`DINGTALK_ALLOW_ALL_USERS=true`。原有 `allowed_chats` 必须逐值保持不变，`require_mention=true`；这些 adapter 门控均位于 `platforms.dingtalk.extra`。同时强制 `platform_toolsets.dingtalk=[]`、`tools.tool_search.enabled=off`，移除额外 MCP/旧工具配置并只重建受控 `dek_kb`。
+   正式 QA EnvironmentFile 另以字段 allowlist fail-closed：仅接受部署所需 DingTalk 字段与已确认不扩展 Hermes 工具面的 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`，拒绝未知、provider key、工具控制和其他平台字段，错误不得包含字段值。A6 由 systemd 加载与生产 unit 相同的正式 EnvironmentFile 后运行真实 Hermes parser/adapter/discovery/model tool assembly，确认仅 DingTalk adapter 启用且最终仅有三个 dek MCP 工具。
+5. 用实际 `load_gateway_config()`、`DingTalkAdapter`、MCP discovery 与最终模型工具组装解析迁移后的受保护配置，断言 adapter 门禁不变且最终只有 `dek_kb_search`、`dek_kb_get`、`dek_kb_recent`；失败则不继续部署。
 
 ### C. 索引候选
 

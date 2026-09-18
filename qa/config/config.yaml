@@ -18,7 +18,7 @@ platform_toolsets:
   dingtalk: []
 
 tools:
-  # With only two MCP tools, progressive disclosure would replace them with
+  # With only three MCP tools, progressive disclosure would replace them with
   # three generic bridge tools. Keep the exact read-only QA surface visible.
   tool_search:
     enabled: off
@@ -39,8 +39,12 @@ mcp_servers:
     args:
       - -m
       - qa.dek_qa.mcp_server
-      - --index
-      - /var/lib/dek-qa/index/dek-kb.json
+      - --active
+      - /var/lib/dek-activate/control/active.json
+      - --releases
+      - /var/lib/dek-activate/releases
+      - --generation-proof
+      - /run/dek-proofs/qa/active.json
     env:
       PYTHONPATH: /opt/dek-qa/app
     sampling:
