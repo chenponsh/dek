@@ -13,6 +13,8 @@ Environment=DEK_FIXED_ORIGIN=https://github.com/chenponsh/dek.git
 LoadCredential=git-credentials:/var/lib/dek-git-auth/git-credentials
 Environment=DEK_GIT_CREDENTIAL_FILE=%d/git-credentials
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/var/lib/dek-source-ingest/vendor/python
+Environment=DEK_CHROMIUM_EXECUTABLE=/var/lib/dek-source-ingest/vendor/ms-playwright-chromium-1187/chrome-linux/chrome
 Environment=HTTP_PROXY=http://127.0.0.1:7890
 Environment=HTTPS_PROXY=http://127.0.0.1:7890
 Environment=http_proxy=http://127.0.0.1:7890
@@ -39,6 +41,6 @@ LockPersonality=true
 CapabilityBoundingSet=
 AmbientCapabilities=
 SystemCallArchitectures=native
-ReadOnlyPaths=/opt/dek-source-ingest/app
+ReadOnlyPaths=/opt/dek-source-ingest/app /var/lib/dek-source-ingest/vendor
 ReadWritePaths=/var/lib/dek-source-ingest/clones /var/lib/dek-source-ingest/proofs /var/lib/dek-review/input
 InaccessiblePaths=/opt/dek-publisher /opt/dek-builder /opt/dek-activator /opt/dek-web /opt/dek-review /opt/dek-qa /var/lib/dek-publisher/secrets /var/lib/dek-activate /var/spool/dek-build /etc/systemd/system /usr/lib/systemd /root
