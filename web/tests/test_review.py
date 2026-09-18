@@ -430,9 +430,11 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_item("opaque-session", identity).decode("utf-8")
         self.assertIn('name="form_nonce"', page)
         self.assertIn("ingestion/rough/", page)
-        self.assertIn('<button type="submit" name="action" value="approve">批准发布</button>', page)
-        self.assertIn('<button type="submit" name="action" value="return" class="action-return">退回澄清</button>', page)
+        self.assertIn('<button type="submit" name="action" value="approve">批准</button>', page)
         self.assertIn('<button type="submit" name="action" value="reject" class="action-reject">拒绝</button>', page)
+        self.assertIn('<button type="submit" name="action" value="return" class="action-return">退回</button>', page)
+        self.assertLess(page.index('value="approve"'), page.index('value="reject"'))
+        self.assertLess(page.index('value="reject"'), page.index('value="return"'))
         self.assertIsNone(self.service.render_item("opaque-session", "0" * 16))
         self.assertIsNone(self.service.render_item("opaque-session", "not-an-identity"))
 
