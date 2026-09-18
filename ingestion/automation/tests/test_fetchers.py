@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 from ingestion.automation import fetchers
+from ingestion.automation.fetchers import CDEBrowserUnavailable
 
 
 class FetchCdeDisablesCrashReporterTests(unittest.TestCase):
@@ -54,6 +55,38 @@ class FetchCdeDisablesCrashReporterTests(unittest.TestCase):
                 fetchers.fetch_cde("https://www.cde.org.cn/", [1], profile_dir)
 
             self.assertIn("--disable-crash-reporter", captured["args"])
+
+
+class FetchCdeLaunchFailureIsASafeSkipTests(unittest.TestCase):
+    def test_launch_failure_raises_cde_browser_unavailable_not_a_bare_error(self):
+        """cli.py's caller only treats CDEBrowserUnavailable as a safe,
+        non-blocking skip; any other exception sets blocking=True and
+        refuses ALL writes, including from unrelated sources that already
+        succeeded. A launch failure (crashpad, missing display, etc.) is a
+        browser-unavailable condition exactly like the post-launch checks
+        already handled this way -- it must not propagate as a bare error."""
+        with tempfile.TemporaryDirectory() as temporary:
+            profile_dir = Path(temporary) / "cde-profile"
+
+            fake_module = types.ModuleType("playwright.sync_api")
+            fake_module.Error = RuntimeError
+
+            class _FakeSyncPlaywright:
+                def __enter__(self_inner):
+                    pw = MagicMock()
+                    pw.chromium.launch_persistent_context.side_effect = RuntimeError("Target page, context or browser has been closed")
+                    return pw
+                def __exit__(self_inner, *exc_info):
+                    return False
+
+            fake_module.sync_playwright = _FakeSyncPlaywright
+            sys.modules["playwright"] = types.ModuleType("playwright")
+            sys.modules["playwright.sync_api"] = fake_module
+            self.addCleanup(sys.modules.pop, "playwright", None)
+            self.addCleanup(sys.modules.pop, "playwright.sync_api", None)
+
+            with self.assertRaises(CDEBrowserUnavailable):
+                fetchers.fetch_cde("https://www.cde.org.cn/", [1], profile_dir)
 
 
 if __name__ == "__main__":

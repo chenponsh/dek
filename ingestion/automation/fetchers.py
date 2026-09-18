@@ -258,18 +258,28 @@ def fetch_cde(url: str, types: list[int], profile_dir: Path) -> tuple[dict[int, 
     result: dict[int, tuple[list[Row], dict[str, Any]]] = {}
     diagnostics: dict[str, Any] = {"navigation_statuses": [], "challenge_resources": [], "final_url": None, "myAjax_is_function": False}
     with sync_playwright() as pw:
-        context = pw.chromium.launch_persistent_context(
-            str(profile_dir), executable_path=str(_full_chromium()), headless=False,
-            locale="zh-CN", timezone_id="Asia/Shanghai", viewport={"width": 1365, "height": 768},
-            # Under the sandboxed source-ingest unit, Chromium's crashpad
-            # handler can't be given a working database location (tried
-            # --crash-dumps-dir=<writable dir>; the handler still refused to
-            # launch with "chrome_crashpad_handler: --database is required",
-            # confirmed by direct reproduction against the real vendored
-            # binary) -- disable the crash reporter outright instead, which
-            # is unneeded for unattended scraping anyway.
-            args=["--disable-blink-features=AutomationControlled", "--disable-crash-reporter"],
-        )
+        try:
+            context = pw.chromium.launch_persistent_context(
+                str(profile_dir), executable_path=str(_full_chromium()), headless=False,
+                locale="zh-CN", timezone_id="Asia/Shanghai", viewport={"width": 1365, "height": 768},
+                # Under the sandboxed source-ingest unit, Chromium's crashpad
+                # handler can't be given a working database location (tried
+                # --crash-dumps-dir=<writable dir>; the handler still refused
+                # to launch with "chrome_crashpad_handler: --database is
+                # required", confirmed by direct reproduction against the
+                # real vendored binary) -- disable the crash reporter
+                # outright instead, which is unneeded for unattended
+                # scraping anyway.
+                args=["--disable-blink-features=AutomationControlled", "--disable-crash-reporter"],
+            )
+        except PlaywrightError as exc:
+            # A launch failure is a browser-unavailable condition exactly
+            # like the post-launch checks below (challenge HTTP 400, no
+            # myAjax) -- it must degrade the same safe-skip way rather than
+            # propagating as a generic exception, which cli.py's caller
+            # treats as blocking and refuses ALL writes, including from
+            # unrelated sources (Shanghai/CPC) that already succeeded.
+            raise CDEBrowserUnavailable(f"CDE browser launch failed: {exc}", diagnostics) from exc
         # CDE 的瑞数反爬会以 navigator.webdriver 判定自动化浏览器并返回 400。
         # 经用户授权，去掉该标志以通过公开共性问题的访问验证。
         context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
