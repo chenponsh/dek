@@ -612,6 +612,13 @@ label{display:block;margin:1rem 0;color:var(--text);font-weight:600;font-size:.9
 button[type=submit]{margin-top:.5rem;padding:.55rem 1.1rem;border:0;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;font-size:.95rem}
 button[type=submit]:hover{filter:brightness(.94)}
 .notice{border-left:4px solid var(--accent);background:var(--panel);padding:.65rem .85rem;margin:1rem 0;border-radius:0 8px 8px 0}
+.combo{position:relative}
+.combo-list{display:none;position:absolute;top:100%;left:0;right:0;max-height:14rem;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.14);z-index:5;margin-top:4px}
+.combo-list.open{display:block}
+.combo-option{padding:.5rem .7rem;cursor:pointer}
+.combo-option:hover,.combo-option.active{background:var(--hover)}
+.combo-option strong{display:block;font-weight:600}
+.combo-option small{display:block;color:var(--muted);font-size:.78em}
 @media(max-width:760px){.content{margin-left:0}.review-shell{padding:82px 20px 70px}}
 </style>"""
 
@@ -742,14 +749,11 @@ class ReviewService:
         return None
 
     def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None) -> str:
-        options = "".join(
-            f'<option value="{html.escape(path)}">{html.escape(label)}</option>'
-            for label, path in (wiki_folder_candidates(root) if root else [])
-        )
-        datalist = f'<datalist id="wiki-path-options">{options}</datalist>' if options else ""
+        candidates = wiki_folder_candidates(root) if root else []
+        options_json = json.dumps([[label, path] for label, path in candidates], ensure_ascii=False)
         return f"""<article><h2>{html.escape(PurePosixPath(rough.path).name)}</h2><pre>{html.escape(rough.content)}</pre>
 <form method="post" action="{self.path_prefix}/decision"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
-<label>决定 <select name="action"><option value="approve">批准发布</option><option value="return">退回澄清</option><option value="reject">拒绝</option></select></label><label>Wiki 路径（可搜索，按文件夹名过滤，选中后按需修改末尾编号） <input name="wiki_path" list="wiki-path-options" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…">{datalist}</label><label>候选 Wiki Markdown（已预填草稿，可修改）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><label>审核意见 <textarea name="comment" rows="3"></textarea></label><button type="submit">提交决定</button></form></article>"""
+<label>决定 <select name="action"><option value="approve">批准发布</option><option value="return">退回澄清</option><option value="reject">拒绝</option></select></label><label>Wiki 路径（可搜索，按文件夹名过滤，选中后按需修改末尾编号）<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label><label>候选 Wiki Markdown（已预填草稿，可修改）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><label>审核意见 <textarea name="comment" rows="3"></textarea></label><button type="submit">提交决定</button></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()

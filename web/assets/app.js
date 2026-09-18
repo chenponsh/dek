@@ -11,6 +11,30 @@
   const sidebar = document.querySelector(".sidebar");
   document.querySelector("#menu-toggle")?.addEventListener("click", () => sidebar?.classList.toggle("open"));
 
+  document.querySelectorAll(".wiki-path-input").forEach(input => {
+    const list = input.nextElementSibling;
+    if (!list) return;
+    let options = [];
+    try { options = JSON.parse(input.dataset.options || "[]"); } catch (_) { options = []; }
+    const render = () => {
+      const query = input.value.trim().toLowerCase();
+      const matches = query ? options.filter(([label]) => label.toLowerCase().includes(query)) : options;
+      list.innerHTML = matches.slice(0, 30).map(([label, path]) =>
+        `<div class="combo-option" role="option" data-path="${escapeHtml(path)}"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(path)}</small></div>`
+      ).join("");
+      list.classList.toggle("open", matches.length > 0);
+    };
+    input.addEventListener("focus", render);
+    input.addEventListener("input", render);
+    input.addEventListener("blur", () => setTimeout(() => list.classList.remove("open"), 150));
+    list.addEventListener("mousedown", event => {
+      const option = event.target.closest(".combo-option");
+      if (!option) return;
+      input.value = option.dataset.path;
+      list.classList.remove("open");
+    });
+  });
+
   document.querySelectorAll("tr[data-href]").forEach(row => {
     row.addEventListener("click", event => {
       if (event.target.closest("a, button, input, textarea, select")) return;

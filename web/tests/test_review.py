@@ -462,22 +462,28 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         self.assertNotIn("不随审核结果更新", page)
 
-    def test_detail_wiki_path_is_a_searchable_datalist_not_free_text(self):
+    def test_detail_wiki_path_is_a_searchable_combobox_not_free_text(self):
+        # Native <datalist> suggestion width/style isn't controllable via
+        # CSS, so it renders inconsistently (narrower than the input) across
+        # browsers; a JS-driven dropdown sized off the same wrapper matches
+        # the input's width reliably like every other dropdown on the site.
         wiki_folder = self.root / "repo" / "wiki" / "01_Test"
         wiki_folder.mkdir(parents=True)
         (wiki_folder / "01-0001.md").write_text("x", encoding="utf-8")
         item = self.service.list_items()[0]
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
-        self.assertIn('list="wiki-path-options"', page)
-        self.assertIn('<datalist id="wiki-path-options">', page)
-        self.assertIn('<option value="wiki/01_Test/01-0002.md">01_Test</option>', page)
+        self.assertNotIn("<datalist", page)
+        self.assertIn('<div class="combo">', page)
+        self.assertIn('class="wiki-path-input"', page)
+        self.assertIn('<div class="combo-list" role="listbox"></div>', page)
+        self.assertIn('data-options="[[&quot;01_Test&quot;, &quot;wiki/01_Test/01-0002.md&quot;]]"', page)
 
     def test_detail_prefills_wiki_path_and_candidate_draft(self):
         path = "ingestion/rough/verify-0102-0001.md"
         (self.root / "repo/ingestion/rough/verify-0102-0001.md").write_text(VERIFY_ROUGH, encoding="utf-8")
         item = next(entry for entry in self.service.list_items() if entry.path == path)
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
-        self.assertIn('name="wiki_path" list="wiki-path-options" autocomplete="off" value="wiki/01_注册申报/0102_注册分类/0102-0001.md"', page)
+        self.assertIn('name="wiki_path" class="wiki-path-input" autocomplete="off" value="wiki/01_注册申报/0102_注册分类/0102-0001.md"', page)
         self.assertIn("no: 1", page)
         self.assertIn("date: 2017-10-10", page)
         self.assertIn("question:", page)
