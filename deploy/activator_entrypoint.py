@@ -16,6 +16,17 @@ from web.review import queue_lock
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 
+def _scan_candidate_dirs(build_inbox: Path) -> list[Path]:
+    """Real activation candidates under build_inbox, skipping dot-prefixed
+    entries (BundleBuilder's own builds/.builder-failures quarantine is not
+    readable by this identity and is not a candidate) and incomplete dirs."""
+    return sorted(
+        path for path in build_inbox.iterdir()
+        if path.is_dir() and not path.is_symlink() and not path.name.startswith(".")
+        and (path / "activation-ready.json").is_file() and (path / "activation-ready.sig").is_file()
+    )
+
+
 def activate_candidates(activator, candidates, *, on_failure=None):
     attempted=0; succeeded=0
     items=list(candidates)
@@ -119,17 +130,16 @@ def main(argv=None):
     approval_key=load_pem_public_key(Path(value["approval_public_key"]).read_bytes())
     activator=Activator(config,proof_reader=proof,approval_key=approval_key); activator.reconcile()
     candidates=[]
-    for path in config.build_inbox.iterdir():
-        if path.is_dir() and not path.is_symlink() and (path/"activation-ready.json").is_file() and (path/"activation-ready.sig").is_file():
-            try:
-                metadata=activator._validate_release(path); nonce=metadata.get("nonce")
-                if isinstance(nonce,str) and not (config.spent/(nonce+".json")).exists():
-                    candidates.append((metadata,path))
-            except FatalActivationError:
-                raise
-            except Exception as exc:
-                isolate_activation_candidate(config,path,exc)
-                continue
+    for path in _scan_candidate_dirs(config.build_inbox):
+        try:
+            metadata=activator._validate_release(path); nonce=metadata.get("nonce")
+            if isinstance(nonce,str) and not (config.spent/(nonce+".json")).exists():
+                candidates.append((metadata,path))
+        except FatalActivationError:
+            raise
+        except Exception as exc:
+            isolate_activation_candidate(config,path,exc)
+            continue
     ordered=order_candidates_by_ancestry(candidates,activator._read_active(required=False))
     selected={path for _,path in ordered}
     for _,path in candidates:

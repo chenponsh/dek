@@ -777,6 +777,30 @@ class Round5SliceTests(unittest.TestCase):
                 self.assertEqual(run("test","-x",str(product/"site")),0)
                 self.assertNotEqual(run("test","-w",str(product/"release.json")),0)
 
+    def test_activator_entrypoint_scan_skips_dotfiles_and_incomplete_dirs(self):
+        # BundleBuilder writes its own failure quarantine at builds/.builder-failures
+        # (a real directory dek-activator's identity cannot read, by design). The
+        # scan must skip dot-prefixed entries the same way builder_entrypoint.py's
+        # own package scan already does -- without this, a single quarantined
+        # failure sitting alongside real candidates crashes every activator run
+        # with PermissionError, blocking activation entirely.
+        from deploy.activator_entrypoint import _scan_candidate_dirs
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            hidden = root / ".builder-failures"; hidden.mkdir(mode=0o700)
+            (hidden / "activation-ready.json").write_text("{}")
+            (hidden / "activation-ready.sig").write_bytes(b"x")
+            os.chmod(hidden, 0o000)
+            incomplete = root / "incomplete-candidate"; incomplete.mkdir()
+            (incomplete / "activation-ready.json").write_text("{}")
+            real = root / "real-candidate"; real.mkdir()
+            (real / "activation-ready.json").write_text("{}")
+            (real / "activation-ready.sig").write_bytes(b"x")
+            try:
+                self.assertEqual(_scan_candidate_dirs(root), [real])
+            finally:
+                os.chmod(hidden, 0o700)
+
     def test_activator_entrypoint_orders_and_isolates_pending(self):
         from deploy.activator_entrypoint import activate_candidates
         calls=[]
