@@ -133,5 +133,17 @@
       .sort((left, right) => String(right.date || "").localeCompare(String(left.date || "")));
   }
 
-  return { normalize, scoreDocument, searchDocuments, resultSnippet, resultUrl, recentDocuments };
+  function recentDocumentsInRange(documents, start, end) {
+    return documents
+      .filter(document => {
+        const day = String(document.date || "").slice(0, 10);
+        if (!day) return false;
+        if (start && day < start) return false;
+        if (end && day > end) return false;
+        return true;
+      })
+      .sort((left, right) => String(right.date || "").localeCompare(String(left.date || "")));
+  }
+
+  return { normalize, scoreDocument, searchDocuments, resultSnippet, resultUrl, recentDocuments, recentDocumentsInRange };
 });

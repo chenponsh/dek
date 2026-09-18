@@ -81,6 +81,49 @@ class FuzzySearchTests(unittest.TestCase):
         recent = self.run_recent(documents, 7, "2026-09-14")
         self.assertEqual(len(recent), 2)
 
+    def run_range(self, documents, start, end):
+        script = f"const s=require({json.dumps(str(SEARCH_JS))}); process.stdout.write(JSON.stringify(s.recentDocumentsInRange({json.dumps(documents, ensure_ascii=False)}, {json.dumps(start)}, {json.dumps(end)})));"
+        result = subprocess.run(["node", "-e", script], check=True, text=True, capture_output=True)
+        return json.loads(result.stdout)
+
+    def test_recent_documents_in_range_filters_by_start_and_end_inclusive(self):
+        documents = [
+            {"path": "a.md", "date": "2026-09-13"},
+            {"path": "b.md", "date": "2026-09-01"},
+            {"path": "c.md", "date": "2026-08-31"},
+            {"path": "d.md", "date": "2026-09-14"},
+        ]
+        result = self.run_range(documents, "2026-09-01", "2026-09-13")
+        self.assertEqual([d["path"] for d in result], ["a.md", "b.md"])
+
+    def test_recent_documents_in_range_sorts_descending(self):
+        documents = [
+            {"path": "x.md", "date": "2026-09-01"},
+            {"path": "y.md", "date": "2026-09-13"},
+        ]
+        result = self.run_range(documents, "2026-01-01", "2026-12-31")
+        self.assertEqual([d["path"] for d in result], ["y.md", "x.md"])
+
+    def test_recent_documents_in_range_with_blank_start_has_no_lower_bound(self):
+        documents = [
+            {"path": "a.md", "date": "2026-01-01"},
+            {"path": "b.md", "date": "2026-09-13"},
+        ]
+        result = self.run_range(documents, "", "2026-12-31")
+        self.assertEqual([d["path"] for d in result], ["b.md", "a.md"])
+
+    def test_recent_documents_in_range_with_blank_end_has_no_upper_bound(self):
+        documents = [
+            {"path": "a.md", "date": "2026-01-01"},
+            {"path": "b.md", "date": "2026-09-13"},
+        ]
+        result = self.run_range(documents, "2026-01-01", "")
+        self.assertEqual([d["path"] for d in result], ["b.md", "a.md"])
+
+    def test_recent_documents_in_range_excludes_undated_documents(self):
+        documents = [{"path": "a.md", "date": None}, {"path": "b.md", "date": "2026-09-13"}]
+        result = self.run_range(documents, "", "")
+        self.assertEqual([d["path"] for d in result], ["b.md"])
 
 
 if __name__ == "__main__":

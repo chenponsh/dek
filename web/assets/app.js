@@ -183,7 +183,10 @@
     }
 
     fetch(manifestUrl).then(response => response.json()).then(({ tree }) => {
-      nav.innerHTML = `<div role="tree" aria-label="知识库目录">${tree.map(node => renderNode(node)).join("")}</div>`;
+      const homeActive = current === "首页.md" ? " active" : "";
+      const homeHref = new URL("index.html", manifestUrl).href;
+      const homeLink = `<a role="treeitem" class="tree-link home-link${homeActive}" href="${homeHref}"><span class="tree-file-icon">⌂</span><span class="tree-label">首页</span></a>`;
+      nav.innerHTML = homeLink + `<div role="tree" aria-label="知识库目录">${tree.map(node => renderNode(node)).join("")}</div>`;
       nav.querySelectorAll("details[data-path]").forEach(folder => {
         folder.addEventListener("toggle", () => {
           const path = folder.dataset.path;
@@ -199,7 +202,16 @@
   if (recentList) {
     const indexUrl = new URL(recentList.dataset.index, location.href);
     const tabs = [...document.querySelectorAll(".recent-tab")];
+    const startInput = document.querySelector("#recent-start");
+    const endInput = document.querySelector("#recent-end");
     let recentDocs = [];
+
+    function isoDay(value) {
+      const year = value.getFullYear();
+      const month = String(value.getMonth() + 1).padStart(2, "0");
+      const day = String(value.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
 
     function renderRecentList(docs) {
       if (!docs.length) {
@@ -213,19 +225,29 @@
       }).join("");
     }
 
-    function renderRecent(days) {
+    function renderRange() {
+      renderRecentList(DEKSearch.recentDocumentsInRange(recentDocs, startInput?.value || "", endInput?.value || ""));
+    }
+
+    function applyDays(days) {
       tabs.forEach(tab => tab.classList.toggle("active", tab.dataset.days === String(days)));
+      if (!startInput || !endInput) return;
       if (days === 0) {
-        renderRecentList([...recentDocs].sort((left, right) => String(right.date || "").localeCompare(String(left.date || ""))));
-        return;
+        startInput.value = "";
+        endInput.value = "";
+      } else {
+        const end = new Date();
+        const start = new Date(end.getTime() - (days - 1) * 86400000);
+        endInput.value = isoDay(end);
+        startInput.value = isoDay(start);
       }
-      renderRecentList(DEKSearch.recentDocuments(recentDocs, days));
+      renderRange();
     }
 
     function loadRecent() {
       recentList.innerHTML = '<div class="muted">正在加载最近信息…</div>';
       loadSharedIndex(indexUrl)
-        .then(data => { recentDocs = data; renderRecent(7); })
+        .then(data => { recentDocs = data; applyDays(7); })
         .catch(() => {
           recentList.innerHTML = '<div class="muted">最近信息加载失败，<button type="button" id="recent-retry">点击重试</button></div>';
           document.querySelector("#recent-retry")?.addEventListener("click", loadRecent);
@@ -233,7 +255,11 @@
     }
     loadRecent();
 
-    tabs.forEach(tab => tab.addEventListener("click", () => renderRecent(Number(tab.dataset.days))));
+    tabs.forEach(tab => tab.addEventListener("click", () => applyDays(Number(tab.dataset.days))));
+    [startInput, endInput].forEach(field => field?.addEventListener("change", () => {
+      tabs.forEach(tab => tab.classList.remove("active"));
+      renderRange();
+    }));
   }
 
   document.addEventListener("click", event => {

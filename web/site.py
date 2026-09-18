@@ -259,8 +259,6 @@ def _render_body(doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[di
 
 def _toc(rendered: str) -> str:
     headings = re.findall(r'<h([2-4]) id="([^"]+)">(.*?)</h\1>', rendered)
-    if not headings:
-        return '<p class="muted">本页没有小节</p>'
     return "".join(f'<a class="toc-{level}" href="#{anchor}">{re.sub("<.*?>", "", text)}</a>' for level, anchor, text in headings)
 
 
@@ -363,11 +361,20 @@ def _page(doc: dict, docs: list[dict], rendered: str, backlinks: list[dict], by_
     if source_note_links: source_card += f'<section><h3>来源笔记</h3>{source_note_links}</section>'
     if external_links: source_card += f'<section><h3>来源链接</h3>{external_links}</section>'
     if doc["kind"] == "source" and source_wiki_links: source_card += f'<section><h3>引用此来源的 Wiki</h3>{source_wiki_links}</section>'
-    properties = _note_properties(doc, by_path, by_stem)
+    # The home page has no meaningful frontmatter of its own ("笔记信息" would
+    # just show a synthetic "首页.md" path), so it skips the properties panel
+    # entirely rather than rendering an empty/misleading one.
+    properties = "" if doc["kind"] == "home" else _note_properties(doc, by_path, by_stem)
     auth_me = _relative_href(doc["output"], PurePosixPath("auth/me"))
     auth_logout = _relative_href(doc["output"], PurePosixPath("auth/logout"))
     search_script = _relative_href(doc["output"], PurePosixPath("assets/search.js"))
-    return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(doc['title'])} · DEK</title><link rel="stylesheet" href="{assets}"></head><body><header><button id="menu-toggle" aria-label="打开目录">☰</button><strong>DEK 知识库</strong><div class="search-wrap"><div class="search-box"><input type="search" id="global-search" data-index="{search}" placeholder="输入关键词…" autocomplete="off"><button type="button" id="search-button" disabled>加载中…</button></div><span id="search-status" aria-live="polite"></span><div id="search-results"></div></div><div class="user-menu" data-auth-me="{auth_me}"><a class="review-entry" href="/review/">知识审核</a><span id="user-name">正在读取…</span><a href="{auth_logout}">退出</a></div><button id="theme-toggle" aria-label="切换主题">◐</button></header><aside class="sidebar"><div class="side-title">浏览</div><nav id="nav-tree" data-manifest="{manifest}" data-current="{html.escape(doc['path'])}"></nav></aside><main class="document"><div class="breadcrumbs">{crumbs}</div><span class="kind">{doc['kind'].upper()}</span><h1>{html.escape(doc['title'])}</h1><div class="badges">{badges}</div>{properties}<article>{rendered}</article><section class="backlinks"><h2>反向链接</h2>{links}</section></main><aside class="toc"><h3>本页目录</h3>{_toc(rendered)}{source_card}</aside><script src="{search_script}" defer></script><script src="{script}" defer></script></body></html>'''
+    toc = _toc(rendered)
+    # Real Q&A-style notes rarely have markdown headings, so "本页目录" was
+    # showing an always-empty "本页没有小节" placeholder on every such page;
+    # only render the aside (and its heading) when there is something in it.
+    toc_section = f'<h3>本页目录</h3>{toc}' if toc else ""
+    aside = f'<aside class="toc">{toc_section}{source_card}</aside>' if (toc_section or source_card) else ""
+    return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(doc['title'])} · DEK</title><link rel="stylesheet" href="{assets}"></head><body><header><button id="menu-toggle" aria-label="打开目录">☰</button><strong>DEK 知识库</strong><div class="search-wrap"><div class="search-box"><input type="search" id="global-search" data-index="{search}" placeholder="输入关键词…" autocomplete="off"><button type="button" id="search-button" disabled>加载中…</button></div><span id="search-status" aria-live="polite"></span><div id="search-results"></div></div><div class="user-menu" data-auth-me="{auth_me}"><a class="review-entry" href="/review/">知识审核</a><span id="user-name">正在读取…</span><a href="{auth_logout}">退出</a></div><button id="theme-toggle" aria-label="切换主题">◐</button></header><aside class="sidebar"><div class="side-title">浏览</div><nav id="nav-tree" data-manifest="{manifest}" data-current="{html.escape(doc['path'])}"></nav><div class="sidebar-resize-handle" aria-hidden="true"></div></aside><main class="document"><div class="breadcrumbs">{crumbs}</div><span class="kind">{doc['kind'].upper()}</span><h1>{html.escape(doc['title'])}</h1><div class="badges">{badges}</div>{properties}<article>{rendered}</article><section class="backlinks"><h2>反向链接</h2>{links}</section></main>{aside}<script src="{search_script}" defer></script><script src="{script}" defer></script></body></html>'''
 
 
 def build_site(vault: Path, output: Path) -> dict:
@@ -422,18 +429,25 @@ def build_site(vault: Path, output: Path) -> dict:
             href = quote(str(target.get("url", "#")), safe="/.-_")
             cards.append(f'<a class="folder-card" href="{href}"><strong>{html.escape(child["name"])}</strong><span>{child.get("count", 1)} 篇</span></a>')
         home_sections.append(f'<section class="home-section"><h2>{label}<span>{root_node["count"]}</span></h2><div class="folder-grid">{"".join(cards)}</div></section>')
-    recent_html = (
-        '<section class="recent-section"><h2>最近信息</h2>'
-        '<div class="recent-tabs" role="tablist">'
+    # The filter controls stay near the top (so reviewers don't have to scroll
+    # past every folder card to find them again), but the actual result list
+    # moves below the Wiki/Source cards -- see recent_results_html below.
+    recent_filters_html = (
+        '<section class="recent-filters"><h2>最近信息</h2>'
+        '<div class="recent-tabs" role="group" aria-label="按天数快速筛选">'
         '<button type="button" class="recent-tab active" data-days="7">7天</button>'
         '<button type="button" class="recent-tab" data-days="30">30天</button>'
         '<button type="button" class="recent-tab" data-days="90">90天</button>'
         '<button type="button" class="recent-tab" data-days="0">全部</button>'
         '</div>'
-        '<div id="recent-list" class="recent-list" data-index="assets/search-index.json">正在加载最近信息…</div>'
+        '<div class="recent-range">'
+        '<label>开始日期 <input type="date" id="recent-start"></label>'
+        '<label>结束日期 <input type="date" id="recent-end"></label>'
+        '</div>'
         '</section>'
     )
-    home_body = '<p class="home-intro">面向具备 Kbot 使用权限同事的内部只读知识库。按目录浏览，或使用顶部搜索。</p>' + recent_html + "".join(home_sections)
+    recent_results_html = '<section class="recent-section"><div id="recent-list" class="recent-list" data-index="assets/search-index.json">正在加载最近信息…</div></section>'
+    home_body = recent_filters_html + "".join(home_sections) + recent_results_html
     (output / "index.html").write_text(_page(home_doc, docs, home_body, [], by_path, by_stem), encoding="utf-8")
     return {"documents": len(docs), "wiki": sum(d["kind"] == "wiki" for d in docs), "source": sum(d["kind"] == "source" for d in docs)}
 

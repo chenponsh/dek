@@ -302,6 +302,70 @@ class SiteBuildTests(unittest.TestCase):
             self.assertIn(marker, homepage)
         self.assertIn("recentDocuments", script)
 
+    def test_homepage_recent_filters_offer_start_and_end_date_inputs(self):
+        build_site(self.vault, self.out)
+        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="recent-start"', homepage)
+        self.assertIn('id="recent-end"', homepage)
+        self.assertIn('type="date"', homepage)
+        self.assertIn("recentDocumentsInRange", script)
+
+    def test_homepage_recent_results_are_the_last_section_but_filters_stay_up_top(self):
+        build_site(self.vault, self.out)
+        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        filters_at = homepage.index('id="recent-start"')
+        first_folder_section_at = homepage.index('class="home-section"')
+        results_list_at = homepage.index('id="recent-list"')
+        last_folder_section_at = homepage.rindex('class="home-section"')
+        self.assertLess(filters_at, first_folder_section_at)
+        self.assertGreater(results_list_at, last_folder_section_at)
+
+    def test_homepage_has_no_intro_paragraph_or_note_properties(self):
+        build_site(self.vault, self.out)
+        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("home-intro", homepage)
+        self.assertNotIn("笔记信息", homepage)
+        self.assertNotIn("笔记路径", homepage)
+        self.assertIn("DEK 知识库", homepage)
+
+    def test_wiki_page_still_has_note_properties(self):
+        # Only the homepage drops the properties panel; regular notes keep it.
+        build_site(self.vault, self.out)
+        wiki = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        self.assertIn("笔记信息", wiki)
+
+    def test_page_without_headings_omits_the_empty_table_of_contents(self):
+        (self.vault / "wiki" / "01_注册" / "无小节.md").write_text(
+            "---\nno: 3\nquestion: 无小节问答\n---\n\n没有二级标题的问答正文。", encoding="utf-8",
+        )
+        build_site(self.vault, self.out)
+        page = (self.out / "wiki" / "01_注册" / "无小节.html").read_text(encoding="utf-8")
+        self.assertNotIn("本页目录", page)
+
+    def test_page_with_headings_still_shows_the_table_of_contents(self):
+        # _toc() only surfaces h2-h4 (the document's own h1 title is excluded),
+        # so this needs a real subsection heading, unlike the plain-body fixture.
+        (self.vault / "wiki" / "01_注册" / "带小节.md").write_text(
+            "---\nno: 4\nquestion: 带小节问答\n---\n\n## 第一节\n\n正文。", encoding="utf-8",
+        )
+        build_site(self.vault, self.out)
+        page = (self.out / "wiki" / "01_注册" / "带小节.html").read_text(encoding="utf-8")
+        self.assertIn('class="toc"', page)
+        self.assertIn("本页目录", page)
+        self.assertIn("第一节", page)
+
+    def test_sidebar_has_a_drag_resize_handle(self):
+        build_site(self.vault, self.out)
+        for page_path in (self.out / "index.html", self.out / "wiki" / "01_注册" / "条目.html"):
+            with self.subTest(page=page_path):
+                page = page_path.read_text(encoding="utf-8")
+                self.assertIn('class="sidebar-resize-handle"', page)
+
+    def test_sidebar_tree_has_a_home_entry(self):
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("home-link", script)
 
 
 if __name__ == "__main__":
