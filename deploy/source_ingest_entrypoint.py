@@ -21,6 +21,14 @@ from pathlib import Path
 _INSTALL_ROOT = Path(__file__).resolve().parent.parent
 if str(_INSTALL_ROOT) not in sys.path:
     sys.path.insert(0, str(_INSTALL_ROOT))
+# `python3 -I` (this script's production invocation) ignores PYTHONPATH by
+# design -- it still reaches os.environ, so systemd's Environment=PYTHONPATH=
+# setting for the vendored Playwright install has to be applied explicitly,
+# the same way _INSTALL_ROOT is above, rather than relying on the
+# interpreter's normal (here suppressed) auto-import of it.
+for _vendor_entry in os.environ.get("PYTHONPATH", "").split(os.pathsep):
+    if _vendor_entry and _vendor_entry not in sys.path:
+        sys.path.insert(0, _vendor_entry)
 from deploy.release_bundle import validate_systemd_credential, PROXY_ENV_KEYS
 from deploy.fsutil import atomic_write_bytes, atomic_write_json, read_bounded_regular
 if not Path(sys.modules[validate_systemd_credential.__module__].__file__).resolve(strict=True).is_relative_to(_INSTALL_ROOT):
