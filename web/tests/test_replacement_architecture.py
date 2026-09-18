@@ -558,6 +558,17 @@ class Round3SliceTests(unittest.TestCase):
         for rel, digest in manifest.items():
             self.assertEqual(hashlib.sha256(Path(rel).read_bytes()).hexdigest(), digest, rel)
 
+    def test_fixed_command_sandbox_path_can_locate_node_and_uv(self):
+        # BundleBuilder.FIXED_COMMANDS runs `web/tests` (needs `node`, for
+        # test_search.py's real JS execution) and `qa/tests` (needs `uv`, for
+        # test_dependency_lock.py) as a release gate via _run()'s safe_env.
+        # PATH="/usr/bin:/bin" doesn't cover either -- every build silently
+        # failed those steps regardless of what was actually being released.
+        from deploy.release_bundle import _run
+        output = _run(("/bin/sh", "-c", "command -v node && command -v uv")).decode()
+        self.assertIn("node", output)
+        self.assertIn("uv", output)
+
     def test_runbook_documents_seed_lock_non_ff_and_builder_sandbox(self):
         text = Path("deploy/PRODUCTION_ROLLOUT.md").read_text(encoding="utf-8")
         self.assertIn("release.lock", text)
