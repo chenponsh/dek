@@ -397,12 +397,28 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIsNone(self.service.render_item("opaque-session", "0" * 16))
         self.assertIsNone(self.service.render_item("opaque-session", "not-an-identity"))
 
-    def test_detail_of_a_decided_item_offers_redecision_and_shows_history(self):
+    def test_detail_of_a_decided_item_is_locked_by_default(self):
         self.decide(action="return")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         self.assertIn("已退回", page)
+        self.assertNotIn('name="form_nonce"', page)
+        self.assertIn(f'href="/item/{item.identity}?edit=1"', page)
+        self.assertIn("已有处理决定", page)
+
+    def test_detail_of_a_decided_item_unlocks_for_redecision_when_requested(self):
+        self.decide(action="return")
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        page = self.service.render_item("opaque-session", item.identity, unlocked=True).decode("utf-8")
+        self.assertIn("已退回", page)
         self.assertIn('name="form_nonce"', page)
+        self.assertIn("提交将新增一条决定", page)
+
+    def test_detail_of_a_pending_item_is_never_locked(self):
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertIn('name="form_nonce"', page)
+        self.assertNotIn("已有处理决定", page)
 
     def test_detail_prefills_wiki_path_and_candidate_draft(self):
         path = "ingestion/rough/verify-0102-0001.md"

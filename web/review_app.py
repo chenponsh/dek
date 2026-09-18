@@ -206,9 +206,11 @@ class ReviewApp:
                 return self._begin_login(start, REVIEW_PREFIX + path)
             if not is_reviewer:
                 return self._response(start, "403 Forbidden", b"Forbidden")
-            notice = NOTICES.get(parse_qs(environ.get("QUERY_STRING", "")).get("notice", [""])[0], "")
+            query = parse_qs(environ.get("QUERY_STRING", ""))
+            notice = NOTICES.get(query.get("notice", [""])[0], "")
+            unlocked = query.get("edit", [""])[0] == "1"
             try:
-                body = self.service.render_item(session_id, path[len("/item/"):], notice=notice)
+                body = self.service.render_item(session_id, path[len("/item/"):], notice=notice, unlocked=unlocked)
             except ReviewError as error:
                 return self._render_failure(start, error)
             if body is None:

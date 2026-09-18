@@ -787,7 +787,7 @@ class ReviewService:
         )
         return self._page("知识审核待办", body)
 
-    def render_item(self, session_id: str, identity: str, *, notice: str = "") -> bytes | None:
+    def render_item(self, session_id: str, identity: str, *, notice: str = "", unlocked: bool = False) -> bytes | None:
         item = self.find_item(identity)
         if item is None:
             return None
@@ -802,11 +802,19 @@ class ReviewService:
             f"<h2>处理历史（{len(history)}）</h2><table><thead><tr><th>决定</th><th>审核人</th><th>时间</th><th>意见</th></tr></thead><tbody>{rows}</tbody></table>"
             if history else ""
         )
-        if item.content:
+        decided = bool(history)
+        if item.content and decided and not unlocked:
+            form = (
+                '<p class="notice">该条目已有处理决定（见下方处理历史）。表单已锁定，避免误改已批准/已处理的内容。'
+                f'如确需修改并重新提交，<a href="{self.path_prefix}/item/{identity}?edit=1">点击重新编辑</a>。</p>'
+            )
+        elif item.content:
             nonce = self.nonces.issue(session_id, item.path, int(self.clock()) + 900, str(root))
             binding = rough_binding_at(root, validate_relative_path(item.path, ROUGH_PREFIX))
             suggested = default_wiki_path(item.wiki_target)
             form = self._form_card(binding, nonce, wiki_path=suggested, candidate=candidate_draft(item.content, suggested))
+            if decided:
+                form = '<div class="notice">注意：该条目已有处理决定，提交将新增一条决定并覆盖当前显示的状态，请谨慎确认后再提交。</div>' + form
         else:
             form = '<p class="notice">该条目已不在待审核快照中，无法再提交决定。</p>'
         meta = " · ".join(part for part in (

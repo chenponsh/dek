@@ -316,7 +316,7 @@ class ReviewAppTests(unittest.TestCase):
         identity = re.search(r'/review/item/([0-9a-f]{16})', listing.decode()).group(1)
 
         def submission():
-            _, _, detail = self.call("/item/" + identity, cookie=session)
+            _, _, detail = self.call("/item/" + identity, query="edit=1", cookie=session)
             nonce = detail.decode().split('name="form_nonce" value="', 1)[1].split('"', 1)[0]
             binding = rough_binding(self.rough)
             return {
