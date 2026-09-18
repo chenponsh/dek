@@ -166,7 +166,12 @@ def validate_systemd_credential(path: Path) -> None:
     descriptor=None
     try:
         descriptor=os.open(Path(path),os.O_RDONLY|getattr(os,"O_NOFOLLOW",0)); details=os.fstat(descriptor)
-        if not stat.S_ISREG(details.st_mode) or details.st_nlink!=1 or stat.S_IMODE(details.st_mode)!=0o400: raise BundleError("unsafe systemd credential")
+        # Real systemd LoadCredential delivery on this host is root:root 0440
+        # (still only reachable through the unit's own private credentials
+        # mount, not via DAC group membership) -- not the 0400 this
+        # originally assumed, which had never been exercised against a real
+        # systemd LoadCredential run before this pipeline's first live use.
+        if not stat.S_ISREG(details.st_mode) or details.st_nlink!=1 or stat.S_IMODE(details.st_mode) not in (0o400,0o440): raise BundleError("unsafe systemd credential")
     except OSError as exc: raise BundleError("unsafe or unreadable systemd credential") from exc
     finally:
         if descriptor is not None: os.close(descriptor)

@@ -625,6 +625,19 @@ class Round4SliceTests(unittest.TestCase):
         code=Path("deploy/release_bundle.py").read_text()
         self.assertNotIn("st_uid!=os.geteuid()",code)
 
+    def test_credential_validation_accepts_real_systemd_load_credential_mode(self):
+        """Real systemd LoadCredential= delivery on this host is root:root
+        0440, not the 0400 this check originally required -- reproduced with
+        `systemd-run -p LoadCredential=... -p User=dek-source-ingest`, which
+        crash-looped dek-source-ingest-proof.service with "unsafe systemd
+        credential" the first time this pipeline actually ran for real."""
+        from deploy.release_bundle import validate_systemd_credential
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/"credential"; path.write_text("x"); os.chmod(path,0o440)
+            validate_systemd_credential(path)
+            too_loose=Path(temporary)/"too-loose"; too_loose.write_text("x"); os.chmod(too_loose,0o444)
+            with self.assertRaises(BundleError): validate_systemd_credential(too_loose)
+
     def test_git_environment_explicitly_disables_external_attributes_and_filters(self):
         code=Path("deploy/release_bundle.py").read_text()+Path("deploy/source_ingest_entrypoint.py").read_text()+Path("web/review.py").read_text()
         self.assertIn('"GIT_ATTR_NOSYSTEM":"1"',code)
