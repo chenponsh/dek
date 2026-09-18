@@ -173,6 +173,12 @@ class ReviewServiceTests(unittest.TestCase):
             self.service.submit_form(stale_hash, session_id="opaque-session", user_id="enterprise-user")
         self.assertFalse(self.queue.exists())
 
+    def test_approve_with_malformed_candidate_yaml_is_rejected(self):
+        bad_yaml = self.form(candidate_markdown="---\nno: 1\n  bad: [unterminated\n---\n\nA\n")
+        with self.assertRaisesRegex(ReviewError, "YAML"):
+            self.service.submit_form(bad_yaml, session_id="opaque-session", user_id="enterprise-user")
+        self.assertFalse(self.queue.exists())
+
 
 VERIFY_ROUGH = """---
 date: 2026-09-17
@@ -374,6 +380,11 @@ class ReviewWorkflowTests(unittest.TestCase):
         empty = self.service.render_list("opaque-session", status="approved").decode("utf-8")
         self.assertIn('<td colspan="4">没有符合条件的条目。</td>', empty)
 
+    def test_list_rows_carry_a_data_href_for_whole_row_navigation(self):
+        item = self.service.list_items()[0]
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        self.assertIn(f'<tr data-href="/item/{item.identity}">', page)
+
     def test_list_offers_a_manual_ingest_trigger_button(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertIn('<form method="post" action="/trigger-ingest" class="ingest-trigger-form">', page)
@@ -419,6 +430,22 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         self.assertIn('name="form_nonce"', page)
         self.assertNotIn("已有处理决定", page)
+
+    def test_detail_of_a_decided_item_flags_the_stale_frontmatter_status(self):
+        # The rough file's own `status:` line is written once at ingest time and
+        # never updated; the true status is the "状态：" line derived from the
+        # decision queue above it. Without a note, a reviewer skimming the raw
+        # preview could mistake the frozen "pending_review" for the real state.
+        self.decide(action="return")
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        page = self.service.render_item("opaque-session", item.identity, unlocked=True).decode("utf-8")
+        self.assertIn("status: pending_review", page)
+        self.assertIn("不随审核结果更新", page)
+
+    def test_detail_of_a_pending_item_has_no_stale_status_notice(self):
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertNotIn("不随审核结果更新", page)
 
     def test_detail_prefills_wiki_path_and_candidate_draft(self):
         path = "ingestion/rough/verify-0102-0001.md"

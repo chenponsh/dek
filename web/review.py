@@ -573,6 +573,7 @@ STYLE = """<style>
 .table-wrap table{display:table;width:100%}
 .col-task{width:60%}.col-status{width:14%}.col-reviewer{width:10%}.col-time{width:16%}
 .table-wrap tbody tr:hover{background:var(--hover)}
+.table-wrap tbody tr[data-href]{cursor:pointer}
 .status{white-space:nowrap;font-weight:600}
 .status-dot{display:inline-block;width:.55rem;height:.55rem;margin-right:.4rem;border-radius:50%;background:var(--accent);vertical-align:.04rem}
 .meta{color:var(--muted);font-size:.9em}
@@ -749,7 +750,7 @@ class ReviewService:
             )
         filters = "".join(filter_parts)
         rows = "".join(
-            "<tr>"
+            f'<tr data-href="{self.path_prefix}/item/{item.identity}">'
             f'<td><a href="{self.path_prefix}/item/{item.identity}">{html.escape(item.title)}</a><div class="meta">{html.escape(item.path)}'
             + (f" · 来源：{html.escape(item.source)}" if item.source else "")
             + (f" · 发布日期：{html.escape(item.published_date)}" if item.published_date else "")
@@ -814,7 +815,10 @@ class ReviewService:
             suggested = default_wiki_path(item.wiki_target)
             form = self._form_card(binding, nonce, wiki_path=suggested, candidate=candidate_draft(item.content, suggested))
             if decided:
-                form = '<div class="notice">注意：该条目已有处理决定，提交将新增一条决定并覆盖当前显示的状态，请谨慎确认后再提交。</div>' + form
+                form = (
+                    '<div class="notice">注意：该条目已有处理决定，提交将新增一条决定并覆盖当前显示的状态，请谨慎确认后再提交。'
+                    '下方原始草稿预览里的 status 字段是创建时的初始值，不随审核结果更新，请以上方"状态"为准。</div>' + form
+                )
         else:
             form = '<p class="notice">该条目已不在待审核快照中，无法再提交决定。</p>'
         meta = " · ".join(part for part in (
@@ -875,6 +879,7 @@ class ReviewService:
             validate_relative_path(wiki_path, WIKI_PREFIX)
             if not candidate.strip():
                 raise ReviewError("approve requires candidate markdown")
+            _frontmatter(candidate)
         elif wiki_path or candidate:
             raise ReviewError("non-approve decision cannot include a candidate")
         if action in {"reject", "return"} and not comment.strip():

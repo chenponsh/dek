@@ -11,6 +11,14 @@
   const sidebar = document.querySelector(".sidebar");
   document.querySelector("#menu-toggle")?.addEventListener("click", () => sidebar?.classList.toggle("open"));
 
+  document.querySelectorAll("tr[data-href]").forEach(row => {
+    row.addEventListener("click", event => {
+      if (event.target.closest("a, button, input, textarea, select")) return;
+      const target = row.dataset.href;
+      if (target) location.href = target;
+    });
+  });
+
   const MIN_SIDEBAR_W = 200;
   const MAX_SIDEBAR_W = 600;
   const savedWidth = Number(localStorage.getItem("dek-sidebar-width"));
