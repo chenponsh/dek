@@ -1,4 +1,7 @@
-# DEK Web 生产部署方案（待批准）
+> [!warning] Superseded architecture evidence
+> 仅保留历史证据。已批准的替代架构以 `deploy/PRODUCTION_ROLLOUT.md` 为准。
+
+# DEK Web 生产部署方案（已废止）
 
 状态：开发与只读范围 API 验证完成，尚未部署。
 

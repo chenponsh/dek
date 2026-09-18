@@ -16,7 +16,8 @@ from pathlib import Path, PurePosixPath
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
-from deploy.activator import ActivationError, Activator, ActivatorConfig
+from deploy.activator import ActivationError, Activator, ActivatorConfig, file_digest, atomic_json as activator_atomic_json
+from deploy.activator_entrypoint import order_candidates_by_ancestry
 from deploy.release_bundle import BundleBuilder, BundleError, ReleasePublisher, _canonical_release
 from deploy.readiness import ReadinessError, validate_configuration
 from qa.dek_qa.index import build_index
@@ -1050,3 +1051,71 @@ class Round9SliceTests(unittest.TestCase):
                                  f"{name} mode must survive publish")
                 self.assertEqual(hashlib.sha256((package / name).read_bytes()).hexdigest(), digests[name],
                                  f"{name} content must survive publish")
+
+
+class ActivationBootstrapAncestryTests(unittest.TestCase):
+    """The very first real (decision-derived) release published after a
+    from-source seed will always carry a parent_commit far ahead of the
+    seed's frozen commit: the seed's commit reflects whatever the repo's
+    HEAD was at bootstrap time, and every infrastructure commit since then
+    (none of them reviewed decisions) has moved the repo HEAD -- and thus
+    every real decision's snapshot_commit -- forward without ever touching
+    the seed. Requiring parent_commit == seed.commit would make the very
+    first activation impossible forever. The chain only needs to be exact
+    once a real decision is live: every subsequent decision must still
+    chain strictly off the previous decision's own commit."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.config = ActivatorConfig.under(Path(self.temp.name)); self.config.prepare()
+        self.activator = Activator(self.config, proof_reader=lambda kind, expected: dict(expected))
+
+    def tearDown(self): self.temp.cleanup()
+
+    def _seed_active(self, *, commit: str) -> dict:
+        descriptor = {"schema_version":2, "sequence":1, "nonce":"seed-0000001", "generation":"seed-genesis-0000001",
+                      "previous_generation":None, "commit":commit, "tree":"2"*40, "bundle_sha256":"3"*64,
+                      "artifacts":{"dek-kb.json":"4"*64, "site/index.html":"5"*64}}
+        activator_atomic_json(self.config.active, descriptor)
+        return descriptor
+
+    def _decision_release(self, generation: str, *, sequence: int, previous_generation: str | None,
+                           commit: str, parent_commit: str) -> Path:
+        release = self.config.build_inbox / generation
+        (release / "site").mkdir(parents=True)
+        (release / "site/index.html").write_text(generation, encoding="utf-8")
+        (release / "dek-kb.json").write_text('{"version":4,"documents":[]}', encoding="utf-8")
+        metadata = {"schema_version":2, "sequence":sequence, "nonce":"nonce-"+generation+"-12345678",
+                    "generation":generation, "previous_generation":previous_generation,
+                    "commit":commit, "tree":"6"*40, "bundle_sha256":"7"*64,
+                    "artifacts":{"dek-kb.json":file_digest(release/"dek-kb.json"), "site/index.html":file_digest(release/"site/index.html")},
+                    "decision_id":"decision-"+generation, "decision_sha256":"8"*64, "origin":"review",
+                    "parent_commit":parent_commit}
+        (release / "release.json").write_text(json.dumps(metadata), encoding="utf-8")
+        return release
+
+    def test_order_candidates_bootstraps_past_a_non_decision_derived_seed(self):
+        seed = self._seed_active(commit="a"*40)
+        release = self._decision_release("gen-real-1", sequence=2, previous_generation="seed-genesis-0000001",
+                                          commit="d"*40, parent_commit="9"*40)
+        metadata = json.loads((release/"release.json").read_text())
+        ordered = order_candidates_by_ancestry([(metadata, release)], seed)
+        self.assertEqual([path.name for _, path in ordered], ["gen-real-1"])
+
+    def test_activation_bootstraps_past_a_non_decision_derived_seed_commit_mismatch(self):
+        self._seed_active(commit="a"*40)
+        release = self._decision_release("gen-real-1", sequence=2, previous_generation="seed-genesis-0000001",
+                                          commit="d"*40, parent_commit="9"*40)
+        result = self.activator.activate(release)
+        self.assertEqual(result["generation"], "gen-real-1")
+        self.assertEqual(self.activator._read_active()["generation"], "gen-real-1")
+
+    def test_activation_still_enforces_strict_ancestry_between_two_real_decisions(self):
+        self._seed_active(commit="a"*40)
+        first = self._decision_release("gen-real-1", sequence=2, previous_generation="seed-genesis-0000001",
+                                        commit="d"*40, parent_commit="9"*40)
+        self.activator.activate(first)
+        second = self._decision_release("gen-real-2", sequence=3, previous_generation="gen-real-1",
+                                         commit="e"*40, parent_commit="f"*40)
+        with self.assertRaisesRegex(ActivationError, "publication ancestry mismatch"):
+            self.activator.activate(second)

@@ -48,9 +48,19 @@ def activate_candidates(activator, candidates, *, on_failure=None):
 
 
 def order_candidates_by_ancestry(candidates, active):
-    """Return the unique commit chain rooted at active; IDs never affect order."""
+    """Return the unique commit chain rooted at active; IDs never affect order.
+
+    A generation with no "decision_id" (the from-source seed, or a rollback
+    target predating the review pipeline) was never itself a reviewed
+    decision, so no real decision's parent_commit can ever be expected to
+    equal its commit -- every commit since bootstrap, reviewed or not, moved
+    the repo forward without that generation's involvement. Treat it the
+    same as "no active generation yet": any single unambiguous candidate may
+    bootstrap past it. Once a real, decision-derived generation is active,
+    the strict commit-to-commit chain applies as normal.
+    """
     remaining=list(candidates); ordered=[]
-    current=active.get("commit") if isinstance(active,dict) else None
+    current=active.get("commit") if isinstance(active,dict) and "decision_id" in active else None
     if current is None:
         if len(remaining) > 1:
             raise FatalActivationError("ambiguous bootstrap publication order")

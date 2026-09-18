@@ -253,7 +253,13 @@ class Activator:
         if (self.config.spent/(expected["nonce"]+".json")).exists(): raise ActivationError("spent nonce")
         if expected["previous_generation"] != (previous.get("generation") if previous else None): raise ActivationError("previous generation mismatch")
         if previous and expected["sequence"] != previous["sequence"] + 1: raise ActivationError("activation sequence mismatch")
-        if previous and "decision_id" in expected and expected.get("parent_commit") != previous.get("commit"):
+        # previous lacking "decision_id" means it's a from-source seed (or a
+        # pre-review-pipeline rollback target), never itself a reviewed
+        # decision -- no real decision's parent_commit can ever equal its
+        # commit, since every commit since bootstrap moved the repo forward
+        # without that generation's involvement. Only enforce the strict
+        # chain once the generation being superseded was itself decision-derived.
+        if previous and "decision_id" in expected and "decision_id" in previous and expected.get("parent_commit") != previous.get("commit"):
             raise ActivationError("publication ancestry mismatch")
         journal_path = self.config.journal / (f'{expected["sequence"]:020d}-{expected["nonce"]}.json')
         journal = {"status":"prepared", "requested":expected, "previous":previous, "recorded_at":int(self.clock())}
