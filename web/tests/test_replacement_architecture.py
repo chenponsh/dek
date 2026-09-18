@@ -1119,3 +1119,27 @@ class ActivationBootstrapAncestryTests(unittest.TestCase):
                                          commit="e"*40, parent_commit="f"*40)
         with self.assertRaisesRegex(ActivationError, "publication ancestry mismatch"):
             self.activator.activate(second)
+
+
+class ActivateCandidatesDiagnosticsTests(unittest.TestCase):
+    """Same masking problem fixed twice already this session in
+    builder_entrypoint.py and publisher_entrypoint.py: activate_candidates()
+    only logged error_type (e.g. "ActivationError", with no message), and
+    dek-activator.service's journal gave no way to tell "fresh web proof
+    mismatch" apart from "publication ancestry mismatch" apart from any
+    other cause -- all looked identical from the outside."""
+
+    def test_activate_candidates_prints_the_real_traceback_on_a_retryable_failure(self):
+        from deploy.activator_entrypoint import activate_candidates
+
+        class FailingActivator:
+            def activate(self, candidate):
+                raise ActivationError("fresh web proof mismatch")
+
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as td:
+            candidate = Path(td) / "cand"; candidate.mkdir()
+            with redirect_stderr(stderr):
+                with self.assertRaises(ActivationError):
+                    activate_candidates(FailingActivator(), [({}, candidate)])
+        self.assertIn("fresh web proof mismatch", stderr.getvalue())

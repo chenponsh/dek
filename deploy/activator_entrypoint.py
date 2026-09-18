@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import time
+import traceback
 import urllib.request
 import sys
 import hashlib
@@ -42,6 +43,7 @@ def activate_candidates(activator, candidates, *, on_failure=None):
         except Exception as exc:
             if on_failure is not None:
                 on_failure(candidate,exc)
+            traceback.print_exc(file=sys.stderr)
             print(f"DEK activation failed candidate={candidate.name} error_type={type(exc).__name__}",file=sys.stderr)
     if attempted and not succeeded:
         raise ActivationError("all pending activations failed")
