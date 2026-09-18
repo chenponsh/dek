@@ -70,7 +70,14 @@ def _run(arguments, *, cwd: Path | None = None, env=None, timeout=120) -> bytes:
     # imports Hermes code that checks $HOME/.hermes/.env at import time; a
     # bare HOME=/var/empty collides with that real path and PermissionErrors
     # on dek-qa's private data instead of cleanly finding nothing there.
-    safe_env = {"HOME":"/var/empty/dek-builder", "PATH":"/opt/dek-vendor/bin:/usr/bin:/bin", "UV_CACHE_DIR":"/opt/dek-vendor/uv-cache", "UV_OFFLINE":"1", "LANG":"C.UTF-8", "LC_ALL":"C.UTF-8", "GIT_CONFIG_NOSYSTEM":"1", "GIT_CONFIG_SYSTEM":"/dev/null", "GIT_CONFIG_GLOBAL":"/dev/null", "GIT_ATTR_NOSYSTEM":"1", "GIT_TERMINAL_PROMPT":"0", "GIT_ASKPASS":"/bin/false", "SSH_ASKPASS":"/bin/false"}
+    #
+    # `uv export` (unlike `uv pip compile`) needs an actual Python 3.11
+    # interpreter present to run against -- hermes-agent's own project
+    # pins 3.11 -- not just cached package metadata. uv's normal discovery
+    # is its own managed install under ~/.local/share/uv/python, i.e.
+    # /root again; vendored a copy to /opt/dek-vendor/python3.11 and put
+    # its bin/ on PATH so uv's PATH-based fallback discovery finds it.
+    safe_env = {"HOME":"/var/empty/dek-builder", "PATH":"/opt/dek-vendor/python3.11/bin:/opt/dek-vendor/bin:/usr/bin:/bin", "UV_CACHE_DIR":"/opt/dek-vendor/uv-cache", "UV_OFFLINE":"1", "LANG":"C.UTF-8", "LC_ALL":"C.UTF-8", "GIT_CONFIG_NOSYSTEM":"1", "GIT_CONFIG_SYSTEM":"/dev/null", "GIT_CONFIG_GLOBAL":"/dev/null", "GIT_ATTR_NOSYSTEM":"1", "GIT_TERMINAL_PROMPT":"0", "GIT_ASKPASS":"/bin/false", "SSH_ASKPASS":"/bin/false"}
     if env:
         safe_env.update({key:value for key,value in env.items() if key.startswith("GIT_CONFIG_KEY_") or key.startswith("GIT_CONFIG_VALUE_") or key=="GIT_CONFIG_COUNT" or key in PROXY_ENV_KEYS})
     completed = subprocess.run(arguments, cwd=cwd, env=safe_env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False)
