@@ -41,6 +41,61 @@ class ScopeClient(DingTalkClient):
 
 
 class DingTalkScopeTests(unittest.TestCase):
+    def test_scope_rejects_missing_admin_flag_types_and_non_list_identifiers(self):
+        valid = {"userIds": [], "deptIds": [], "roleIds": [], "onlyAdminVisible": True}
+        malformed = [{"userIds": [], "deptIds": [], "roleIds": []}]
+        malformed.extend((
+            {**valid, "onlyAdminVisible": 1},
+            {**valid, "onlyAdminVisible": "true"},
+            {**valid, "userIds": "staff-1"},
+            {**valid, "deptIds": {"0": 1}},
+            {**valid, "roleIds": 7},
+        ))
+        for scope in malformed:
+            with self.subTest(scope=scope):
+                client = ScopeClient([{"accessToken": "app-token"}, {"result": scope}])
+                with self.assertRaisesRegex(LoginError, r"^scope_response_invalid$"):
+                    client.is_kbot_allowed({"unionId": "union-1"})
+
+    def test_scope_omitting_empty_identifier_fields_still_authorizes_listed_user(self):
+        # The live endpoint omits identifier fields that are empty instead of
+        # returning an empty list; an absent dimension must behave as empty.
+        client = ScopeClient([
+            {"accessToken": "app-token"},
+            {"result": {"userIds": ["staff-1"], "onlyAdminVisible": False}},
+            {"errcode": 0, "result": {"userid": "staff-1"}},
+        ])
+
+        user = {"unionId": "union-1"}
+        self.assertTrue(client.is_kbot_allowed(user))
+        self.assertEqual(user["_dek_enterprise_user_id"], "staff-1")
+
+    def test_scope_omitting_every_identifier_field_denies_unknown_user(self):
+        client = ScopeClient([
+            {"accessToken": "app-token"},
+            {"result": {"onlyAdminVisible": False}},
+            {"errcode": 0, "result": {"userid": "staff-1"}},
+        ])
+
+        user = {"unionId": "union-1"}
+        self.assertFalse(client.is_kbot_allowed(user))
+        self.assertNotIn("_dek_enterprise_user_id", user)
+
+    def test_successful_non_object_json_responses_are_sanitized(self):
+        class Response:
+            def __init__(self, payload): self.payload = payload
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self): return self.payload
+
+        client = DingTalkClient("client-id", "client-secret", agent_id="123")
+        for payload in (b'[]', b'"secret-value"', b'null'):
+            with self.subTest(payload=payload):
+                with patch("urllib.request.urlopen", return_value=Response(payload)):
+                    with self.assertRaisesRegex(LoginError, r"^dingtalk_response_invalid$") as raised:
+                        client._json(Request("https://api.dingtalk.com/safe"))
+                self.assertNotIn("secret-value", str(raised.exception))
+
     def test_http_failure_reports_only_status_and_machine_error_code(self):
         client = DingTalkClient("client-id", "client-secret", agent_id="123")
         error = HTTPError(
@@ -72,7 +127,9 @@ class DingTalkScopeTests(unittest.TestCase):
             {"errcode": 0, "result": {"userid": "staff-1"}},
         ])
 
-        self.assertTrue(client.is_kbot_allowed({"unionId": "union-1"}))
+        user = {"unionId": "union-1"}
+        self.assertTrue(client.is_kbot_allowed(user))
+        self.assertEqual(user["_dek_enterprise_user_id"], "staff-1")
 
     def test_department_member_in_application_scope_is_allowed(self):
         client = ScopeClient([
@@ -188,6 +245,16 @@ class DingTalkScopeTests(unittest.TestCase):
         ])
 
         with self.assertRaises(LoginError):
+            client.is_kbot_allowed({"unionId": "union-1"})
+
+    def test_nested_identity_user_id_fails_closed(self):
+        client = ScopeClient([
+            {"accessToken": "app-token"},
+            {"result": {"userIds": [], "deptIds": [], "roleIds": [], "onlyAdminVisible": False}},
+            {"errcode": 0, "result": {"userid": {"value": "staff-1"}}},
+        ])
+
+        with self.assertRaisesRegex(LoginError, r"^identity_response_invalid$"):
             client.is_kbot_allowed({"unionId": "union-1"})
 
     def test_legacy_identity_missing_error_code_fails_closed(self):
@@ -309,8 +376,24 @@ class DingTalkGatewayTests(unittest.TestCase):
         state = parse_qs(urlparse(self.gateway.login_url("/", browser_id="browser-a", now=100)).query)["state"][0]
         result = self.gateway.callback("code", state, browser_id="browser-a", now=101)
         self.assertEqual(result.user_id, "union-1")
+        self.assertEqual(result.user_id, "union-1")
         self.assertEqual(result.display_name, "同事")
         with self.assertRaises(LoginError): self.gateway.callback("code", state, browser_id="browser-a", now=102)
+
+    def test_callback_uses_resolved_enterprise_user_id_for_claim(self):
+        class ResolvedClient(FakeClient):
+            def is_kbot_allowed(self, user):
+                user["_dek_enterprise_user_id"] = "staff-1"
+                return True
+        gateway = DingTalkGateway(
+            client_id="client-1", redirect_uri="https://kb.example/auth/callback",
+            claim_secret=b"0123456789abcdef0123456789abcdef",
+            client=ResolvedClient(), states=MemoryStateStore(),
+        )
+        state = parse_qs(urlparse(gateway.login_url("/", browser_id="browser-a", now=100)).query)["state"][0]
+        result = gateway.callback("code", state, browser_id="browser-a", now=101)
+        self.assertEqual(result.user_id, "staff-1")
+        self.assertEqual(result.enterprise_user_id, "staff-1")
 
     def test_callback_rejects_state_from_a_different_browser(self):
         state = parse_qs(urlparse(self.gateway.login_url("/", browser_id="browser-a", now=100)).query)["state"][0]
@@ -342,7 +425,14 @@ class DingTalkGatewayTests(unittest.TestCase):
 
         result = self.gateway.callback("code", state, browser_id="browser-a", now=101)
 
-        self.assertEqual(result.user_id, "union-1")
+    def test_callback_converts_malformed_current_user_to_login_error(self):
+        for malformed in ([], "secret-identity", None, {"unionId": {"nested": "secret"}}):
+            with self.subTest(malformed=malformed):
+                self.gateway.client.current_user = lambda token, value=malformed: value
+                state = parse_qs(urlparse(self.gateway.login_url("/", browser_id="browser-a", now=100)).query)["state"][0]
+                with self.assertRaisesRegex(LoginError, r"^current_user_response_invalid$") as raised:
+                    self.gateway.callback("code", state, browser_id="browser-a", now=101)
+                self.assertNotIn("secret", str(raised.exception))
 
     def test_callback_mints_short_lived_kbot_claim_and_safe_return_path(self):
         state = parse_qs(urlparse(self.gateway.login_url("https://evil.example", browser_id="browser-a", now=100)).query)["state"][0]

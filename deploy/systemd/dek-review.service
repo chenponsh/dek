@@ -1,0 +1,43 @@
+[Unit]
+Description=DEK isolated DingTalk reviewer origin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dek-review
+Group=dek-review
+SupplementaryGroups=dek-review-proxy dek-review-input
+WorkingDirectory=/var/lib/dek-review
+RuntimeDirectory=dek-review
+RuntimeDirectoryMode=0755
+Environment=PYTHONPATH=/opt/dek-review/app
+EnvironmentFile=/var/lib/dek-review/secrets/environment
+LoadCredential=review-decision-key:/var/lib/dek-review/secrets/review-decision-key
+Environment=DEK_REVIEW_DECISION_KEY_FILE=%d/review-decision-key
+ExecStart=/usr/bin/python3 -m web.review_app --bundle /var/lib/dek-review/input/repository.bundle --clones /var/lib/dek-review/clones --bundle-archive /var/lib/dek-review/bundle-archive --queue /var/lib/dek-review/decisions/decisions.jsonl --labels /var/lib/dek-review/state/reviewer-labels.jsonl --socket /run/dek-review/dek-review.sock --socket-group dek-review-proxy --ingest-trigger /var/lib/dek-review/state/ingest-trigger-requested --publish-trigger /var/lib/dek-review/state/publish-trigger-requested
+Restart=on-failure
+RestartSec=5s
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+ReadOnlyPaths=/opt/dek-review/app /var/lib/dek-review/secrets /var/lib/dek-review/input
+ReadWritePaths=/var/lib/dek-review/decisions /var/lib/dek-review/state /var/lib/dek-review/clones /var/lib/dek-review/bundle-archive /run/dek-review
+InaccessiblePaths=/srv/projects/dek /var/lib/dek-web /var/lib/dek-publisher /var/lib/dek-activate /var/spool/dek-build /var/lib/dek-qa /root
+
+[Install]
+WantedBy=multi-user.target

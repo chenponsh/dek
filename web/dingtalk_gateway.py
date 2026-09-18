@@ -69,7 +69,7 @@ class DingTalkClient:
     def _json(self, request: urllib.request.Request) -> dict:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return json.loads(response.read())
+                payload = json.loads(response.read())
         except urllib.error.HTTPError as error:
             machine_code = "unknown"
             try:
@@ -82,6 +82,9 @@ class DingTalkClient:
             raise LoginError(f"dingtalk_http_{error.code}_{machine_code}") from None
         except Exception:
             raise LoginError("dingtalk_request_failed") from None
+        if not isinstance(payload, dict):
+            raise LoginError("dingtalk_response_invalid")
+        return payload
     def exchange_code(self, code: str) -> str:
         body = json.dumps({"clientId": self.client_id, "clientSecret": self.client_secret, "code": code, "grantType": "authorization_code"}).encode()
         data = self._json(urllib.request.Request(TOKEN_URL, body, {"Content-Type": "application/json"}, method="POST"))
@@ -108,9 +111,16 @@ class DingTalkClient:
             raise LoginError("scope_response_invalid")
         scope = scope_data["result"]
         identifier_fields = ("userIds", "deptIds", "roleIds")
-        if any(not isinstance(scope.get(field, []), list) for field in identifier_fields):
+        if "onlyAdminVisible" not in scope or type(scope["onlyAdminVisible"]) is not bool:
             raise LoginError("scope_response_invalid")
-        if any(not _is_identifier(item) for field in identifier_fields for item in scope.get(field, [])):
+        for field in identifier_fields:
+            # The live endpoint omits a dimension that has no entries instead of
+            # returning an empty list; an absent dimension must behave as empty.
+            if field not in scope:
+                scope[field] = []
+            elif not isinstance(scope[field], list):
+                raise LoginError("scope_response_invalid")
+        if any(not _is_identifier(item) for field in identifier_fields for item in scope[field]):
             raise LoginError("scope_response_invalid")
         body = json.dumps({"unionid": union_id}).encode()
         identity_data = self._json(urllib.request.Request(
@@ -127,7 +137,9 @@ class DingTalkClient:
         if user_id is None or user_id == "": return False
         if not _is_identifier(user_id):
             raise LoginError("identity_response_invalid")
-        if scope_allows(user_id, [], [], scope): return True
+        if scope_allows(user_id, [], [], scope):
+            user["_dek_enterprise_user_id"] = str(user_id)
+            return True
         if not (scope.get("deptIds") or scope.get("roleIds") or scope.get("onlyAdminVisible")): return False
         detail_body = json.dumps({"userid": user_id}).encode()
         detail_data = self._json(urllib.request.Request(
@@ -150,7 +162,13 @@ class DingTalkClient:
         ):
             raise LoginError("user_detail_response_invalid")
         role_ids = {str(item["id"]) for item in roles}
-        return scope_allows(user_id, list(departments), list(role_ids), scope, is_admin=detail.get("admin") is True or detail.get("isAdmin") is True)
+        allowed = scope_allows(
+            user_id, list(departments), list(role_ids), scope,
+            is_admin=detail.get("admin") is True or detail.get("isAdmin") is True,
+        )
+        if allowed:
+            user["_dek_enterprise_user_id"] = str(user_id)
+        return allowed
 
 
 @dataclass(frozen=True)
@@ -160,10 +178,11 @@ class LoginResult:
     return_path: str
     claim: str
     expires_at: int
+    enterprise_user_id: str | None = None
 
 
 class DingTalkGateway:
-    def __init__(self, client_id: str, redirect_uri: str, claim_secret: bytes, client: DingTalkClientProtocol, states: MemoryStateStore):
+    def __init__(self, client_id: str, redirect_uri: str, claim_secret: bytes | None, client: DingTalkClientProtocol, states: MemoryStateStore):
         if not redirect_uri.startswith("https://"): raise ValueError("redirect_uri must use https")
         self.client_id, self.redirect_uri = client_id, redirect_uri
         self.claim_secret, self.client, self.states = claim_secret, client, states
@@ -186,15 +205,25 @@ class DingTalkGateway:
             user = self.client.current_user(token)
         except LoginError as error:
             raise LoginError(f"current_user_request_failed:{error}") from None
+        if not isinstance(user, dict):
+            raise LoginError("current_user_response_invalid")
         user_id = user.get("unionId") or user.get("userId")
+        if not _is_identifier(user_id):
+            raise LoginError("current_user_response_invalid")
         try:
             allowed = self.client.is_kbot_allowed(user)
         except LoginError as error:
             raise LoginError(f"scope_check_request_failed:{error}") from None
         if not user_id or not allowed:
             raise LoginError("not_kbot_allowed")
+        enterprise_user_id = user.get("_dek_enterprise_user_id")
+        if enterprise_user_id is not None:
+            if not _is_identifier(enterprise_user_id):
+                raise LoginError("identity_response_invalid")
+            user_id = enterprise_user_id
         expires = now + 8 * 3600
         nick = user.get("nick")
         display_name = nick if isinstance(nick, str) and nick else "同事"
-        claim = sign_claim({"user_id": str(user_id), "display_name": display_name, "kbot_allowed": True, "exp": expires}, self.claim_secret)
-        return LoginResult(str(user_id), display_name, return_path, claim, expires)
+        claim = sign_claim({"user_id": str(user_id), "display_name": display_name, "kbot_allowed": True, "exp": expires}, self.claim_secret) if self.claim_secret else ""
+        exact_enterprise_id = str(enterprise_user_id) if enterprise_user_id is not None else None
+        return LoginResult(str(user_id), display_name, return_path, claim, expires, exact_enterprise_id)

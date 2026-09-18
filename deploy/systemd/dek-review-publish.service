@@ -1,0 +1,47 @@
+[Unit]
+Description=DEK approval-bound bundle publisher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecCondition=+/usr/bin/python3 -I /opt/dek-publisher/app/deploy/readiness.py --config /etc/dek-readiness.json --hmac-key /var/lib/dek-readiness/marker-hmac-key --validate-marker --marker /var/lib/dek-readiness/automation-ready
+User=dek-publisher
+Group=dek-publisher
+SupplementaryGroups=dek-decision-read dek-outcome-read dek-build-write dek-bundle-read
+WorkingDirectory=/var/empty/dek-publisher
+Environment=PYTHONUNBUFFERED=1
+LoadCredential=git-credentials:/var/lib/dek-git-auth/git-credentials
+LoadCredential=approval-signing-key:/var/lib/dek-publisher/secrets/approval-signing-key.pem
+LoadCredential=review-decision-key:/var/lib/dek-publisher/secrets/review-decision-key
+Environment=DEK_GIT_CREDENTIAL_FILE=%d/git-credentials
+Environment=DEK_APPROVAL_SIGNING_KEY_FILE=%d/approval-signing-key
+Environment=DEK_REVIEW_DECISION_KEY_FILE=%d/review-decision-key
+Environment=DEK_FIXED_ORIGIN=https://github.com/chenponsh/dek.git
+Environment=HTTP_PROXY=http://127.0.0.1:7890
+Environment=HTTPS_PROXY=http://127.0.0.1:7890
+Environment=http_proxy=http://127.0.0.1:7890
+Environment=https_proxy=http://127.0.0.1:7890
+Environment=NO_PROXY=www.chp.org.cn,chp.org.cn
+Environment=no_proxy=www.chp.org.cn,chp.org.cn
+UMask=0007
+ExecStart=/usr/bin/python3 -I /opt/dek-publisher/app/deploy/publisher_entrypoint.py --config /etc/dek-publisher.json
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+ReadOnlyPaths=/opt/dek-publisher/app /etc/dek-publisher.json /var/lib/dek-review/decisions /var/lib/dek-review/bundle-archive /var/lib/dek-activate/outcomes
+ReadWritePaths=/var/lib/dek-publisher/state /var/lib/dek-publisher/clones /var/spool/dek-build/approved /var/spool/dek-activate/builds
+InaccessiblePaths=/run/systemd /etc/systemd/system /var/lib/dek-source-ingest /var/lib/dek-builder /var/lib/dek-activate/control /var/lib/dek-web/secrets /var/lib/dek-qa/secrets /root

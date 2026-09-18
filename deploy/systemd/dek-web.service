@@ -1,0 +1,40 @@
+[Unit]
+Description=DEK internal read-only knowledge website
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dek-web
+Group=dek-web
+SupplementaryGroups=dek-release-read
+WorkingDirectory=/var/lib/dek-web
+Environment=PYTHONPATH=/opt/dek-web/app
+EnvironmentFile=/var/lib/dek-web/secrets/environment
+LoadCredential=web-generation-proof:/var/lib/dek-web/secrets/generation-proof-secret
+Environment=DEK_WEB_GENERATION_PROOF_SECRET_FILE=%d/web-generation-proof
+ExecStart=/usr/bin/python3 -m web.app --active /var/lib/dek-activate/control/active.json --releases /var/lib/dek-activate/releases --host 127.0.0.1 --port 9120
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+ReadOnlyPaths=/opt/dek-web/app /var/lib/dek-activate/control/active.json /var/lib/dek-activate/releases /var/lib/dek-web/secrets
+InaccessiblePaths=/srv/projects/dek /var/lib/dek-source-ingest /var/lib/dek-review /var/lib/dek-qa/hermes /var/lib/dek-qa/index /root
+
+[Install]
+WantedBy=multi-user.target

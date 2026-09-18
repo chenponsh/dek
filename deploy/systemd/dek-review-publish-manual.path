@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for a reviewer-requested manual DEK publish
+
+[Path]
+PathExists=/var/lib/dek-review/state/publish-trigger-requested
+Unit=dek-review-publish-manual.service
+
+[Install]
+WantedBy=multi-user.target

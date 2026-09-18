@@ -1,0 +1,14 @@
+{
+  "build_inbox": "/var/spool/dek-activate/builds",
+  "releases": "/var/lib/dek-activate/releases",
+  "control": "/var/lib/dek-activate/control",
+  "journal": "/var/lib/dek-activate/journal",
+  "outcomes": "/var/lib/dek-activate/outcomes",
+  "spent": "/var/lib/dek-activate/spent",
+  "active": "/var/lib/dek-activate/control/active.json",
+  "qa_proof": "/run/dek-proofs/qa/active.json",
+  "web_proof_url": "http://127.0.0.1:9120/__dek_generation",
+  "web_proof_secret_file": "%d/web-generation-proof",
+  "approval_public_key": "/etc/dek-approval-public-key.pem",
+  "decision_queue": "/var/lib/dek-review/decisions/decisions.jsonl"
+}

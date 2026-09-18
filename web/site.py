@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 from datetime import date, datetime
+from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
@@ -15,6 +16,22 @@ import yaml
 
 WIKILINK = re.compile(r"(!?)\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]")
 FRONTMATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.S)
+LEAF_CODE = re.compile(r"^\d+-\d+$")
+# The vault's per-folder overview notes all embed this identical Obsidian
+# Dataview block (rendered dynamically only inside Obsidian itself); the
+# static site instead computes the equivalent table at build time so
+# published pages don't show the raw, unrendered query text.
+DATAVIEW_OVERVIEW = re.compile(
+    r'```dataview\n'
+    r'TABLE WITHOUT ID\n'
+    r'  file\.link AS 项目,\n'
+    r'  question AS 问题,\n'
+    r'  source AS 来源,\n'
+    r'  dateformat\(date, "yyyy-MM-dd"\) AS 日期\n'
+    r'FROM "([^"]+)"\n'
+    r'WHERE no != null\n'
+    r'SORT file\.folder ASC, no ASC\n```'
+)
 
 
 def is_publishable_path(path: Path) -> bool:
@@ -85,6 +102,147 @@ def _tree_html(docs: list[dict], current: str, source_output: PurePosixPath) -> 
     return "".join(chunks)
 
 
+# --- Whitelist HTML sanitizer (stdlib only; no new dependencies) ---
+
+_ALLOWED_TAGS = frozenset({
+    "p", "br", "hr", "strong", "em", "b", "i", "u", "s", "del", "ins", "sub", "sup",
+    "code", "pre", "blockquote", "ul", "ol", "li", "dl", "dt", "dd",
+    "h1", "h2", "h3", "h4", "h5", "h6", "a", "span", "div",
+    "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "img",
+})
+_DROP_SUBTREE_TAGS = frozenset({
+    "script", "style", "iframe", "object", "embed", "svg", "math", "frame", "frameset",
+    "form", "input", "button", "select", "option", "textarea", "link", "meta", "base",
+    "title", "template", "noscript", "applet", "audio", "video", "source", "track",
+})
+_ALLOWED_ATTRS = {
+    "a": frozenset({"href", "title", "class", "rel", "target"}),
+    "img": frozenset({"src", "alt", "title"}),
+    "h1": frozenset({"id"}), "h2": frozenset({"id"}), "h3": frozenset({"id"}),
+    "h4": frozenset({"id"}), "h5": frozenset({"id"}), "h6": frozenset({"id"}),
+    "span": frozenset({"class"}), "div": frozenset({"class"}),
+    "code": frozenset({"class"}), "pre": frozenset({"class"}),
+    "th": frozenset({"align"}), "td": frozenset({"align"}),
+}
+_VOID_TAGS = frozenset({"br", "hr", "img"})
+_ALLOWED_URL_SCHEMES = frozenset({"http", "https", "mailto"})
+
+
+def _safe_url(value: object, *, local_only: bool = False) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    compact = re.sub(r"[\x00-\x20\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]", "", text)
+    if compact.startswith("//") or compact.startswith("\\\\"):
+        return None
+    match = re.match(r"^([a-zA-Z][a-zA-Z0-9+.\-]*):", compact)
+    if match and match.group(1).lower() not in _ALLOWED_URL_SCHEMES:
+        return None
+    if local_only and match:
+        return None
+    return text
+
+
+class _WhitelistSanitizer(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+        self._drop = 0
+
+    def _emit_start(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        allowed = _ALLOWED_ATTRS.get(tag, ())
+        cleaned: list[tuple[str, str | None]] = []
+        for name, value in attrs:
+            name = name.lower()
+            if name.startswith("on") or name == "style":
+                continue
+            if name not in allowed:
+                continue
+            if name in ("href", "src"):
+                value = _safe_url(value,local_only=(name=="src"))
+                if value is None:
+                    continue
+            cleaned.append((name, value))
+        attributes = "".join(
+            f' {name}="{html.escape(value, quote=True)}"' if value is not None else f" {name}"
+            for name, value in cleaned
+        )
+        self._parts.append(f"<{tag}{attributes}>")
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if self._drop:
+            if tag in _DROP_SUBTREE_TAGS:
+                self._drop += 1
+            return
+        if tag in _DROP_SUBTREE_TAGS:
+            self._drop = 1
+            return
+        if tag not in _ALLOWED_TAGS:
+            return
+        self._emit_start(tag, attrs)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if tag in _DROP_SUBTREE_TAGS:
+            return
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if self._drop:
+            if tag in _DROP_SUBTREE_TAGS:
+                self._drop -= 1
+            return
+        if tag in _ALLOWED_TAGS and tag not in _VOID_TAGS:
+            self._parts.append(f"</{tag}>")
+
+    def handle_data(self, data: str) -> None:
+        if self._drop:
+            return
+        self._parts.append(html.escape(data, quote=False))
+
+
+def sanitize_html(fragment: str) -> str:
+    parser = _WhitelistSanitizer()
+    parser.feed(fragment)
+    parser.close()
+    return "".join(parser._parts)
+
+
+def _dataview_sort_key(value: object) -> tuple[int, float | str]:
+    try:
+        return (0, float(value))
+    except (TypeError, ValueError):
+        return (1, str(value if value is not None else ""))
+
+
+def _dataview_overview_table(doc: dict, from_path: str, by_path: dict[str, dict], by_stem: dict[str, list[dict]], repl) -> str:
+    prefix = from_path.rstrip("/") + "/"
+    rows = [item for item in by_path.values() if item["path"].startswith(prefix) and item["meta"].get("no") is not None]
+    rows.sort(key=lambda item: (PurePosixPath(item["path"]).parent.as_posix(), _dataview_sort_key(item["meta"].get("no"))))
+    if not rows:
+        return '<p class="muted">暂无内容</p>'
+    body_rows = []
+    for item in rows:
+        href = _relative_href(doc["output"], item["output"])
+        question = html.escape(str(item["meta"].get("question") or ""))
+        raw_source = item["meta"].get("source")
+        source_cell = WIKILINK.sub(repl, html.escape(str(raw_source))) if raw_source else ""
+        raw_date = item["meta"].get("date")
+        date_cell = raw_date.strftime("%Y-%m-%d") if isinstance(raw_date, (date, datetime)) else html.escape(str(raw_date or ""))
+        body_rows.append(
+            f'<tr><td><a href="{href}">{html.escape(item["title"])}</a></td>'
+            f'<td>{question}</td><td>{source_cell}</td><td>{date_cell}</td></tr>'
+        )
+    return (
+        '<div class="table-wrap"><table><thead><tr><th>项目</th><th>问题</th><th>来源</th><th>日期</th></tr></thead>'
+        f'<tbody>{"".join(body_rows)}</tbody></table></div>'
+    )
+
+
 def _render_body(doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[dict]]) -> str:
     def repl(match: re.Match) -> str:
         target, label = match.group(2), match.group(3) or PurePosixPath(match.group(2)).name
@@ -93,8 +251,10 @@ def _render_body(doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[di
             return f'<span class="broken-link" title="未找到：{html.escape(target)}">{html.escape(label)}</span>'
         href = _relative_href(doc["output"], resolved["output"])
         return f'<a class="wikilink" href="{href}">{html.escape(label)}</a>'
-    source = WIKILINK.sub(repl, doc["body"])
-    return markdown.markdown(source, extensions=["tables", "fenced_code", "toc", "sane_lists"], output_format="html")
+    source = DATAVIEW_OVERVIEW.sub(lambda match: _dataview_overview_table(doc, match.group(1), by_path, by_stem, repl), doc["body"])
+    source = WIKILINK.sub(repl, source)
+    rendered = markdown.markdown(source, extensions=["tables", "fenced_code", "toc", "sane_lists"], output_format="html")
+    return sanitize_html(rendered)
 
 
 def _toc(rendered: str) -> str:
@@ -112,8 +272,10 @@ def _manifest_tree(documents: list[dict]) -> list[dict]:
         for index, part in enumerate(parts[1:-1], start=1):
             path = "/".join(parts[:index + 1])
             node = node["children"].setdefault(part, {"type": "directory", "name": part, "path": path, "children": {}})
+        stem = PurePosixPath(parts[-1]).stem
+        label = f"{stem} {doc['title']}" if LEAF_CODE.match(stem) else doc["title"]
         node["children"][parts[-1]] = {
-            "type": "document", "name": doc["title"], "path": doc["path"], "url": doc["url"], "kind": doc["kind"],
+            "type": "document", "name": label, "path": doc["path"], "url": doc["url"], "kind": doc["kind"],
         }
 
     def freeze(node: dict) -> dict:
@@ -169,7 +331,8 @@ def _page(doc: dict, docs: list[dict], rendered: str, backlinks: list[dict], by_
     links = "".join(f'<a href="{_relative_href(doc["output"], x["output"])}">{html.escape(x["title"])}</a>' for x in backlinks) or '<p class="muted">暂无反向链接</p>'
     raw_urls = doc["meta"].get("source_urls") or doc["meta"].get("source_url") or doc["meta"].get("url") or []
     if isinstance(raw_urls, str): raw_urls = [raw_urls]
-    external_links = "".join(f'<a class="external" href="{html.escape(str(url))}" rel="noreferrer" target="_blank">打开来源链接 ↗</a>' for url in raw_urls)
+    safe_urls = [safe for url in raw_urls if (safe := _safe_url(str(url))) is not None]
+    external_links = "".join(f'<a class="external" href="{html.escape(url)}" rel="noreferrer" target="_blank">打开来源链接 ↗</a>' for url in safe_urls)
     source_refs = source_refs or []
     source_note_links = "".join(f'<a href="{_relative_href(doc["output"], item["output"])}">{html.escape(item["title"])}</a>' for item in source_refs)
     source_wiki_links = "".join(f'<a href="{_relative_href(doc["output"], item["output"])}">{html.escape(item["title"])}</a>' for item in backlinks if item["kind"] == "wiki")
@@ -181,7 +344,7 @@ def _page(doc: dict, docs: list[dict], rendered: str, backlinks: list[dict], by_
     auth_me = _relative_href(doc["output"], PurePosixPath("auth/me"))
     auth_logout = _relative_href(doc["output"], PurePosixPath("auth/logout"))
     search_script = _relative_href(doc["output"], PurePosixPath("assets/search.js"))
-    return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(doc['title'])} · DEK</title><link rel="stylesheet" href="{assets}"></head><body><header><button id="menu-toggle" aria-label="打开目录">☰</button><strong>DEK 知识库</strong><div class="search-wrap"><div class="search-box"><input type="search" id="global-search" data-index="{search}" placeholder="输入关键词…" autocomplete="off"><button type="button" id="search-button" disabled>加载中…</button></div><span id="search-status" aria-live="polite"></span><div id="search-results"></div></div><div class="user-menu" data-auth-me="{auth_me}"><span id="user-name">正在读取…</span><a href="{auth_logout}">退出</a></div><button id="theme-toggle" aria-label="切换主题">◐</button></header><aside class="sidebar"><div class="side-title">浏览</div><nav id="nav-tree" data-manifest="{manifest}" data-current="{html.escape(doc['path'])}"></nav></aside><main class="document"><div class="breadcrumbs">{crumbs}</div><span class="kind">{doc['kind'].upper()}</span><h1>{html.escape(doc['title'])}</h1><div class="badges">{badges}</div>{properties}<article>{rendered}</article><section class="backlinks"><h2>反向链接</h2>{links}</section></main><aside class="toc"><h3>本页目录</h3>{_toc(rendered)}{source_card}</aside><script src="{search_script}" defer></script><script src="{script}" defer></script></body></html>'''
+    return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(doc['title'])} · DEK</title><link rel="stylesheet" href="{assets}"></head><body><header><button id="menu-toggle" aria-label="打开目录">☰</button><strong>DEK 知识库</strong><div class="search-wrap"><div class="search-box"><input type="search" id="global-search" data-index="{search}" placeholder="输入关键词…" autocomplete="off"><button type="button" id="search-button" disabled>加载中…</button></div><span id="search-status" aria-live="polite"></span><div id="search-results"></div></div><div class="user-menu" data-auth-me="{auth_me}"><a class="review-entry" href="/review/">知识审核</a><span id="user-name">正在读取…</span><a href="{auth_logout}">退出</a></div><button id="theme-toggle" aria-label="切换主题">◐</button></header><aside class="sidebar"><div class="side-title">浏览</div><nav id="nav-tree" data-manifest="{manifest}" data-current="{html.escape(doc['path'])}"></nav></aside><main class="document"><div class="breadcrumbs">{crumbs}</div><span class="kind">{doc['kind'].upper()}</span><h1>{html.escape(doc['title'])}</h1><div class="badges">{badges}</div>{properties}<article>{rendered}</article><section class="backlinks"><h2>反向链接</h2>{links}</section></main><aside class="toc"><h3>本页目录</h3>{_toc(rendered)}{source_card}</aside><script src="{search_script}" defer></script><script src="{script}" defer></script></body></html>'''
 
 
 def build_site(vault: Path, output: Path) -> dict:

@@ -1,5 +1,7 @@
+import hashlib
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,12 +49,33 @@ class AppTests(unittest.TestCase):
         self.token=sign_claim({"user_id":"u1","display_name":"张三","kbot_allowed":True,"exp":2000000000},self.secret)
         self.app=KnowledgeApp(root,FakeGateway(),self.secret,clock=lambda:1900000000)
     def tearDown(self): self.tmp.cleanup()
-    def call(self,path,query="",cookie=""):
+    def call(self,path,query="",cookie="",method="GET",body=b"",content_type="application/x-www-form-urlencoded"):
         status=[];headers=[]
-        env={"REQUEST_METHOD":"GET","PATH_INFO":path,"QUERY_STRING":query,"HTTP_COOKIE":cookie,"wsgi.input":io.BytesIO()}
+        env={"REQUEST_METHOD":method,"PATH_INFO":path,"QUERY_STRING":query,"HTTP_COOKIE":cookie,"wsgi.input":io.BytesIO(body),"CONTENT_LENGTH":str(len(body)),"CONTENT_TYPE":content_type}
         body=b"".join(self.app(env,lambda s,h:(status.append(s),headers.extend(h))))
         self.last_headers = headers
         return status[0],dict(headers),body
+
+    def test_generation_proof_identifies_pinned_immutable_release(self):
+        (self.app.root / "index.html").write_text("generation one", encoding="utf-8")
+        self.app.generation_proof_secret = "proof-secret"
+        self.app.release_sha256 = "f" * 64
+        expected = hashlib.sha256(b"generation one").hexdigest()
+
+        self.assertEqual(self.call("/__dek_generation")[0], "404 Not Found")
+        status = []; headers = []
+        environ = {
+            "REQUEST_METHOD": "GET", "PATH_INFO": "/__dek_generation", "QUERY_STRING": "",
+            "HTTP_COOKIE": "", "HTTP_X_DEK_GENERATION_PROOF": "proof-secret",
+            "wsgi.input": io.BytesIO(b""), "CONTENT_LENGTH": "0",
+        }
+        body = b"".join(self.app(environ, lambda value, found: (status.append(value), headers.extend(found))))
+        proof = json.loads(body)
+        self.assertEqual(status, ["200 OK"])
+        self.assertEqual(proof["web_sha256"], expected)
+        self.assertEqual(Path(proof["release"]).resolve(), self.app.root.resolve().parent)
+        self.assertEqual(proof["pid"], os.getpid())
+        self.assertEqual(proof["release_sha256"], "f" * 64)
     def test_oauth_state_is_bound_to_initiating_browser_cookie(self):
         status, headers, _ = self.call("/wiki/a.html")
         self.assertEqual(status, "302 Found")
@@ -103,6 +126,18 @@ class AppTests(unittest.TestCase):
         self.assertEqual((status,body),("200 OK",b"OK"))
         self.assertEqual(self.call("/../etc/passwd",cookie="dek_session="+self.token)[0],"404 Not Found")
 
+    def test_site_release_is_pinned_until_process_restart(self):
+        base = Path(self.tmp.name)
+        first = base / "release-first"; second = base / "release-second"
+        (first / "wiki").mkdir(parents=True); (second / "wiki").mkdir(parents=True)
+        (first / "wiki/a.html").write_text("first", encoding="utf-8")
+        (second / "wiki/a.html").write_text("second", encoding="utf-8")
+        current = base / "current"; current.symlink_to(first)
+        self.app = KnowledgeApp(current, FakeGateway(), self.secret, clock=lambda: 1900000000)
+        self.assertEqual(self.call("/wiki/a.html", cookie="dek_session=" + self.token)[2], b"first")
+        replacement = base / ".current-new"; replacement.symlink_to(second); replacement.replace(current)
+        self.assertEqual(self.call("/wiki/a.html", cookie="dek_session=" + self.token)[2], b"first")
+
     def test_valid_cookie_serves_percent_encoded_chinese_path(self):
         encoded_path = "/wiki/" + quote("中文页面.html")
 
@@ -151,5 +186,37 @@ class AppTests(unittest.TestCase):
 
         self.assertEqual(status, "200 OK")
         self.assertEqual(headers["Cache-Control"], "no-store")
+
+    def test_reviewer_routes_are_not_owned_by_knowledge_app(self):
+        for path in ("/review/", "/review/decision", "/decision"):
+            with self.subTest(path=path):
+                status, _, _ = self.call(path, cookie="dek_session=" + self.token, method="POST")
+                self.assertEqual(status, "404 Not Found")
+
+    def test_bounce_sends_an_unauthenticated_visitor_through_login_with_next_as_return_path(self):
+        status, headers, _ = self.call("/auth/bounce", query=urlencode({"next": "/review/item/abc"}))
+        self.assertEqual(status, "302 Found")
+        self.assertEqual(headers["Location"], "https://login.example/?return=/review/item/abc")
+        self.assertIn("dek_oauth_browser=", headers["Set-Cookie"])
+
+    def test_bounce_rejects_an_external_next_and_falls_back_to_root(self):
+        for next_value in ("//evil.example/", "https://evil.example/", "not-a-path", ""):
+            with self.subTest(next=next_value):
+                status, headers, _ = self.call("/auth/bounce", query=urlencode({"next": next_value}))
+                self.assertEqual(status, "302 Found")
+                self.assertEqual(headers["Location"], "https://login.example/?return=/")
+
+    def test_bounce_sends_an_already_authenticated_visitor_straight_to_next_without_a_dingtalk_round_trip(self):
+        status, headers, _ = self.call(
+            "/auth/bounce", query=urlencode({"next": "/review/"}), cookie="dek_session=" + self.token,
+        )
+        self.assertEqual(status, "302 Found")
+        self.assertEqual(headers["Location"], "/review/")
+        self.assertIsNone(self.app.gateway.login_browser_id)
+
+    def test_bounce_is_get_only(self):
+        status, headers, _ = self.call("/auth/bounce", method="POST")
+        self.assertEqual(status, "405 Method Not Allowed")
+        self.assertEqual(headers["Allow"], "GET")
 
 if __name__=="__main__": unittest.main()

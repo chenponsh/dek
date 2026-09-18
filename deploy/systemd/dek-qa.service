@@ -7,7 +7,10 @@ Wants=network-online.target
 Type=simple
 User=dek-qa
 Group=dek-qa
+SupplementaryGroups=dek-release-read dek-proof-write
 WorkingDirectory=/var/lib/dek-qa
+RuntimeDirectory=dek-qa
+RuntimeDirectoryMode=0750
 Environment=HOME=/var/lib/dek-qa
 Environment=HERMES_HOME=/var/lib/dek-qa/hermes
 Environment=HERMES_ENV=/var/lib/dek-qa/secrets/environment
@@ -35,8 +38,9 @@ CapabilityBoundingSet=
 AmbientCapabilities=
 SystemCallArchitectures=native
 ReadWritePaths=/var/lib/dek-qa/hermes
-ReadOnlyPaths=/var/lib/dek-qa/index /var/lib/dek-qa/secrets
-InaccessiblePaths=/srv/projects/dek /root /etc/systemd/system /run/credentials
+ReadWritePaths=/run/dek-proofs/qa
+ReadOnlyPaths=/var/lib/dek-activate/control/active.json /var/lib/dek-activate/releases /var/lib/dek-qa/secrets
+InaccessiblePaths=/srv/projects/dek /root /etc/systemd/system
 
 [Install]
 WantedBy=multi-user.target

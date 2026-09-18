@@ -1,0 +1,35 @@
+[Unit]
+Description=DEK non-root static release activator
+
+[Service]
+Type=oneshot
+ExecCondition=+/usr/bin/python3 -I /opt/dek-activator/app/deploy/readiness.py --config /etc/dek-readiness.json --hmac-key /var/lib/dek-readiness/marker-hmac-key --validate-marker --marker /var/lib/dek-readiness/automation-ready
+User=dek-activator
+Group=dek-activator
+SupplementaryGroups=dek-release-write dek-proof-read dek-outcome-write dek-decision-read
+WorkingDirectory=/var/empty/dek-activator
+LoadCredential=web-generation-proof:/var/lib/dek-activator/secrets/web-generation-proof
+ExecStart=/usr/bin/python3 -I /opt/dek-activator/app/deploy/activator_entrypoint.py --config /etc/dek-activator.json
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+ReadOnlyPaths=/opt/dek-activator/app /etc/dek-activator.json /var/spool/dek-activate/builds /run/dek-proofs /var/lib/dek-review/decisions
+ReadWritePaths=/var/lib/dek-activate
+InaccessiblePaths=/run/systemd /etc/systemd/system /var/lib/dek-git-auth /var/lib/dek-publisher/secrets /var/lib/dek-review/secrets /var/lib/dek-review/state /var/lib/dek-review/clones /var/lib/dek-review/bundle-archive /var/lib/dek-source-ingest /var/lib/dek-web/secrets /var/lib/dek-qa/secrets /root

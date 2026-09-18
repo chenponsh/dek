@@ -11,6 +11,44 @@
   const sidebar = document.querySelector(".sidebar");
   document.querySelector("#menu-toggle")?.addEventListener("click", () => sidebar?.classList.toggle("open"));
 
+  const MIN_SIDEBAR_W = 200;
+  const MAX_SIDEBAR_W = 600;
+  const savedWidth = Number(localStorage.getItem("dek-sidebar-width"));
+  if (savedWidth >= MIN_SIDEBAR_W && savedWidth <= MAX_SIDEBAR_W) {
+    root.style.setProperty("--sidebar-w", savedWidth + "px");
+  }
+  const handle = document.querySelector(".sidebar-resize-handle");
+  if (handle) {
+    const setWidth = value => {
+      const clamped = Math.min(MAX_SIDEBAR_W, Math.max(MIN_SIDEBAR_W, value));
+      root.style.setProperty("--sidebar-w", clamped + "px");
+      return clamped;
+    };
+    handle.addEventListener("pointerdown", event => {
+      if (event.button !== undefined && event.button !== 0) return;
+      event.preventDefault();
+      handle.classList.add("dragging");
+      document.body.style.userSelect = "none";
+      const onMove = moveEvent => setWidth(moveEvent.clientX);
+      const onUp = upEvent => {
+        handle.classList.remove("dragging");
+        document.body.style.userSelect = "";
+        const width = setWidth(upEvent.clientX);
+        localStorage.setItem("dek-sidebar-width", width);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+    handle.addEventListener("dblclick", () => {
+      root.style.removeProperty("--sidebar-w");
+      localStorage.removeItem("dek-sidebar-width");
+    });
+  }
+
   const userMenu = document.querySelector(".user-menu");
   if (userMenu) {
     fetch(userMenu.dataset.authMe, { credentials: "same-origin", cache: "no-store" })
@@ -89,17 +127,17 @@
     try { savedOpen = JSON.parse(localStorage.getItem("dek-tree-open") || "[]"); } catch (_) { savedOpen = []; }
     const openPaths = new Set(savedOpen);
 
-    function renderNode(node, depth = 0) {
+    function renderNode(node) {
       if (node.type === "document") {
         const active = node.path === current ? " active" : "";
         const href = new URL(node.url, manifestUrl).href;
-        return `<a role="treeitem" class="tree-link${active}" style="--depth:${depth}" href="${href}" title="${escapeHtml(node.path)}"><span class="tree-file-icon">◇</span><span class="tree-label">${escapeHtml(node.name)}</span></a>`;
+        return `<a role="treeitem" class="tree-link${active}" href="${href}" title="${escapeHtml(node.path)}"><span class="tree-file-icon">◇</span><span class="tree-label">${escapeHtml(node.name)}</span></a>`;
       }
       const isRoot = node.path === "wiki" || node.path === "source";
       const isCurrentAncestor = current === node.path || current.startsWith(node.path + "/");
       const open = isRoot || isCurrentAncestor || openPaths.has(node.path);
       const label = node.path === "wiki" ? "Wiki · 正式知识" : node.path === "source" ? "Source · 来源材料" : node.name;
-      return `<details class="tree-folder${isRoot ? " tree-root" : ""}" data-path="${escapeHtml(node.path)}" ${open ? "open" : ""}><summary role="treeitem" style="--depth:${depth}"><span class="tree-chevron">›</span><span class="tree-folder-icon">▱</span><span class="tree-label">${escapeHtml(label)}</span><span class="tree-count">${node.count}</span></summary><div role="group">${node.children.map(child => renderNode(child, depth + 1)).join("")}</div></details>`;
+      return `<details class="tree-folder${isRoot ? " tree-root" : ""}" data-path="${escapeHtml(node.path)}" ${open ? "open" : ""}><summary role="treeitem"><span class="tree-chevron">›</span><span class="tree-folder-icon">▱</span><span class="tree-label">${escapeHtml(label)}</span><span class="tree-count">${node.count}</span></summary><div role="group">${node.children.map(child => renderNode(child)).join("")}</div></details>`;
     }
 
     fetch(manifestUrl).then(response => response.json()).then(({ tree }) => {

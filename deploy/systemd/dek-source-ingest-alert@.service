@@ -3,4 +3,9 @@ Description=Record DEK source ingestion failure for %i
 
 [Service]
 Type=oneshot
+User=dek-source-ingest
+Group=dek-source-ingest
 ExecStart=/usr/bin/systemd-cat -t dek-source-ingest-alert -p alert /bin/echo "DEK source ingestion stopped; inspect journalctl -u %i"
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=

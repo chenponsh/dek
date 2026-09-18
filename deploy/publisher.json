@@ -1,0 +1,8 @@
+{
+  "decisions_root": "/var/lib/dek-review/decisions",
+  "approved_root": "/var/spool/dek-build/approved",
+  "state_root": "/var/lib/dek-publisher/state",
+  "origin": "https://github.com/chenponsh/dek.git",
+  "builds_root": "/var/spool/dek-activate/builds",
+  "review_bundle_archive": "/var/lib/dek-review/bundle-archive"
+}

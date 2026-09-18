@@ -1,0 +1,5 @@
+{
+  "approved_root": "/var/spool/dek-build/approved",
+  "build_root": "/var/spool/dek-activate/builds",
+  "approval_public_key": "/etc/dek-approval-public-key.pem"
+}

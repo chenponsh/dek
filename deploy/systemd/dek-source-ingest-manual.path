@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for a reviewer-requested manual DEK source ingestion
+
+[Path]
+PathExists=/var/lib/dek-review/state/ingest-trigger-requested
+Unit=dek-source-ingest-manual.service
+
+[Install]
+WantedBy=multi-user.target

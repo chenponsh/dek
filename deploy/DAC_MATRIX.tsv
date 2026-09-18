@@ -1,0 +1,31 @@
+# flow	producer	consumer	path	owner:group	mode	producer	consumer-negative
+decision-to-publisher	dek-review	dek-publisher	/var/lib/dek-review/decisions	dek-review:dek-decision-read	2750	write	read-only
+decision-snapshot-to-activator	dek-review	dek-activator	/var/lib/dek-review/decisions	dek-review:dek-decision-read	2750	append under queue lock	read-only hash under same lock; no decision MAC key
+publisher-to-builder	dek-publisher	dek-builder	/var/spool/dek-build/approved	dek-publisher:dek-approved-read	2750	write	read-only
+build-to-activator	dek-builder	dek-activator	/var/spool/dek-activate/builds	dek-builder:dek-build-write	2775	write + make_activator_readable (files 0664)	read-only
+publisher-signs-build	dek-publisher	dek-activator	/var/spool/dek-activate/builds	dek-builder:dek-build-write	2775	write release.sig only; never chmod release.json	verify-only
+publisher-activation-gate	dek-publisher	dek-activator	/var/spool/dek-activate/builds/*/activation-ready.{json,sig}	dek-publisher:dek-build-write	0664	write only after successful push	read and signature-verify
+# publisher-signs-build cross-component contract: release.json is builder-owned and its activator-readable 0664 comes solely from builder_entrypoint.make_activator_readable(); overwriting it does not change its mode, and the publisher (not the owner, empty capability set) must not chmod it — that would EPERM without CAP_FOWNER and block finalize.
+review-bundle-to-publisher	dek-review	dek-publisher	/var/lib/dek-review/bundle-archive	dek-review:dek-bundle-read	2750	archive	read-only
+activator-to-web-qa	dek-activator	dek-web,dek-qa	/var/lib/dek-activate/releases	dek-activator:dek-release-read	2750	write	read-only
+outcome-to-publisher	dek-activator	dek-publisher	/var/lib/dek-activate/outcomes	dek-activator:dek-outcome-read	2750	write	read-only
+ingestion-to-review	dek-source-ingest	dek-review	/var/lib/dek-review/input	dek-source-ingest:dek-review-input	2750	atomic-write	read-only
+qa-to-activator-proof	dek-qa	dek-activator	/run/dek-proofs/qa	dek-qa:dek-proof-read	2750	atomic-write	read-only
+# secret-boundary	owner	consumer	path	owner:group	mode	allowed	all-other-services
+secret-review-environment	root	dek-review	/var/lib/dek-review/secrets/environment	dek-review:dek-review	0400	read-only	deny
+secret-review-decision	root	dek-review	/var/lib/dek-review/secrets/review-decision-key	dek-review:dek-review	0400	read-only	deny
+secret-web-environment	root	dek-web	/var/lib/dek-web/secrets/environment	dek-web:dek-web	0400	read-only	deny
+secret-web-proof	root	dek-web	/var/lib/dek-web/secrets/generation-proof-secret	dek-web:dek-web	0400	read-only	deny
+secret-qa-environment	root	dek-qa	/var/lib/dek-qa/secrets/environment	dek-qa:dek-qa	0400	read-only	deny
+secret-activator-proof	root	dek-activator	/var/lib/dek-activator/secrets/web-generation-proof	dek-activator:dek-activator	0400	read-only	deny
+secret-stage-a-public-key	root	builder,activator	/etc/dek-approval-public-key.pem	root:root	0444	read-only	no-write
+secret-readiness-hmac	root	root ExecCondition only	/var/lib/dek-readiness/marker-hmac-key	root:root	0400	read-only	deny all Stage B identities
+readiness-markers	root	root ExecCondition only	/var/lib/dek-readiness/automation-ready	root:root	0444	write during Stage A only	strict verify
+stage-a-install-journal	root	root Stage A only	/var/lib/dek-install-transactions	root:root	0700	durable fsynced transaction/reconcile	deny all Stage B identities
+qa-versioned-runtime	root	dek-qa at A6	/var/lib/dek-qa/venvs/$PACKAGE_SHA256	dek-qa:dek-qa	0700	fresh Python 3.12 hashed offline install	read/execute after atomic venv link cutover
+qa-versioned-profile	root	dek-qa at A6	/var/lib/dek-qa/hermes/profile-versions/$PACKAGE_SHA256	dek-qa:dek-qa	0700	structured migration from protected production profile	read/write runtime state only after atomic profile link cutover
+git-credential-to-publisher	root	dek-publisher	/var/lib/dek-git-auth/git-credentials	root:root	0400	LoadCredential read-only	deny
+git-credential-to-source-ingest	root	dek-source-ingest	/var/lib/dek-git-auth/git-credentials	root:root	0400	LoadCredential read-only	deny
+approval-signing-private	root	dek-publisher	/var/lib/dek-publisher/secrets/approval-signing-key.pem	dek-publisher:dek-publisher	0400	LoadCredential read-only	deny
+review-decision-to-review	root	dek-review	/var/lib/dek-review/secrets/review-decision-key	dek-review:dek-review	0400	LoadCredential read-only	deny
+review-decision-to-publisher	root	dek-publisher	/var/lib/dek-publisher/secrets/review-decision-key	dek-publisher:dek-publisher	0400	LoadCredential read-only	deny

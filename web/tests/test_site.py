@@ -45,6 +45,49 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn('反向链接', source)
         self.assertIn('../../wiki/' + quote('01_注册/条目.html', safe='/'), source)
 
+    def test_dataview_overview_block_renders_as_a_real_table_not_raw_query_text(self):
+        (self.vault / "wiki" / "01_注册" / "0102_分类").mkdir(parents=True)
+        (self.vault / "wiki" / "01_注册" / "0102_分类" / "条目2.md").write_text(
+            "---\nno: 2\ndate: 2018-06-14\nquestion: 另一个问题\nsource: 培训材料\n---\n\n正文2。",
+            encoding="utf-8",
+        )
+        (self.vault / "wiki" / "01_注册" / "无编号.md").write_text(
+            "---\nquestion: 没有编号不应出现\n---\n\n正文3。", encoding="utf-8",
+        )
+        (self.vault / "wiki" / "01_注册" / "01_注册.md").write_text(
+            "---\naliases:\n  - 概览\n---\n\n"
+            '```dataview\n'
+            'TABLE WITHOUT ID\n'
+            '  file.link AS 项目,\n'
+            '  question AS 问题,\n'
+            '  source AS 来源,\n'
+            '  dateformat(date, "yyyy-MM-dd") AS 日期\n'
+            'FROM "wiki/01_注册"\n'
+            'WHERE no != null\n'
+            'SORT file.folder ASC, no ASC\n'
+            '```\n',
+            encoding="utf-8",
+        )
+        build_site(self.vault, self.out)
+        page = (self.out / "wiki" / "01_注册" / "01_注册.html").read_text(encoding="utf-8")
+        self.assertNotIn("TABLE WITHOUT ID", page)
+        self.assertNotIn("```dataview", page)
+        self.assertIn('<div class="table-wrap"><table>', page)
+        self.assertIn("申报要求", page)
+        self.assertIn("另一个问题", page)
+        self.assertIn("培训材料", page)
+        self.assertIn("2018-06-14", page)
+        self.assertNotIn("没有编号不应出现", page)
+
+    def test_dataview_block_with_a_different_query_shape_is_left_untouched(self):
+        (self.vault / "source" / "Index.md").write_text(
+            "```dataview\nTABLE WITHOUT ID\n  file.link AS \"题目\"\nFROM \"source\"\nWHERE entity != null\n```\n",
+            encoding="utf-8",
+        )
+        build_site(self.vault, self.out)
+        page = (self.out / "source" / "Index.html").read_text(encoding="utf-8")
+        self.assertIn("TABLE WITHOUT ID", page)
+
     def test_search_index_contains_both_collections_and_no_frontmatter(self):
         build_site(self.vault, self.out)
         search = json.loads((self.out / "assets" / "search-index.json").read_text(encoding="utf-8"))
@@ -59,6 +102,19 @@ class SiteBuildTests(unittest.TestCase):
         self.assertTrue((self.out / "assets" / "style.css").is_file())
         self.assertTrue((self.out / "assets" / "app.js").is_file())
         self.assertTrue((self.out / "assets" / "search.js").is_file())
+
+    def test_every_page_exposes_the_main_origin_review_entry(self):
+        build_site(self.vault, self.out)
+        pages = (
+            self.out / "index.html",
+            self.out / "wiki" / "01_注册" / "条目.html",
+            self.out / "source" / "CDE" / "来源.html",
+        )
+        for page in pages:
+            with self.subTest(page=page):
+                rendered = page.read_text(encoding="utf-8")
+                self.assertIn('href="/review/"', rendered)
+                self.assertIn("知识审核", rendered)
 
     def test_search_links_are_relative_to_site_assets_for_subpath_deployment(self):
         build_site(self.vault, self.out)
@@ -111,6 +167,22 @@ class SiteBuildTests(unittest.TestCase):
         self.assertEqual(registration["count"], 1)
         self.assertEqual(registration["children"][0]["path"], "wiki/01_注册/条目.md")
         self.assertEqual(registration["children"][0]["type"], "document")
+
+    def test_tree_labels_numbered_leaf_notes_with_their_code_but_not_named_notes(self):
+        (self.vault / "wiki" / "07_非临床研究").mkdir(parents=True)
+        (self.vault / "wiki" / "07_非临床研究" / "07-0001.md").write_text(
+            "---\nno: 1\nquestion: 非临床样品的要求？\n---\n\n正文。", encoding="utf-8",
+        )
+        build_site(self.vault, self.out)
+        manifest = json.loads((self.out / "manifest.json").read_text(encoding="utf-8"))
+        wiki = next(node for node in manifest["tree"] if node["path"] == "wiki")
+        nonclinical = next(node for node in wiki["children"] if node["path"] == "wiki/07_非临床研究")
+        leaf = next(child for child in nonclinical["children"] if child["path"] == "wiki/07_非临床研究/07-0001.md")
+        self.assertEqual(leaf["name"], "07-0001 非临床样品的要求？")
+        # A non-numbered filename (like the existing 条目.md fixture) keeps its
+        # plain title, since it has no code worth surfacing.
+        registration = next(node for node in wiki["children"] if node["path"] == "wiki/01_注册")
+        self.assertEqual(registration["children"][0]["name"], "申报要求")
 
     def test_homepage_lists_top_level_directories(self):
         build_site(self.vault, self.out)

@@ -1,12 +1,11 @@
 [Unit]
-Description=DEK conservative source ingestion
+Description=DEK one-time staged source-ingestion proof
 After=network-online.target
 Wants=network-online.target
 OnFailure=dek-source-ingest-alert@%n.service
 
 [Service]
 Type=oneshot
-ExecCondition=+/usr/bin/python3 -I /opt/dek-source-ingest/app/deploy/readiness.py --config /etc/dek-readiness.json --hmac-key /var/lib/dek-readiness/marker-hmac-key --validate-marker --marker /var/lib/dek-readiness/automation-ready
 User=dek-source-ingest
 Group=dek-source-ingest
 WorkingDirectory=/var/empty/dek-source-ingest
@@ -21,8 +20,8 @@ Environment=https_proxy=http://127.0.0.1:7890
 Environment=NO_PROXY=www.chp.org.cn,chp.org.cn
 Environment=no_proxy=www.chp.org.cn,chp.org.cn
 UMask=0077
-ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1365x768x24 -nolisten tcp" /usr/bin/python3 -I /opt/dek-source-ingest/app/deploy/source_ingest_entrypoint.py --package-root /opt/dek-source-ingest/app --isolated-clone /var/lib/dek-source-ingest/clones --origin https://github.com/chenponsh/dek.git --proof-output /var/lib/dek-source-ingest/proofs/latest-report.json --expected-output /var/lib/dek-source-ingest/proofs/latest-report.expected.json scheduled-run
-SyslogIdentifier=dek-source-ingest
+ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1365x768x24 -nolisten tcp" /usr/bin/python3 -I /opt/dek-source-ingest/app/deploy/source_ingest_entrypoint.py --package-root /opt/dek-source-ingest/app --pre-cutover-proof --isolated-clone /var/lib/dek-source-ingest/clones --origin https://github.com/chenponsh/dek.git --proof-output /var/lib/dek-source-ingest/proofs/staged-proof-report.json --expected-output /var/lib/dek-source-ingest/proofs/staged-proof-report.expected.json scheduled-run
+SyslogIdentifier=dek-source-ingest-proof
 Nice=10
 NoNewPrivileges=true
 PrivateTmp=true

@@ -1,0 +1,14 @@
+[Unit]
+Description=Consume a reviewer-requested manual DEK source ingestion trigger
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/rm -f /var/lib/dek-review/state/ingest-trigger-requested
+ExecStart=/usr/bin/systemctl start dek-source-ingest.service
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectClock=true

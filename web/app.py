@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import mimetypes
+import os
 import secrets
 import time
+import stat
+import fcntl
 from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote
@@ -37,13 +41,95 @@ def make_dingtalk_client(environment) -> DingTalkClient:
     )
 
 
+def generation_proof_secret(environment) -> str:
+    path = environment.get("DEK_WEB_GENERATION_PROOF_SECRET_FILE", "")
+    if not path:
+        return environment.get("DEK_WEB_GENERATION_PROOF_SECRET", "")
+    return Path(path).read_text(encoding="utf-8").strip()
+
+
+class ActiveSite:
+    """Atomically pins one immutable release for the duration of one request."""
+    def __init__(self, active_path: Path, releases_root: Path, maximum: int = 65536):
+        self.active_path = Path(active_path)
+        self.releases_root = Path(releases_root).resolve(strict=True)
+        self.maximum = maximum
+
+    class Pin:
+        def __init__(self, root, metadata, descriptor): self.root,self.metadata,self.descriptor=root,metadata,descriptor
+        def __iter__(self): return iter((self.root,self.metadata))
+        def close(self):
+            if self.descriptor is not None: os.close(self.descriptor); self.descriptor=None
+        def __del__(self): self.close()
+
+    def pin(self):
+        descriptor = os.open(self.active_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            details = os.fstat(descriptor)
+            if not stat.S_ISREG(details.st_mode) or details.st_size > self.maximum:
+                raise ValueError("active generation is not a bounded regular file")
+            raw = os.read(descriptor, self.maximum + 1)
+        finally: os.close(descriptor)
+        generation = json.loads(raw)
+        name = generation.get("generation")
+        if not isinstance(name, str) or not name or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in name):
+            raise ValueError("active generation identity is invalid")
+        release = (self.releases_root / name).resolve(strict=True)
+        if release.parent != self.releases_root or release.is_symlink(): raise ValueError("active release escapes store")
+        lock=os.open(release/"release.lock",os.O_RDONLY)
+        try:
+            fcntl.flock(lock,fcntl.LOCK_SH)
+            if json.loads((release/"release.json").read_text(encoding="utf-8")) != generation:
+                raise ValueError("active metadata does not match release")
+            return self.Pin(release / "site", generation, lock)
+        except Exception:
+            os.close(lock)
+            raise
+
+
+class _PinnedResponse(list):
+    def __init__(self, body, pin): super().__init__([body]); self.pin=pin
+    def close(self):
+        if self.pin is not None: self.pin.close(); self.pin=None
+    def __del__(self): self.close()
+
+
 class KnowledgeApp:
-    def __init__(self, site_root: Path, gateway: DingTalkGateway, claim_secret: bytes, clock=time.time):
-        self.root=Path(site_root).resolve(); self.gateway=gateway; self.secret=claim_secret; self.clock=clock
-    def _response(self,start,status,body=b"",headers=()):
-        start(status,[("Content-Length",str(len(body))),*headers]); return [body]
+    def __init__(self, site_root: Path, gateway: DingTalkGateway, claim_secret: bytes, clock=time.time, generation_proof_secret: str = "", boot_nonce: str = "", release_sha256: str = ""):
+        self.active_site = site_root if isinstance(site_root, ActiveSite) else None
+        self.root = None if self.active_site else Path(site_root).resolve(strict=True)
+        self.gateway=gateway; self.secret=claim_secret; self.clock=clock
+        self.generation_proof_secret = generation_proof_secret
+        self.boot_nonce = boot_nonce
+        self.release_sha256 = release_sha256
+    def _response(self,start,status,body=b"",headers=(),pin=None):
+        start(status,[("Content-Length",str(len(body))),*headers]); return _PinnedResponse(body,pin) if pin else [body]
     def __call__(self,environ,start):
         path=decode_request_path(environ.get("PATH_INFO") or "/")
+        try:
+            pin = self.active_site.pin() if self.active_site else None
+            root, live_generation = pin if pin else (self.root, None)
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
+        if path == "/__dek_generation":
+            supplied = environ.get("HTTP_X_DEK_GENERATION_PROOF", "")
+            if not self.generation_proof_secret or not isinstance(supplied, str) or not secrets.compare_digest(supplied, self.generation_proof_secret):
+                return self._response(start,"404 Not Found",b"Not found")
+            root = root.resolve(strict=True)
+            index = root / "index.html"
+            if not index.is_file():
+                return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
+            if live_generation:
+                for relative, expected in live_generation.get("artifacts", {}).items():
+                    if not relative.startswith("site/"): continue
+                    candidate=(root/relative.removeprefix("site/")).resolve()
+                    if root not in candidate.parents or not candidate.is_file() or hashlib.sha256(candidate.read_bytes()).hexdigest()!=expected:
+                        return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
+            proof_value = dict(live_generation) if live_generation else {"release": str(root.parent), "web_sha256": hashlib.sha256(index.read_bytes()).hexdigest(),
+                                "release_sha256": self.release_sha256, "boot_nonce": self.boot_nonce}
+            proof_value["pid"] = os.getpid()
+            proof = json.dumps(proof_value, separators=(",", ":")).encode()
+            return self._response(start,"200 OK",proof,[("Content-Type","application/json"),("Cache-Control","no-store")])
         cookie=SimpleCookie(); cookie.load(environ.get("HTTP_COOKIE", ""))
         browser_morsel=cookie.get("dek_oauth_browser")
         browser_id=browser_morsel.value if browser_morsel else ""
@@ -64,6 +150,17 @@ class KnowledgeApp:
         if path=="/auth/logout":
             clear_session="dek_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
             return self._response(start,"302 Found",headers=[("Location","/auth/signed-out"),("Set-Cookie",clear_session),("Cache-Control","no-store")])
+        if path=="/auth/bounce":
+            if (environ.get("REQUEST_METHOD") or "GET")!="GET":
+                return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","GET")])
+            next_path=parse_qs(environ.get("QUERY_STRING","")).get("next",["/"])[0]
+            if not isinstance(next_path,str) or not next_path.startswith("/") or next_path.startswith("//"):
+                next_path="/"
+            if decision.allowed:
+                return self._response(start,"302 Found",headers=[("Location",next_path),("Cache-Control","no-store")])
+            if not browser_id: browser_id=secrets.token_urlsafe(32)
+            binding_cookie=f"dek_oauth_browser={browser_id}; Path=/auth; Max-Age=300; HttpOnly; Secure; SameSite=Lax"
+            return self._response(start,"302 Found",headers=[("Location",self.gateway.login_url(next_path,browser_id=browser_id)),("Set-Cookie",binding_cookie),("Cache-Control","no-store")])
         if not decision.allowed:
             if path=="/auth/check": return self._response(start,"401 Unauthorized",b"Unauthorized",[("Cache-Control","no-store")])
             if not browser_id: browser_id=secrets.token_urlsafe(32)
@@ -74,15 +171,16 @@ class KnowledgeApp:
             body=json.dumps({"display_name":decision.display_name or "同事"},ensure_ascii=False).encode()
             return self._response(start,"200 OK",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
         relative="index.html" if path=="/" else path.lstrip("/")
-        target=(self.root/relative).resolve()
-        if self.root not in target.parents or not target.is_file(): return self._response(start,"404 Not Found",b"Not found")
+        root=root.resolve()
+        target=(root/relative).resolve()
+        if root not in target.parents or not target.is_file(): return self._response(start,"404 Not Found",b"Not found")
         body=target.read_bytes(); content=mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         cache_control="no-store" if target.suffix.lower() in {".html", ".js", ".css"} else "private, max-age=60"
-        return self._response(start,"200 OK",body,[("Content-Type",content),("Cache-Control",cache_control),("X-Content-Type-Options","nosniff"),("Content-Security-Policy","default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'self'")])
+        return self._response(start,"200 OK",body,[("Content-Type",content),("Cache-Control",cache_control),("X-Content-Type-Options","nosniff"),("Content-Security-Policy","default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'self'")],pin=pin)
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--site-root',type=Path,required=True);p.add_argument('--host',default='127.0.0.1');p.add_argument('--port',type=int,default=9120);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--site-root',type=Path);p.add_argument('--active',type=Path);p.add_argument('--releases',type=Path);p.add_argument('--host',default='127.0.0.1');p.add_argument('--port',type=int,default=9120);a=p.parse_args()
     import os
     required=['DINGTALK_CLIENT_ID','DINGTALK_CLIENT_SECRET','DINGTALK_AGENT_ID','DEK_WEB_REDIRECT_URI','DEK_WEB_CLAIM_SECRET']
     missing=[k for k in required if not os.environ.get(k)]
@@ -90,6 +188,11 @@ def main():
     secret=os.environ['DEK_WEB_CLAIM_SECRET'].encode()
     client=make_dingtalk_client(os.environ)
     gateway=DingTalkGateway(os.environ['DINGTALK_CLIENT_ID'],os.environ['DEK_WEB_REDIRECT_URI'],secret,client,MemoryStateStore())
-    with make_server(a.host,a.port,KnowledgeApp(a.site_root,gateway,secret)) as server: server.serve_forever()
+    if a.active and a.releases:
+        site = ActiveSite(a.active, a.releases); generation = {}
+    elif a.site_root:
+        site = a.site_root; generation = {}
+    else: raise SystemExit("--active and --releases are required")
+    with make_server(a.host,a.port,KnowledgeApp(site,gateway,secret,generation_proof_secret=generation_proof_secret(os.environ))) as server: server.serve_forever()
 
 if __name__=='__main__': main()
