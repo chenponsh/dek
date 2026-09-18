@@ -255,20 +255,20 @@ def fetch_cde(url: str, types: list[int], profile_dir: Path) -> tuple[dict[int, 
         raise SafetyStop("Playwright is not installed") from exc
     profile_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     profile_dir.chmod(0o700)
-    # Under the sandboxed source-ingest unit, Chromium's crashpad handler
-    # can't auto-locate a database directory (ProtectHome=true/PrivateTmp
-    # deny its usual defaults) and refuses to launch at all with
-    # "chrome_crashpad_handler: --database is required" -- give it an
-    # explicit, already-writable one next to the browser profile.
-    crash_dumps_dir = profile_dir / "crashpad"
-    crash_dumps_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     result: dict[int, tuple[list[Row], dict[str, Any]]] = {}
     diagnostics: dict[str, Any] = {"navigation_statuses": [], "challenge_resources": [], "final_url": None, "myAjax_is_function": False}
     with sync_playwright() as pw:
         context = pw.chromium.launch_persistent_context(
             str(profile_dir), executable_path=str(_full_chromium()), headless=False,
             locale="zh-CN", timezone_id="Asia/Shanghai", viewport={"width": 1365, "height": 768},
-            args=["--disable-blink-features=AutomationControlled", f"--crash-dumps-dir={crash_dumps_dir}"],
+            # Under the sandboxed source-ingest unit, Chromium's crashpad
+            # handler can't be given a working database location (tried
+            # --crash-dumps-dir=<writable dir>; the handler still refused to
+            # launch with "chrome_crashpad_handler: --database is required",
+            # confirmed by direct reproduction against the real vendored
+            # binary) -- disable the crash reporter outright instead, which
+            # is unneeded for unattended scraping anyway.
+            args=["--disable-blink-features=AutomationControlled", "--disable-crash-reporter"],
         )
         # CDE 的瑞数反爬会以 navigator.webdriver 判定自动化浏览器并返回 400。
         # 经用户授权，去掉该标志以通过公开共性问题的访问验证。
