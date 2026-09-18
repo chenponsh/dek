@@ -32,4 +32,4 @@ IPAddressDeny=any
 IPAddressAllow=localhost
 ReadOnlyPaths=/opt/dek-activator/app /etc/dek-activator.json /var/spool/dek-activate/builds /run/dek-proofs /var/lib/dek-review/decisions
 ReadWritePaths=/var/lib/dek-activate
-InaccessiblePaths=/run/systemd /etc/systemd/system /var/lib/dek-git-auth /var/lib/dek-publisher/secrets /var/lib/dek-review/secrets /var/lib/dek-review/state /var/lib/dek-review/clones /var/lib/dek-review/bundle-archive /var/lib/dek-source-ingest /var/lib/dek-web/secrets /var/lib/dek-qa/secrets /root
+InaccessiblePaths=/etc/systemd/system /var/lib/dek-git-auth /var/lib/dek-publisher/secrets /var/lib/dek-review/secrets /var/lib/dek-review/state /var/lib/dek-review/clones /var/lib/dek-review/bundle-archive /var/lib/dek-source-ingest /var/lib/dek-web/secrets /var/lib/dek-qa/secrets /root

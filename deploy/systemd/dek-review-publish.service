@@ -44,4 +44,4 @@ AmbientCapabilities=
 SystemCallArchitectures=native
 ReadOnlyPaths=/opt/dek-publisher/app /etc/dek-publisher.json /var/lib/dek-review/decisions /var/lib/dek-review/bundle-archive /var/lib/dek-activate/outcomes
 ReadWritePaths=/var/lib/dek-publisher/state /var/lib/dek-publisher/clones /var/spool/dek-build/approved /var/spool/dek-activate/builds
-InaccessiblePaths=/run/systemd /etc/systemd/system /var/lib/dek-source-ingest /var/lib/dek-builder /var/lib/dek-activate/control /var/lib/dek-web/secrets /var/lib/dek-qa/secrets /root
+InaccessiblePaths=/etc/systemd/system /var/lib/dek-source-ingest /var/lib/dek-builder /var/lib/dek-activate/control /var/lib/dek-web/secrets /var/lib/dek-qa/secrets /root
