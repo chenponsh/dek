@@ -24,7 +24,7 @@ if _HERE not in sys.path:
 from fsutil import atomic_write_bytes, atomic_write_json, fsync_dir
 
 SERVICES = {
-    "dek-web": ("web/",), "dek-qa": ("qa/",), "dek-review": ("web/",),
+    "dek-web": ("web/",), "dek-qa": ("qa/",), "dek-review": ("web/", "deploy/"),
     "dek-publisher": ("deploy/", "web/"),
     "dek-source-ingest": ("deploy/", "ingestion/automation/"),
     "dek-builder": ("deploy/", "qa/", "web/", "ingestion/automation/"),
