@@ -148,8 +148,14 @@ def repo_fingerprint(root: Path, config_path: Path) -> str:
     head = git(root, "rev-parse", "HEAD")
     digest = hashlib.sha256()
     digest.update(f"{head}\n".encode())
+    # Paths are hashed relative to config_path's own directory, not root:
+    # in the sandboxed source-ingest entrypoint, root is a freshly cloned
+    # content checkout while this automation code (and config_path) is
+    # loaded from a separately installed package tree -- the two are not
+    # nested under each other, so relative_to(root) raised ValueError the
+    # first time this ran outside a plain same-tree checkout.
     for path in sorted(config_path.parent.glob("*.py")) + [config_path]:
-        digest.update(str(path.relative_to(root)).encode())
+        digest.update(str(path.relative_to(config_path.parent)).encode())
         digest.update(path.read_bytes())
     return digest.hexdigest()
 

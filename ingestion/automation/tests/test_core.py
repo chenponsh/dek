@@ -692,6 +692,18 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report["report"]["cpc.md"]["status"], "skipped_revision_check_unavailable")
         self.assertNotIn("cpc.md", report["planned_writes"])
 
+    def test_repo_fingerprint_works_when_config_lives_outside_root(self):
+        """The sandboxed source-ingest entrypoint sets module.ROOT to a
+        freshly cloned content checkout while this automation code (and
+        CONFIG_PATH) loads from a separately installed package tree -- the
+        two are not nested under each other. repo_fingerprint used to do
+        path.relative_to(root), which raised ValueError the first time this
+        ran outside a plain same-tree checkout."""
+        root, _remote, _source = self.scheduled_repo()
+        fingerprint = core.repo_fingerprint(root, cli.CONFIG_PATH)
+        self.assertEqual(len(fingerprint), 64)
+        self.assertEqual(fingerprint, core.repo_fingerprint(root, cli.CONFIG_PATH))
+
 
 if __name__ == "__main__":
     unittest.main()
