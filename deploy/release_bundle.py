@@ -286,6 +286,12 @@ class ReleasePublisher:
             wiki=write_candidate_regular(clone,str(decision.get("wiki_path","")),candidate_bytes)
             text=raw.decode("utf-8")
             text=text.replace("status: pending_review","status: promoted",1)
+            # ingestion/automation/audit.py's lifecycle check fails closed on
+            # any status: promoted rough whose wiki_target is still blank; a
+            # rough's wiki_target is only ever prefilled by ingestion as a
+            # suggestion, so the actual approved wiki_path must be recorded
+            # here or the very next builder run permanently rejects this commit.
+            text=re.sub(r"(?m)^wiki_target:.*$",f"wiki_target: {decision.get('wiki_path','')}",text,count=1)
             rough.write_text(text,encoding="utf-8")
             relative=(rough.relative_to(clone).as_posix(),wiki.relative_to(clone).as_posix())
             _run((*GIT,"add","--",*relative),cwd=clone)

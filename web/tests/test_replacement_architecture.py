@@ -1053,6 +1053,44 @@ class Round9SliceTests(unittest.TestCase):
                                  f"{name} content must survive publish")
 
 
+class PrepareChangeRoughPromotionTests(unittest.TestCase):
+    """ingestion/automation/audit.py's lifecycle check requires every rough
+    marked status: promoted to also carry a wiki_target -- but prepare_change
+    only ever flipped the status line, never wiki_target, so every rough
+    published for the first time (wiki_target still blank from ingestion)
+    permanently failed the builder's own audit step on the very next commit,
+    with no way to recover since the rough was already committed promoted."""
+
+    def test_prepare_change_fills_in_the_approved_wiki_target_on_the_rough(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); repo = root / "repo"
+            (repo / "ingestion/rough").mkdir(parents=True)
+            (repo / "wiki").mkdir()
+            rough_text = "---\nstatus: pending_review\nwiki_target:\n---\n\nbody\n"
+            (repo / "ingestion/rough/a.md").write_text(rough_text, encoding="utf-8")
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@i", "commit", "-qm", "x"], cwd=repo, check=True)
+            commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=repo, text=True).strip()
+            rough_sha256 = "sha256:" + hashlib.sha256(rough_text.encode("utf-8")).hexdigest()
+
+            key = Ed25519PrivateKey.generate()
+            publisher = ReleasePublisher(str(repo), key, root / "missing-credential", test_only_local_origin=True)
+            decision = {"decision_id": "d" * 20, "action": "approve",
+                        "snapshot_commit": commit, "snapshot_tree": tree,
+                        "rough_path": "ingestion/rough/a.md", "rough_sha256": rough_sha256,
+                        "wiki_path": "wiki/x.md", "candidate_markdown": "# x\n"}
+            output = root / "prepared"
+            publisher.prepare_change(output, decision)
+
+            check = root / "check"
+            subprocess.run(["git", "clone", "--quiet", "--no-checkout", str(output / "repository.bundle"), str(check)], check=True)
+            promoted = subprocess.check_output(["git", "show", "origin/dek-approved:ingestion/rough/a.md"], cwd=check, text=True)
+            self.assertIn("status: promoted", promoted)
+            self.assertIn("wiki_target: wiki/x.md", promoted)
+
+
 class ActivationBootstrapAncestryTests(unittest.TestCase):
     """The very first real (decision-derived) release published after a
     from-source seed will always carry a parent_commit far ahead of the
