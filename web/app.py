@@ -106,6 +106,11 @@ class KnowledgeApp:
         start(status,[("Content-Length",str(len(body))),*headers]); return _PinnedResponse(body,pin) if pin else [body]
     def __call__(self,environ,start):
         path=decode_request_path(environ.get("PATH_INFO") or "/")
+        if path=="/__ready":
+            if (environ.get("REQUEST_METHOD") or "GET")!="GET":
+                return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","GET")])
+            body=json.dumps({"status":"ready","oauth_callback":self.gateway.redirect_uri},separators=(",",":")).encode()
+            return self._response(start,"200 OK",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
         try:
             pin = self.active_site.pin() if self.active_site else None
             root, live_generation = pin if pin else (self.root, None)

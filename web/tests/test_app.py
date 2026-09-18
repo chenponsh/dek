@@ -13,7 +13,7 @@ from web.dingtalk_gateway import LoginError, LoginResult
 
 
 class FakeGateway:
-    def __init__(self): self.login_browser_id = None; self.callback_browser_id = None
+    def __init__(self): self.login_browser_id = None; self.callback_browser_id = None; self.redirect_uri = "https://regkb.example/auth/callback"
     def login_url(self, return_path="/", *, browser_id):
         self.login_browser_id = browser_id
         return "https://login.example/?return=" + return_path
@@ -76,6 +76,21 @@ class AppTests(unittest.TestCase):
         self.assertEqual(Path(proof["release"]).resolve(), self.app.root.resolve().parent)
         self.assertEqual(proof["pid"], os.getpid())
         self.assertEqual(proof["release_sha256"], "f" * 64)
+    def test_ready_endpoint_reports_the_configured_oauth_callback_unauthenticated(self):
+        """deploy/readiness.py's automation-readiness gate GETs this over a
+        pinned connection and requires exactly {"status":"ready",
+        "oauth_callback": <configured value>} with no redirect -- this
+        endpoint never existed on the public site (only web/review_app.py's
+        differently-shaped /__ready did), so the very first real readiness
+        check against the live site 302'd to DingTalk login instead."""
+        status, headers, body = self.call("/__ready")
+        self.assertEqual(status, "200 OK")
+        self.assertEqual(json.loads(body), {"status": "ready", "oauth_callback": self.app.gateway.redirect_uri})
+        self.assertEqual(headers["Content-Type"], "application/json")
+    def test_ready_endpoint_is_get_only(self):
+        status, headers, _ = self.call("/__ready", method="POST")
+        self.assertEqual(status, "405 Method Not Allowed")
+        self.assertEqual(headers["Allow"], "GET")
     def test_oauth_state_is_bound_to_initiating_browser_cookie(self):
         status, headers, _ = self.call("/wiki/a.html")
         self.assertEqual(status, "302 Found")
