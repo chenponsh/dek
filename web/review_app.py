@@ -251,6 +251,12 @@ class ReviewApp:
                 self.service.submit_form(body, session_id=session_id, user_id=user_id, reviewer_label=display_name)
             except (ReviewError, ValueError, KeyError, UnicodeDecodeError) as error:
                 status = error.status if isinstance(error, ReviewError) else "400 Bad Request"
+                # The response body only ever carries the generic status
+                # text (never the real reason, to avoid leaking form/nonce
+                # internals to the client) -- log the actual message so a
+                # real failure can be diagnosed from the journal instead of
+                # guessed at from a bare "400 Bad Request".
+                auth_logger.warning("review_decision_rejected status=%s reason=%s", status, str(error) or type(error).__name__)
                 return self._response(start, status, status.encode("ascii"), (("Content-Type", "text/plain"),))
             rough_path = values.get("rough_path", [""])[0]
             action = values.get("action", [""])[0]
