@@ -289,7 +289,17 @@ class Activator:
                 fsync_tree(staging)
                 os.replace(staging,target)
             except Exception:
-                if staging.exists(): shutil.rmtree(staging)
+                if staging.exists():
+                    # The chmod loop above (0o550/0o440, read-only) runs before
+                    # fsync_tree(); a failure after that point means rmtree must
+                    # delete read-only files/dirs it just locked down. As root
+                    # that's invisible (DAC_OVERRIDE bypasses the mode bits
+                    # entirely); dek-activator's real, non-root identity would
+                    # get EPERM here instead of the actual underlying error.
+                    for path in sorted(staging.rglob("*"), reverse=True):
+                        os.chmod(path, 0o770 if path.is_dir() else 0o660)
+                    os.chmod(staging, 0o770)
+                    shutil.rmtree(staging)
                 raise
             _fsync_dir(self.config.releases)
         else:

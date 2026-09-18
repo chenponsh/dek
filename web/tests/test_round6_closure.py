@@ -36,7 +36,12 @@ class SeedReleaseRound6Tests(unittest.TestCase):
             (source/"release.json").write_text(json.dumps(meta))
             install_generation(source,releases/"seed",meta)
             install_generation(source,releases/"seed",meta)
-            (releases/"seed/site/index.html").write_text("bad")
+            # install_generation() correctly leaves installed files 0o440
+            # (read-only, tamper-evident); only root can write past that
+            # without an explicit chmod first -- this was silently only
+            # ever exercised as root before.
+            tampered=releases/"seed/site/index.html"
+            os.chmod(tampered,0o640); tampered.write_text("bad"); os.chmod(tampered,0o440)
             with self.assertRaisesRegex(SystemExit,"existing generation"):
                 install_generation(source,releases/"seed",meta)
 
