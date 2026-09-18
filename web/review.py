@@ -873,7 +873,11 @@ class ReviewService:
         if _frontmatter(binding.content).get("status") != "pending_review":
             raise ReviewError("rough is not pending", "409 Conflict")
         wiki_path = one("wiki_path")
-        candidate = one("candidate_markdown")
+        # Browsers submit <textarea> fields with CRLF line endings per the HTML
+        # spec regardless of OS; .gitattributes normalizes *.md to LF on `git
+        # add`, so an un-normalized candidate would never byte-match what the
+        # publisher actually commits (deploy/release_bundle.py prepare_change()).
+        candidate = one("candidate_markdown").replace("\r\n", "\n").replace("\r", "\n")
         comment = one("comment")
         if action == "approve":
             validate_relative_path(wiki_path, WIKI_PREFIX)

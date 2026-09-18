@@ -173,6 +173,21 @@ class ReviewServiceTests(unittest.TestCase):
             self.service.submit_form(stale_hash, session_id="opaque-session", user_id="enterprise-user")
         self.assertFalse(self.queue.exists())
 
+    def test_approve_normalizes_crlf_in_candidate_markdown_to_lf(self):
+        # Browsers submit <textarea> form fields with CRLF line endings per the
+        # HTML spec regardless of OS, but .gitattributes normalizes *.md to LF
+        # on `git add`. Without normalizing here first, release_bundle.py's
+        # prepare_change() byte-compares the queued candidate against what git
+        # actually committed and always finds a CRLF/LF mismatch -- every real
+        # browser-submitted approval fails to publish.
+        crlf_candidate = CANDIDATE.replace("\n", "\r\n")
+        self.service.submit_form(
+            self.form(candidate_markdown=crlf_candidate), session_id="opaque-session", user_id="enterprise-user",
+        )
+        record = json.loads(self.queue.read_text(encoding="utf-8"))
+        self.assertNotIn("\r", record["candidate_markdown"])
+        self.assertEqual(record["candidate_markdown"], CANDIDATE)
+
     def test_approve_with_malformed_candidate_yaml_is_rejected(self):
         bad_yaml = self.form(candidate_markdown="---\nno: 1\n  bad: [unterminated\n---\n\nA\n")
         with self.assertRaisesRegex(ReviewError, "YAML"):
