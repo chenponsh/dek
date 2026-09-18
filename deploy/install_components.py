@@ -28,7 +28,7 @@ SERVICES = {
     "dek-publisher": ("deploy/", "web/"),
     "dek-source-ingest": ("deploy/", "ingestion/__init__.py", "ingestion/automation/"),
     "dek-builder": ("deploy/", "qa/", "web/", "ingestion/automation/"),
-    "dek-activator": ("deploy/",),
+    "dek-activator": ("deploy/", "web/"),
 }
 DEFAULT_JOURNAL = Path("/var/lib/dek-install-transactions")
 
