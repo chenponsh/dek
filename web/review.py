@@ -447,6 +447,22 @@ class MemoryFormNonceStore:
             and secrets.compare_digest(item[2].encode("utf-8"), rough_path.encode("utf-8"))
         else None)
 
+    def peek(self, nonce: str, session_id: str, rough_path: str) -> str | None:
+        """Validate a nonce without consuming it. A downstream validation
+        failure (a stale rough_sha256, a missing required field) must not
+        burn the reviewer's only submit attempt -- they should be able to
+        fix the form and resubmit without a full page reload."""
+        now = int(self._clock())
+        item = self._items.get(nonce)
+        return (item[3] if
+            item and item[0] > now
+            and secrets.compare_digest(item[1].encode("utf-8"), session_id.encode("utf-8"))
+            and secrets.compare_digest(item[2].encode("utf-8"), rough_path.encode("utf-8"))
+        else None)
+
+    def invalidate(self, nonce: str) -> None:
+        self._items.pop(nonce, None)
+
 
 def _frontmatter(text: str) -> dict:
     match = re.match(r"\A---\s*\n(.*?)\n---(?:\s*\n|\Z)", text, re.S)
@@ -901,7 +917,8 @@ class ReviewService:
                 raise ReviewError(f"invalid {name}")
             return items[0]
         rough_path = one("rough_path")
-        snapshot_root=self.nonces.consume(one("form_nonce"), session_id, rough_path)
+        nonce = one("form_nonce")
+        snapshot_root=self.nonces.peek(nonce, session_id, rough_path)
         if snapshot_root is None:
             raise ReviewError("invalid form nonce", "403 Forbidden")
         action = one("action")
@@ -956,6 +973,7 @@ class ReviewService:
         # must select the newest valid record per rough_path.
         with queue_lock(self.queue_path):
             append_record(self.queue_path, record, already_locked=True)
+            self.nonces.invalidate(nonce)
         if self.labels is not None:
             self.labels.append(decision_id, reviewer_label)
         return decision_id

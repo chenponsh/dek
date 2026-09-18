@@ -128,6 +128,21 @@ class ReviewServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ReviewError, "nonce"):
             self.service.submit_form(self.form(nonce=nonce), session_id="opaque-session", user_id="enterprise-user")
 
+    def test_a_downstream_validation_failure_does_not_burn_the_nonce(self):
+        # Live symptom: a reviewer hit "invalid path" (400), then retried
+        # without reloading and got "invalid form nonce" (403) -- the first
+        # failed attempt had already consumed their only nonce, so they had
+        # no way to retry short of a full page reload.
+        nonce = self.nonces.issue("opaque-session", "ingestion/rough/pending.md", 1_900_000_900)
+        with self.assertRaisesRegex(ReviewError, "comment is required"):
+            self.service.submit_form(self.form(nonce=nonce, action="return", wiki_path="", candidate_markdown="", comment=""),
+                                     session_id="opaque-session", user_id="enterprise-user")
+        # Retry with the same nonce and a corrected field -- must succeed.
+        self.service.submit_form(self.form(nonce=nonce, action="return", wiki_path="", candidate_markdown="", comment="请补充依据。"),
+                                 session_id="opaque-session", user_id="enterprise-user")
+        record = json.loads(self.queue.read_text(encoding="utf-8"))
+        self.assertEqual(record["action"], "return")
+
     def test_nonce_accepts_a_matching_non_ascii_rough_path(self):
         path = "ingestion/rough/20260917_回退审核_0102-0001.md"
         nonce = self.nonces.issue("opaque-session", path, 1_900_000_900, "/snapshot")
