@@ -162,6 +162,35 @@ def default_wiki_path(value: object) -> str:
     return raw
 
 
+def wiki_folder_candidates(root: Path) -> list[tuple[str, str]]:
+    """For every wiki folder that already holds numbered notes, return
+    (display label, suggested next path) so the reviewer can search by
+    folder name instead of typing the whole path by hand."""
+    wiki_root = root / "wiki"
+    if not wiki_root.is_dir():
+        return []
+    groups: dict[str, dict[str, tuple[int, int]]] = {}
+    for path in sorted(wiki_root.rglob("*.md")):
+        stem = path.stem
+        if "-" not in stem:
+            continue
+        prefix, _, number = stem.rpartition("-")
+        if not number.isdigit():
+            continue
+        folder = path.parent.relative_to(root).as_posix()
+        bucket = groups.setdefault(folder, {})
+        value = int(number)
+        current = bucket.get(prefix)
+        if current is None or value > current[0]:
+            bucket[prefix] = (value, len(number))
+    candidates = []
+    for folder in sorted(groups):
+        prefix, (max_number, width) = max(groups[folder].items(), key=lambda item: item[1][0])
+        label = folder[len("wiki/"):] if folder.startswith("wiki/") else folder
+        candidates.append((label, f"{folder}/{prefix}-{max_number + 1:0{width}d}.md"))
+    return candidates
+
+
 def _yaml_scalar(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
     return '"%s"' % escaped
@@ -632,7 +661,7 @@ class ReviewService:
         root=self.repository_source.current() if hasattr(self.repository_source,"current") else self.root
         for rough in self._pending(root):
             nonce = self.nonces.issue(session_id, rough.path, int(self.clock()) + 900, str(root))
-            cards.append(self._form_card(rough, nonce))
+            cards.append(self._form_card(rough, nonce, root=root))
         content = "".join(cards) or "<p>当前没有待审核 rough。</p>"
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>审核 · DEK</title>{STYLE}</head><body><h1>待审核内容</h1>{content}</body></html>""".encode()
 
@@ -712,10 +741,15 @@ class ReviewService:
                 return item
         return None
 
-    def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "") -> str:
+    def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None) -> str:
+        options = "".join(
+            f'<option value="{html.escape(path)}">{html.escape(label)}</option>'
+            for label, path in (wiki_folder_candidates(root) if root else [])
+        )
+        datalist = f'<datalist id="wiki-path-options">{options}</datalist>' if options else ""
         return f"""<article><h2>{html.escape(PurePosixPath(rough.path).name)}</h2><pre>{html.escape(rough.content)}</pre>
 <form method="post" action="{self.path_prefix}/decision"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
-<label>决定 <select name="action"><option value="approve">批准发布</option><option value="return">退回澄清</option><option value="reject">拒绝</option></select></label><label>Wiki 路径 <input name="wiki_path" value="{html.escape(wiki_path)}" placeholder="wiki/.../0000-0001.md"></label><label>候选 Wiki Markdown（已预填草稿，可修改）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><label>审核意见 <textarea name="comment" rows="3"></textarea></label><button type="submit">提交决定</button></form></article>"""
+<label>决定 <select name="action"><option value="approve">批准发布</option><option value="return">退回澄清</option><option value="reject">拒绝</option></select></label><label>Wiki 路径（可搜索，按文件夹名过滤，选中后按需修改末尾编号） <input name="wiki_path" list="wiki-path-options" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…">{datalist}</label><label>候选 Wiki Markdown（已预填草稿，可修改）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><label>审核意见 <textarea name="comment" rows="3"></textarea></label><button type="submit">提交决定</button></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()
@@ -813,7 +847,7 @@ class ReviewService:
             nonce = self.nonces.issue(session_id, item.path, int(self.clock()) + 900, str(root))
             binding = rough_binding_at(root, validate_relative_path(item.path, ROUGH_PREFIX))
             suggested = default_wiki_path(item.wiki_target)
-            form = self._form_card(binding, nonce, wiki_path=suggested, candidate=candidate_draft(item.content, suggested))
+            form = self._form_card(binding, nonce, wiki_path=suggested, candidate=candidate_draft(item.content, suggested), root=root)
             if decided:
                 form = (
                     '<div class="notice">注意：该条目已有处理决定，提交将新增一条决定并覆盖当前显示的状态，请谨慎确认后再提交。'
