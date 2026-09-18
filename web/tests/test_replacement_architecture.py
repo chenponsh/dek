@@ -1091,6 +1091,96 @@ class PrepareChangeRoughPromotionTests(unittest.TestCase):
             self.assertIn("wiki_target: wiki/x.md", promoted)
 
 
+class PrepareChangeParentCommitTests(unittest.TestCase):
+    """activator.py's activation-ordering check requires a candidate's
+    parent_commit to exactly equal the currently active generation's commit.
+    parent_commit used to be the review's raw pinned snapshot_commit, which
+    drifts forward on every unrelated commit to the branch (an infra/code
+    fix, a doc update) -- none of which are reviewed decisions -- so any
+    such commit landing between two real decisions permanently blocked the
+    later one from ever activating. parent_commit is now computed at publish
+    time by walking back through real git history to the nearest commit
+    that is itself a previously published decision (identified by both the
+    publisher's fixed commit author AND its "publish: " message prefix, so
+    an unrelated commit can't spoof one), skipping over anything in between
+    that isn't a decision."""
+
+    def _repo(self, root: Path) -> Path:
+        repo = root / "repo"
+        (repo / "ingestion/rough").mkdir(parents=True)
+        (repo / "wiki").mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        return repo
+
+    def _commit(self, repo: Path, *, message: str, author_name: str, author_email: str) -> str:
+        subprocess.run(["git", "-c", f"user.name={author_name}", "-c", f"user.email={author_email}",
+                        "commit", "--allow-empty", "-qm", message], cwd=repo, check=True)
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+
+    def _rough(self, repo: Path, name: str) -> tuple[str, str]:
+        text = "---\nstatus: pending_review\nwiki_target:\n---\n\nbody\n"
+        (repo / "ingestion/rough" / name).write_text(text, encoding="utf-8")
+        subprocess.run(["git", "add", "--", f"ingestion/rough/{name}"], cwd=repo, check=True)
+        return text, "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def test_parent_commit_skips_over_intervening_non_decision_commits(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); repo = self._repo(root)
+            text, rough_sha256 = self._rough(repo, "a.md")
+            self._commit(repo, message="init", author_name="t", author_email="t@i")
+            decision_commit = self._commit(repo, message="publish: decision-A", author_name="DEK Publisher", author_email="publisher@invalid")
+            self._commit(repo, message="deploy: unrelated code fix 1", author_name="root", author_email="root@host")
+            self._commit(repo, message="deploy: unrelated code fix 2", author_name="root", author_email="root@host")
+            commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=repo, text=True).strip()
+
+            key = Ed25519PrivateKey.generate()
+            publisher = ReleasePublisher(str(repo), key, root / "missing-credential", test_only_local_origin=True)
+            decision = {"decision_id": "d" * 20, "action": "approve",
+                        "snapshot_commit": commit, "snapshot_tree": tree,
+                        "rough_path": "ingestion/rough/a.md", "rough_sha256": rough_sha256,
+                        "wiki_path": "wiki/x.md", "candidate_markdown": "# x\n"}
+            approval = publisher.prepare_change(root / "prepared", decision)
+            self.assertEqual(approval["parent_commit"], decision_commit)
+
+    def test_parent_commit_ignores_a_spoofed_message_from_the_wrong_author(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); repo = self._repo(root)
+            text, rough_sha256 = self._rough(repo, "a.md")
+            self._commit(repo, message="init", author_name="t", author_email="t@i")
+            real_decision_commit = self._commit(repo, message="publish: decision-A", author_name="DEK Publisher", author_email="publisher@invalid")
+            self._commit(repo, message="publish: fake-decision", author_name="someone-else", author_email="someone@else.invalid")
+            commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=repo, text=True).strip()
+
+            key = Ed25519PrivateKey.generate()
+            publisher = ReleasePublisher(str(repo), key, root / "missing-credential", test_only_local_origin=True)
+            decision = {"decision_id": "d" * 20, "action": "approve",
+                        "snapshot_commit": commit, "snapshot_tree": tree,
+                        "rough_path": "ingestion/rough/a.md", "rough_sha256": rough_sha256,
+                        "wiki_path": "wiki/x.md", "candidate_markdown": "# x\n"}
+            approval = publisher.prepare_change(root / "prepared", decision)
+            self.assertEqual(approval["parent_commit"], real_decision_commit)
+
+    def test_parent_commit_is_omitted_for_the_first_ever_decision(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); repo = self._repo(root)
+            text, rough_sha256 = self._rough(repo, "a.md")
+            self._commit(repo, message="init", author_name="t", author_email="t@i")
+            self._commit(repo, message="deploy: unrelated code fix", author_name="root", author_email="root@host")
+            commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=repo, text=True).strip()
+
+            key = Ed25519PrivateKey.generate()
+            publisher = ReleasePublisher(str(repo), key, root / "missing-credential", test_only_local_origin=True)
+            decision = {"decision_id": "d" * 20, "action": "approve",
+                        "snapshot_commit": commit, "snapshot_tree": tree,
+                        "rough_path": "ingestion/rough/a.md", "rough_sha256": rough_sha256,
+                        "wiki_path": "wiki/x.md", "candidate_markdown": "# x\n"}
+            approval = publisher.prepare_change(root / "prepared", decision)
+            self.assertNotIn("parent_commit", approval)
+
+
 class ActivationBootstrapAncestryTests(unittest.TestCase):
     """The very first real (decision-derived) release published after a
     from-source seed will always carry a parent_commit far ahead of the

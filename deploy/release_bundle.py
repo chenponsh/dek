@@ -216,6 +216,42 @@ def _auth_env(origin: str, credential_file: Path) -> dict:
     return {"GIT_CONFIG_COUNT":"2","GIT_CONFIG_KEY_0":"credential.helper","GIT_CONFIG_VALUE_0":"","GIT_CONFIG_KEY_1":f"http.{origin}.extraHeader","GIT_CONFIG_VALUE_1":f"Authorization: Basic {token}"}
 
 
+PUBLISHER_COMMIT_NAME = "DEK Publisher"
+PUBLISHER_COMMIT_EMAIL = "publisher@invalid"
+
+
+def _nearest_decision_commit(clone: Path, start: str) -> str | None:
+    """Walk back from ``start`` to the nearest commit that is itself a
+    previously published decision, skipping over anything else in between
+    (an infra/code-fix commit, a doc update -- never a reviewed decision).
+
+    activator.py's activation-ordering check requires a candidate's
+    parent_commit to exactly equal the currently active generation's
+    commit. parent_commit used to be the review's raw pinned
+    snapshot_commit, which drifts forward on every unrelated commit to the
+    branch, so any such commit landing between two real decisions
+    permanently blocked the later one from ever activating -- dek-activator
+    is deliberately credential-less and has no git access of its own to
+    tell "skipped a decision" apart from "an infra commit landed in
+    between", so this has to be resolved here, where real git history is
+    available, not there.
+
+    A commit counts as a decision only if it matches both the publisher's
+    fixed commit author AND its "publish: " message prefix -- either alone
+    is spoofable by an unrelated commit; both together are not, since only
+    this method ever writes that combination.
+    """
+    output = _run((*GIT, "log", "--format=%H%x09%ae%x09%s", start), cwd=clone).decode("utf-8", "replace")
+    for line in output.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        sha, author_email, subject = parts
+        if author_email == PUBLISHER_COMMIT_EMAIL and subject.startswith("publish: "):
+            return sha
+    return None
+
+
 class ReleasePublisher:
     """Uses a new private clone for each decision; never accepts a live work tree."""
     def __init__(self, fixed_origin: str, signing_key: Ed25519PrivateKey, credential_file: Path, *, test_only_local_origin: bool = False):
@@ -271,6 +307,7 @@ class ReleasePublisher:
             exact_snapshot=_run((*GIT,"rev-parse",f"{snapshot}^{{commit}}"),cwd=clone).decode().strip()
             snapshot_tree=_run((*GIT,"rev-parse",f"{exact_snapshot}^{{tree}}"),cwd=clone).decode().strip()
             if exact_snapshot!=snapshot or snapshot_tree!=decision.get("snapshot_tree"): raise BundleError("review snapshot identity mismatch")
+            parent_commit=_nearest_decision_commit(clone,exact_snapshot)
             _run((*GIT,"reset","--hard",exact_snapshot),cwd=clone)
             rough=clone/str(decision.get("rough_path","")); wiki=clone/str(decision.get("wiki_path",""))
             if not rough.resolve().is_relative_to((clone/"ingestion/rough").resolve()) or not wiki.resolve().is_relative_to((clone/"wiki").resolve()): raise BundleError("decision path escapes repository")
@@ -295,7 +332,7 @@ class ReleasePublisher:
             rough.write_text(text,encoding="utf-8")
             relative=(rough.relative_to(clone).as_posix(),wiki.relative_to(clone).as_posix())
             _run((*GIT,"add","--",*relative),cwd=clone)
-            _run((*GIT,"-c","user.name=DEK Publisher","-c","user.email=publisher@invalid","commit","-m",f"publish: {decision_id}"),cwd=clone)
+            _run((*GIT,"-c",f"user.name={PUBLISHER_COMMIT_NAME}","-c",f"user.email={PUBLISHER_COMMIT_EMAIL}","commit","-m",f"publish: {decision_id}"),cwd=clone)
             exact=_run((*GIT,"rev-parse","HEAD^{commit}"),cwd=clone).decode().strip(); tree=_run((*GIT,"rev-parse","HEAD^{tree}"),cwd=clone).decode().strip()
             tree_entry=_run((*GIT,"ls-tree","HEAD","--",wiki.relative_to(clone).as_posix()),cwd=clone).decode("utf-8","strict").strip()
             committed=_run((*GIT,"show",f"HEAD:{wiki.relative_to(clone).as_posix()}"),cwd=clone)
@@ -305,7 +342,9 @@ class ReleasePublisher:
             _run((*GIT,"branch","--force","dek-approved",exact),cwd=clone)
             _run((*GIT,"bundle","create",str(bundle),"refs/heads/dek-approved"),cwd=clone)
         decision_digest=hashlib.sha256(json.dumps(decision,sort_keys=True,separators=(",",":")).encode()).hexdigest()
-        approval={"schema_version":2,"decision_id":decision_id,"decision_sha256":decision_digest,"nonce":nonce,"origin":self.origin,"parent_commit":exact_snapshot,"commit":exact,"tree":tree,"bundle_sha256":_digest(bundle)}
+        approval={"schema_version":2,"decision_id":decision_id,"decision_sha256":decision_digest,"nonce":nonce,"origin":self.origin,"commit":exact,"tree":tree,"bundle_sha256":_digest(bundle)}
+        if parent_commit is not None:
+            approval["parent_commit"]=parent_commit
         (output/"approval.json").write_text(json.dumps(approval,sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
         (output/"approval.sig").write_bytes(self.signing_key.sign(_canonical(approval)))
         return approval
