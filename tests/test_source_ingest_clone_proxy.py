@@ -115,5 +115,61 @@ class SourceIngestHomeIsWritableTests(unittest.TestCase):
             self.assertTrue(Path(home).is_relative_to(isolated_clone), home)
 
 
+class SourceIngestGitIdentityTests(unittest.TestCase):
+    def test_git_author_and_committer_identity_are_set_after_clone(self):
+        """ingestion.automation.core.git()'s own commit calls (used by the
+        scheduled-run path this entrypoint hands off to) pass no -c
+        user.name/user.email and have no ~/.gitconfig to fall back to under
+        the fresh, empty per-run HOME -- the old unsandboxed root-run
+        mechanism silently relied on root's real global gitconfig for this.
+        Reproduced for real: dek-source-ingest.service failed with "fatal:
+        unable to auto-detect email address" the first time a real run
+        actually reached the commit step."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            proof_root = root / "proofs"; proof_root.mkdir(mode=0o700)
+            os.chmod(proof_root, 0o700)
+            isolated_clone = root / "clones"; isolated_clone.mkdir()
+            credential = root / "git-credentials"
+            credential.write_text("https://alice:s3cret@github.com/chenponsh/dek.git", encoding="utf-8")
+            os.chmod(credential, 0o440)
+
+            class _StopAfterClone(Exception):
+                pass
+
+            captured = {}
+
+            def fake_run(command, **kwargs):
+                if "clone" in command:
+                    return mock.Mock(returncode=0)
+                captured["GIT_AUTHOR_NAME"] = os.environ.get("GIT_AUTHOR_NAME")
+                captured["GIT_AUTHOR_EMAIL"] = os.environ.get("GIT_AUTHOR_EMAIL")
+                captured["GIT_COMMITTER_NAME"] = os.environ.get("GIT_COMMITTER_NAME")
+                captured["GIT_COMMITTER_EMAIL"] = os.environ.get("GIT_COMMITTER_EMAIL")
+                raise _StopAfterClone()
+
+            with mock.patch.dict(os.environ, {
+                        "DEK_FIXED_ORIGIN": "https://github.com/chenponsh/dek.git",
+                        "DEK_GIT_CREDENTIAL_FILE": str(credential),
+                    }), \
+                    mock.patch("deploy.source_ingest_entrypoint.PROOF_ROOT", proof_root), \
+                    mock.patch("deploy.source_ingest_entrypoint.subprocess.run", side_effect=fake_run):
+                with self.assertRaises(_StopAfterClone):
+                    entrypoint_main([
+                        "--isolated-clone", str(isolated_clone),
+                        "--origin", "https://github.com/chenponsh/dek.git",
+                        "--proof-output", str(proof_root / "staged-proof-report.json"),
+                        "--expected-output", str(proof_root / "staged-proof-report.expected.json"),
+                        "--package-root", str(REPO),
+                        "--pre-cutover-proof",
+                        "scheduled-run",
+                    ])
+
+            self.assertEqual(captured["GIT_AUTHOR_NAME"], "DEK Source Ingestion")
+            self.assertEqual(captured["GIT_AUTHOR_EMAIL"], "ingestion@invalid")
+            self.assertEqual(captured["GIT_COMMITTER_NAME"], "DEK Source Ingestion")
+            self.assertEqual(captured["GIT_COMMITTER_EMAIL"], "ingestion@invalid")
+
+
 if __name__ == "__main__":
     unittest.main()

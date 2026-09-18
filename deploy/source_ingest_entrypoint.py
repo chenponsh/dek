@@ -215,6 +215,15 @@ def main(argv=None):
     overrides=("core.hooksPath","credential.helper","credential.interactive","core.fsmonitor","core.sshCommand","diff.external","protocol.allow","protocol.https.allow",f"http.{fixed}.extraHeader")
     values=("/dev/null","","never","false","","","never","always",auth)
     os.environ.update({"HOME":str(home),"PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_SYSTEM":"/dev/null","GIT_CONFIG_GLOBAL":"/dev/null","GIT_ATTR_NOSYSTEM":"1","GIT_TERMINAL_PROMPT":"0","GIT_ASKPASS":"/bin/false","SSH_ASKPASS":"/bin/false","GIT_CONFIG_COUNT":str(len(overrides))})
+    # ingestion.automation.core.git()'s own commit calls (used by
+    # module.main()'s scheduled-run path below) pass no -c user.name/
+    # user.email and have no ~/.gitconfig to fall back to under the fresh,
+    # empty HOME above -- the old unsandboxed root-run mechanism silently
+    # relied on root's real global gitconfig for this. These env vars are
+    # git's standard identity override, picked up by every subsequent git
+    # invocation in this process without needing a config file at all.
+    os.environ["GIT_AUTHOR_NAME"] = os.environ["GIT_COMMITTER_NAME"] = "DEK Source Ingestion"
+    os.environ["GIT_AUTHOR_EMAIL"] = os.environ["GIT_COMMITTER_EMAIL"] = "ingestion@invalid"
     os.environ["DEK_INGEST_RUN_NONCE"] = run_nonce
     os.environ["DEK_INGEST_STARTED_AT"] = _utc_text(invocation_started)
     for index,(key,value) in enumerate(zip(overrides,values)):
