@@ -30,10 +30,22 @@ def make_activator_readable(root: Path) -> None:
 
     The inherited build-write group retains publisher write access; other users get
     only read/traverse.  Apply before the atomic rename, never to a visible partial.
+
+    Deliberately 0775/0664, not 02775: dek-builder.service's own sandbox sets
+    RestrictSUIDSGID=true, which blocks any chmod() call whose mode argument
+    carries S_ISGID -- even a no-op chmod to a value the file already has.
+    The setgid bit doesn't need setting here anyway: root (the setgid dirs
+    under builds/) is provisioned setgid once, outside this sandbox, and
+    every directory this loop touches was created underneath it during this
+    same build, so it already inherited both the group and the setgid bit at
+    mkdir() time. chmod never touches ownership, only the mode bits actually
+    passed, so dropping S_ISGID from the request here does not change the
+    group that was already set -- it just stops re-asserting a bit that's
+    already correct and that this sandbox cannot legally re-assert anyway.
     """
     for path in sorted(root.rglob("*"), reverse=True):
-        os.chmod(path, 0o2775 if path.is_dir() else 0o664)
-    os.chmod(root, 0o2775)
+        os.chmod(path, 0o775 if path.is_dir() else 0o664)
+    os.chmod(root, 0o775)
 
 
 def build_atomically(builder, package: Path, target: Path) -> None:

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import base64
+import stat
 import tempfile
 import unittest
 import shutil
@@ -565,12 +566,7 @@ class Round3SliceTests(unittest.TestCase):
         # PATH="/usr/bin:/bin" doesn't cover either -- every build silently
         # failed those steps regardless of what was actually being released.
         from deploy.release_bundle import _run
-        try:
-            output = _run(("/bin/sh", "-c", "command -v node && command -v uv")).decode()
-        except Exception as exc:
-            import os as _os
-            diag = _run(("/bin/sh", "-c", "echo PATH=$PATH; ls -la /opt/dek-vendor/bin 2>&1; /opt/dek-vendor/bin/uv --version 2>&1; echo uv_rc=$?")).decode() if True else ""
-            raise AssertionError(f"orig={exc!r} cwd={_os.getcwd()!r} diag={diag!r}") from exc
+        output = _run(("/bin/sh", "-c", "command -v node && command -v uv")).decode()
         self.assertIn("node", output)
         self.assertIn("uv", output)
 
@@ -806,6 +802,40 @@ class Round5SliceTests(unittest.TestCase):
                 self.assertEqual(run("test","-r",str(product/"release.json")),0)
                 self.assertEqual(run("test","-x",str(product/"site")),0)
                 self.assertNotEqual(run("test","-w",str(product/"release.json")),0)
+
+    def test_make_activator_readable_survives_the_real_restrict_suid_sgid_sandbox(self):
+        # dek-builder.service sets RestrictSUIDSGID=true, which blocks any
+        # chmod() call whose mode argument carries S_ISGID -- even a pure
+        # no-op re-assertion of a bit the directory already has (confirmed
+        # by direct systemd-run reproduction, not guessed). The setgid bit
+        # this function used to (redundantly) re-assert is already correct
+        # via inheritance from its setgid parent; this locks in that the
+        # 0775-not-02775 fix actually runs clean under the real sandbox.
+        if os.geteuid() != 0 or not shutil.which("systemd-run"):
+            self.skipTest("requires root and systemd-run")
+        with tempfile.TemporaryDirectory(dir="/opt") as parent:
+            parent_path = Path(parent)
+            os.chmod(parent_path, 0o2775)
+            staged = parent_path / "staged"
+            staged.mkdir()
+            (staged / "file.txt").write_text("x")
+            (staged / "sub").mkdir()
+            script = (
+                "import sys; sys.path.insert(0, '/srv/projects/dek'); "
+                "from pathlib import Path; "
+                "from deploy.builder_entrypoint import make_activator_readable; "
+                f"make_activator_readable(Path({str(staged)!r}))"
+            )
+            result = subprocess.run([
+                "systemd-run", "--pipe", "--collect", "--wait",
+                "-p", "NoNewPrivileges=true", "-p", "RestrictSUIDSGID=true",
+                "-p", f"ReadWritePaths={parent}",
+                "/usr/bin/python3", "-c", script,
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(stat.S_IMODE(staged.stat().st_mode), 0o775)
+            self.assertEqual(stat.S_IMODE((staged/"sub").stat().st_mode), 0o775)
+            self.assertEqual(stat.S_IMODE((staged/"file.txt").stat().st_mode), 0o664)
 
     def test_activator_entrypoint_scan_skips_dotfiles_and_incomplete_dirs(self):
         # BundleBuilder writes its own failure quarantine at builds/.builder-failures
