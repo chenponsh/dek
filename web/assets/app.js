@@ -33,6 +33,22 @@
       input.value = option.dataset.path;
       list.classList.remove("open");
     });
+    // A rough with no wiki_target suggestion of its own prefills this blank;
+    // clicking 批准 without picking a folder first used to 400 server-side
+    // with no visible reason (the response body deliberately never carries
+    // the real one). Catch it here instead, before the round trip.
+    const form = input.closest("form");
+    if (form) {
+      form.addEventListener("submit", event => {
+        if (event.submitter?.value !== "approve") return;
+        const candidate = form.querySelector('[name="candidate_markdown"]');
+        if (!input.value.trim() || !candidate?.value.trim()) {
+          event.preventDefault();
+          alert("批准前请先在「Wiki 路径」栏搜索并选择一个具体分类文件夹。");
+          input.focus();
+        }
+      });
+    }
   });
 
   document.querySelectorAll("tr[data-href]").forEach(row => {

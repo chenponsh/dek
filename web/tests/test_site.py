@@ -367,6 +367,20 @@ class SiteBuildTests(unittest.TestCase):
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
         self.assertIn("home-link", script)
 
+    def test_approve_button_is_guarded_against_an_empty_wiki_path(self):
+        # A rough with no wiki_target suggestion of its own (common for
+        # genuinely new content ingestion hasn't categorized yet) prefills
+        # the wiki-path combobox blank. Clicking 批准 without first picking
+        # a folder from the dropdown used to silently 400 server-side
+        # ("invalid path", never shown to the reviewer -- the response body
+        # deliberately never carries the real reason, to avoid leaking
+        # form/nonce internals). Catching this client-side, before the
+        # round trip, gives the reviewer an actual actionable message.
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("event.submitter", script)
+        self.assertIn('!== "approve"', script)
+
 
 if __name__ == "__main__":
     unittest.main()
