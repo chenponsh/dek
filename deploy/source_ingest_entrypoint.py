@@ -187,11 +187,20 @@ def main(argv=None):
         "proof_output": str(args.proof_output),
     })
     temporary=tempfile.mkdtemp(prefix="run-",dir=clone_root); repo=Path(temporary)/"repo"
+    # A real, writable-but-empty per-run HOME -- not the deliberately
+    # unwritable /var/empty/dek-source-ingest this used to point git (and,
+    # since it was applied process-wide via os.environ.update() below, also
+    # every later subprocess including Chromium) at. Chromium's startup
+    # needs a writable $HOME even with --disable-crash-reporter passed and
+    # refused to launch at all with "chrome_crashpad_handler: --database is
+    # required" -- confirmed by direct reproduction, reverting to reach the
+    # real /var/empty/dek-source-ingest, which reliably reproduced it.
+    home=Path(temporary)/"home"; home.mkdir(mode=0o700)
     parsed=urlsplit(credential.read_text(encoding="utf-8").strip()); target=urlsplit(fixed)
     if parsed.scheme!="https" or parsed.hostname!=target.hostname or parsed.path!=target.path or parsed.username is None or parsed.password is None: raise SystemExit("credential is not bound to fixed origin")
     auth="Authorization: Basic "+base64.b64encode(f"{parsed.username}:{parsed.password}".encode()).decode()
     git=("/usr/bin/git","--no-pager","-c","core.hooksPath=/dev/null","-c","credential.helper=","-c","credential.interactive=never","-c","core.fsmonitor=false","-c","core.sshCommand=","-c","diff.external=","-c","protocol.allow=never","-c","protocol.https.allow=always")
-    environment={"HOME":"/var/empty/dek-source-ingest","PATH":"/usr/bin:/bin","LANG":"C.UTF-8","LC_ALL":"C.UTF-8","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_SYSTEM":"/dev/null","GIT_CONFIG_GLOBAL":"/dev/null","GIT_ATTR_NOSYSTEM":"1","GIT_TERMINAL_PROMPT":"0","GIT_ASKPASS":"/bin/false","SSH_ASKPASS":"/bin/false"}
+    environment={"HOME":str(home),"PATH":"/usr/bin:/bin","LANG":"C.UTF-8","LC_ALL":"C.UTF-8","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_SYSTEM":"/dev/null","GIT_CONFIG_GLOBAL":"/dev/null","GIT_ATTR_NOSYSTEM":"1","GIT_TERMINAL_PROMPT":"0","GIT_ASKPASS":"/bin/false","SSH_ASKPASS":"/bin/false"}
     # subprocess.run(env=...) replaces the whole environment rather than
     # inheriting it, so without this the clone below silently drops the
     # systemd unit's HTTP(S)_PROXY -- this server cannot reach github.com
@@ -205,7 +214,7 @@ def main(argv=None):
     run(*git,"clone","--no-local","--no-hardlinks","--",fixed,str(repo))
     overrides=("core.hooksPath","credential.helper","credential.interactive","core.fsmonitor","core.sshCommand","diff.external","protocol.allow","protocol.https.allow",f"http.{fixed}.extraHeader")
     values=("/dev/null","","never","false","","","never","always",auth)
-    os.environ.update({"HOME":"/var/empty/dek-source-ingest","PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_SYSTEM":"/dev/null","GIT_CONFIG_GLOBAL":"/dev/null","GIT_ATTR_NOSYSTEM":"1","GIT_TERMINAL_PROMPT":"0","GIT_ASKPASS":"/bin/false","SSH_ASKPASS":"/bin/false","GIT_CONFIG_COUNT":str(len(overrides))})
+    os.environ.update({"HOME":str(home),"PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_SYSTEM":"/dev/null","GIT_CONFIG_GLOBAL":"/dev/null","GIT_ATTR_NOSYSTEM":"1","GIT_TERMINAL_PROMPT":"0","GIT_ASKPASS":"/bin/false","SSH_ASKPASS":"/bin/false","GIT_CONFIG_COUNT":str(len(overrides))})
     os.environ["DEK_INGEST_RUN_NONCE"] = run_nonce
     os.environ["DEK_INGEST_STARTED_AT"] = _utc_text(invocation_started)
     for index,(key,value) in enumerate(zip(overrides,values)):
