@@ -1284,7 +1284,18 @@ class PublishIdempotencyTests(unittest.TestCase):
     never recreated, permanently stranding an already fully, successfully
     published decision at the activation step. Live symptom: a decision
     published cleanly, then a later unrelated publisher run (triggered by my
-    own subsequent code pushes) silently destroyed its gate."""
+    own subsequent code pushes) silently destroyed its gate.
+
+    A first attempt at fixing this compared the whole gate (including its
+    queue_snapshot) to decide whether to skip re-pushing -- but queue_snapshot
+    is expected to drift on every single new decision appended to the queue,
+    completely unrelated to this release, so that comparison essentially
+    never matched in a live system with more than one decision ever
+    published: it still forced a doomed re-push of an already-published
+    commit on every single run. The real fix lives in _push_remote() itself:
+    a rejected push whose commit is provably already an ancestor of
+    origin/main's current tip is success, not failure, and the gate is then
+    always safely recreated with a fresh queue_snapshot regardless."""
 
     def _origin(self, root: Path) -> Path:
         # A real remote (a genuine GitHub repo, in production) has no
@@ -1342,8 +1353,7 @@ class PublishIdempotencyTests(unittest.TestCase):
             key = Ed25519PrivateKey.generate()
             publisher, package = self._publish_a_real_decision(root, origin, key)
 
-            gate_before = (package / "activation-ready.json").read_bytes()
-            sig_before = (package / "activation-ready.sig").read_bytes()
+            gate_before = json.loads((package / "activation-ready.json").read_bytes())
             self.assertTrue(gate_before)
 
             # Something else lands on origin/main -- another decision, an
@@ -1355,12 +1365,47 @@ class PublishIdempotencyTests(unittest.TestCase):
 
             # A later publisher run re-processes this same already-published
             # decision (process_decision() has no "already done" memory of
-            # its own and calls publish() unconditionally every time).
+            # its own and calls publish() unconditionally every time). This
+            # must not raise -- the old, already-pushed commit is provably
+            # an ancestor of origin/main's new tip, so there is nothing left
+            # to actually push.
             publisher.publish(package)
 
-            self.assertEqual((package / "activation-ready.json").read_bytes(), gate_before,
-                             "an already-valid gate must survive a later re-publish call")
-            self.assertEqual((package / "activation-ready.sig").read_bytes(), sig_before)
+            # A fresh, valid gate for the same release exists afterward --
+            # not necessarily byte-identical (queue_snapshot legitimately
+            # changes whenever anything else is appended to the queue), but
+            # for the exact same commit/tree/generation.
+            import deploy.release_bundle as rb
+            gate_after = json.loads((package / "activation-ready.json").read_bytes())
+            for field in ("generation", "commit", "tree", "bundle_sha256"):
+                self.assertEqual(gate_after[field], gate_before[field])
+            key.public_key().verify((package / "activation-ready.sig").read_bytes(), rb._canonical_activation_ready(gate_after))
+
+    def test_a_second_publish_with_a_grown_queue_snapshot_still_succeeds(self):
+        # The actual live regression: queue_snapshot legitimately changes on
+        # every single new decision appended to the queue, completely
+        # unrelated to this release. A first attempt at the idempotency fix
+        # compared the whole gate (queue_snapshot included) to decide
+        # whether to skip re-pushing -- so this never matched in a live
+        # system with more than one decision ever published, and it forced
+        # a doomed re-push of an already-published commit on every run.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            origin = self._origin(root)
+            key = Ed25519PrivateKey.generate()
+            publisher, package = self._publish_a_real_decision(root, origin, key)
+
+            other = self._checkout(root, origin, "other-checkout")
+            subprocess.run(["git", "-c", "user.name=other", "-c", "user.email=o@i", "commit", "--allow-empty", "-q", "-m", "unrelated"],
+                           cwd=other, check=True)
+            subprocess.run(["git", "push", "-q", str(origin), "main"], cwd=other, check=True)
+
+            grown_snapshot = {"decision_queue_sha256": "1" * 64, "decision_queue_size": 999}
+            publisher.publish(package, queue_snapshot=grown_snapshot)
+
+            gate = json.loads((package / "activation-ready.json").read_bytes())
+            self.assertEqual(gate["decision_queue_sha256"], "1" * 64)
+            self.assertEqual(gate["decision_queue_size"], 999)
 
     def test_a_first_time_publish_still_creates_a_fresh_valid_gate(self):
         with tempfile.TemporaryDirectory() as temporary:

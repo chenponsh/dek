@@ -77,12 +77,20 @@ def _run(arguments, *, cwd: Path | None = None, env=None, timeout=120) -> bytes:
     # is its own managed install under ~/.local/share/uv/python, i.e.
     # /root again; vendored a copy to /opt/dek-vendor/python3.11 and put
     # its bin/ on PATH so uv's PATH-based fallback discovery finds it.
+    completed = _run_status(arguments, cwd=cwd, env=env, timeout=timeout)
+    if completed.returncode: raise BundleError(completed.stderr.decode("utf-8", "replace").strip() or "fixed command failed")
+    return completed.stdout
+
+
+def _run_status(arguments, *, cwd: Path | None = None, env=None, timeout=120):
+    """Like _run(), but returns the completed process instead of raising on
+    a nonzero exit -- for callers where a nonzero exit is an expected,
+    meaningful outcome (e.g. `git merge-base --is-ancestor`), not a failure.
+    """
     safe_env = {"HOME":"/var/empty/dek-builder", "PATH":"/opt/dek-vendor/python3.11/bin:/opt/dek-vendor/bin:/usr/bin:/bin", "UV_CACHE_DIR":"/opt/dek-vendor/uv-cache", "UV_OFFLINE":"1", "LANG":"C.UTF-8", "LC_ALL":"C.UTF-8", "GIT_CONFIG_NOSYSTEM":"1", "GIT_CONFIG_SYSTEM":"/dev/null", "GIT_CONFIG_GLOBAL":"/dev/null", "GIT_ATTR_NOSYSTEM":"1", "GIT_TERMINAL_PROMPT":"0", "GIT_ASKPASS":"/bin/false", "SSH_ASKPASS":"/bin/false"}
     if env:
         safe_env.update({key:value for key,value in env.items() if key.startswith("GIT_CONFIG_KEY_") or key.startswith("GIT_CONFIG_VALUE_") or key=="GIT_CONFIG_COUNT" or key in PROXY_ENV_KEYS})
-    completed = subprocess.run(arguments, cwd=cwd, env=safe_env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False)
-    if completed.returncode: raise BundleError(completed.stderr.decode("utf-8", "replace").strip() or "fixed command failed")
-    return completed.stdout
+    return subprocess.run(arguments, cwd=cwd, env=safe_env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False)
 
 
 def _digest(path: Path) -> str:
@@ -268,11 +276,28 @@ class ReleasePublisher:
                  env={**_auth_env(self.origin, self.credential_file), **_proxy_env()})
 
     def _push_remote(self, clone: Path, commit: str) -> None:
-        if getattr(self, "test_only_local_origin", False):
-            _run((*GIT, "-c", "protocol.file.allow=always", "push", "--", self.origin, f"{commit}:refs/heads/main"), cwd=clone)
-        else:
-            _run((*GIT, "push", "--", self.origin, f"{commit}:refs/heads/main"), cwd=clone,
-                 env={**_auth_env(self.origin, self.credential_file), **_proxy_env()})
+        local = getattr(self, "test_only_local_origin", False)
+        push_args = (*GIT, "-c", "protocol.file.allow=always", "push", "--", self.origin, f"{commit}:refs/heads/main") if local \
+            else (*GIT, "push", "--", self.origin, f"{commit}:refs/heads/main")
+        env = None if local else {**_auth_env(self.origin, self.credential_file), **_proxy_env()}
+        try:
+            _run(push_args, cwd=clone, env=env)
+            return
+        except BundleError:
+            pass
+        # The push failed. If `commit` is already reachable from origin/main's
+        # current tip -- published by an earlier call to this exact method
+        # (publish() is meant to be idempotent), then superseded there by
+        # later, unrelated pushes since -- that failure is benign: there is
+        # nothing left to publish. Only a real conflict (this commit is NOT
+        # an ancestor of the current remote tip) is a real error.
+        fetch_args = (*GIT, "-c", "protocol.file.allow=always", "fetch", "--", self.origin, "main") if local \
+            else (*GIT, "fetch", "--", self.origin, "main")
+        _run(fetch_args, cwd=clone, env=env)
+        remote_head = _run((*GIT, "rev-parse", "FETCH_HEAD"), cwd=clone).decode().strip()
+        if remote_head == commit or _run_status((*GIT, "merge-base", "--is-ancestor", commit, remote_head), cwd=clone, env=env).returncode == 0:
+            return
+        raise BundleError(f"push rejected and {commit} is not an ancestor of remote main ({remote_head})")
 
     def prepare(self, output: Path, *, decision_id: str, nonce: str, commit: str) -> dict:
         approval_generation(decision_id, nonce)
@@ -412,10 +437,14 @@ class ReleasePublisher:
         origin/main had moved on for any reason -- another decision, an
         unrelated commit), the gate was gone and never recreated, permanently
         stranding an already fully, successfully published decision at the
-        activation step. A push attempt -- and the gate deletion that must
-        precede a *new* one -- only happens now if no already-valid,
-        already-matching gate is sitting there proving this exact release
-        was already pushed.
+        activation step. Idempotency now lives in _push_remote() itself
+        (a rejected push whose commit is provably already an ancestor of
+        origin/main's current tip is treated as success, not failure) --
+        the gate is always safely recreated with a *fresh* queue_snapshot
+        afterward, deliberately not gated on comparing it to whatever was
+        there before: a stale queue_snapshot on an unchanged release would
+        never pass dek-activator's own freshness check anyway, so keeping
+        an old one around would just relearn this exact failure mode.
         """
         if not (package/"release.json").is_file() or not (package/"release.sig").is_file():
             raise BundleError("final release build gate missing")
@@ -438,16 +467,6 @@ class ReleasePublisher:
             gate.update(queue_snapshot)
         if "parent_commit" in final:
             gate["parent_commit"] = final["parent_commit"]
-        existing_gate_path=package/"activation-ready.json"
-        existing_sig_path=package/"activation-ready.sig"
-        if existing_gate_path.is_file() and existing_sig_path.is_file():
-            try:
-                existing_gate=json.loads(existing_gate_path.read_text(encoding="utf-8"))
-                self.signing_key.public_key().verify(existing_sig_path.read_bytes(),_canonical_activation_ready(existing_gate))
-            except Exception:
-                existing_gate=None
-            if existing_gate==gate:
-                return approval
         with tempfile.TemporaryDirectory(prefix="dek-publisher-push-") as temporary:
             clone=Path(temporary)/"clone"
             _run((*GIT,"-c","protocol.file.allow=always","clone","--no-checkout","--",str(bundle),str(clone)))
