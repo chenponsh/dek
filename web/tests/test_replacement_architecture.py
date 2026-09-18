@@ -1181,6 +1181,85 @@ class PrepareChangeParentCommitTests(unittest.TestCase):
             self.assertNotIn("parent_commit", approval)
 
 
+class PrepareChangeWikiPathCollisionTests(unittest.TestCase):
+    """Two decisions can independently suggest the same wiki_path (the
+    combobox suggests "next free number" against each reviewer's own pinned
+    snapshot, so two decisions reviewed close together never see each
+    other's pick). Nothing used to stop the second one from silently
+    overwriting the first one's already-published, unrelated content.
+    prepare_change() now refuses whenever the target wiki_path already
+    holds different content than what this decision is about to write."""
+
+    def _repo(self, root: Path) -> Path:
+        repo = root / "repo"
+        (repo / "ingestion/rough").mkdir(parents=True)
+        (repo / "wiki").mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        return repo
+
+    def _commit(self, repo: Path, *, message: str, author_name: str, author_email: str) -> str:
+        subprocess.run(["git", "-c", f"user.name={author_name}", "-c", f"user.email={author_email}",
+                        "commit", "--allow-empty", "-qm", message], cwd=repo, check=True)
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+
+    def _rough(self, repo: Path, name: str) -> tuple[str, str]:
+        text = "---\nstatus: pending_review\nwiki_target:\n---\n\nbody\n"
+        (repo / "ingestion/rough" / name).write_text(text, encoding="utf-8")
+        subprocess.run(["git", "add", "--", f"ingestion/rough/{name}"], cwd=repo, check=True)
+        return text, "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _decision(self, repo: Path, *, rough_sha256: str, wiki_path: str, candidate_markdown: str) -> dict:
+        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+        tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=repo, text=True).strip()
+        return {"decision_id": "d" * 20, "action": "approve",
+                "snapshot_commit": commit, "snapshot_tree": tree,
+                "rough_path": "ingestion/rough/a.md", "rough_sha256": rough_sha256,
+                "wiki_path": wiki_path, "candidate_markdown": candidate_markdown}
+
+    def test_refuses_to_overwrite_an_existing_wiki_path_with_different_content(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); repo = self._repo(root)
+            text, rough_sha256 = self._rough(repo, "a.md")
+            (repo / "wiki/x.md").write_text("# already published\n", encoding="utf-8")
+            subprocess.run(["git", "add", "--", "wiki/x.md"], cwd=repo, check=True)
+            self._commit(repo, message="publish: earlier-decision", author_name="DEK Publisher", author_email="publisher@invalid")
+
+            key = Ed25519PrivateKey.generate()
+            publisher = ReleasePublisher(str(repo), key, root / "missing-credential", test_only_local_origin=True)
+            decision = self._decision(repo, rough_sha256=rough_sha256, wiki_path="wiki/x.md",
+                                       candidate_markdown="# a different topic entirely\n")
+            with self.assertRaises(BundleError):
+                publisher.prepare_change(root / "prepared", decision)
+
+    def test_allows_republishing_byte_identical_content_at_an_existing_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); repo = self._repo(root)
+            text, rough_sha256 = self._rough(repo, "a.md")
+            (repo / "wiki/x.md").write_text("# same content\n", encoding="utf-8")
+            subprocess.run(["git", "add", "--", "wiki/x.md"], cwd=repo, check=True)
+            self._commit(repo, message="publish: earlier-decision", author_name="DEK Publisher", author_email="publisher@invalid")
+
+            key = Ed25519PrivateKey.generate()
+            publisher = ReleasePublisher(str(repo), key, root / "missing-credential", test_only_local_origin=True)
+            decision = self._decision(repo, rough_sha256=rough_sha256, wiki_path="wiki/x.md",
+                                       candidate_markdown="# same content\n")
+            approval = publisher.prepare_change(root / "prepared", decision)
+            self.assertIn("commit", approval)
+
+    def test_allows_a_brand_new_wiki_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); repo = self._repo(root)
+            text, rough_sha256 = self._rough(repo, "a.md")
+            self._commit(repo, message="init", author_name="t", author_email="t@i")
+
+            key = Ed25519PrivateKey.generate()
+            publisher = ReleasePublisher(str(repo), key, root / "missing-credential", test_only_local_origin=True)
+            decision = self._decision(repo, rough_sha256=rough_sha256, wiki_path="wiki/new.md",
+                                       candidate_markdown="# brand new\n")
+            approval = publisher.prepare_change(root / "prepared", decision)
+            self.assertIn("commit", approval)
+
+
 class ActivationBootstrapAncestryTests(unittest.TestCase):
     """The very first real (decision-derived) release published after a
     from-source seed will always carry a parent_commit far ahead of the

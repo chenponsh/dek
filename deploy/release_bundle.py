@@ -333,9 +333,20 @@ class ReleasePublisher:
             snapshot_tree=_run((*GIT,"rev-parse",f"{exact_snapshot}^{{tree}}"),cwd=clone).decode().strip()
             if exact_snapshot!=snapshot or snapshot_tree!=decision.get("snapshot_tree"): raise BundleError("review snapshot identity mismatch")
             parent_commit=_nearest_decision_commit(clone,exact_snapshot)
-            _run((*GIT,"reset","--hard",exact_snapshot),cwd=clone)
             rough=clone/str(decision.get("rough_path","")); wiki=clone/str(decision.get("wiki_path",""))
             if not rough.resolve().is_relative_to((clone/"ingestion/rough").resolve()) or not wiki.resolve().is_relative_to((clone/"wiki").resolve()): raise BundleError("decision path escapes repository")
+            candidate_bytes=decision["candidate_markdown"].encode("utf-8")
+            # Checked against the clone's freshly-cloned tip -- i.e. what is
+            # actually live right now -- before `reset --hard` below moves the
+            # working tree back to this decision's own, possibly older, pinned
+            # snapshot. Two decisions reviewed close together can each suggest
+            # the same "next free number" wiki_path against their own snapshot
+            # and never see each other's pick; without this check the second
+            # one to publish silently clobbers the first one's unrelated,
+            # already-published content.
+            if wiki.is_file() and wiki.read_bytes()!=candidate_bytes:
+                raise BundleError("wiki_path already published with different content")
+            _run((*GIT,"reset","--hard",exact_snapshot),cwd=clone)
             try:
                 rough_details=rough.lstat()
             except OSError as exc:
@@ -344,7 +355,6 @@ class ReleasePublisher:
                 raise BundleError("rough source is not an exact regular file")
             raw=rough.read_bytes()
             if "sha256:"+hashlib.sha256(raw).hexdigest()!=decision.get("rough_sha256"): raise BundleError("rough binding changed")
-            candidate_bytes=decision["candidate_markdown"].encode("utf-8")
             wiki=write_candidate_regular(clone,str(decision.get("wiki_path","")),candidate_bytes)
             text=raw.decode("utf-8")
             text=text.replace("status: pending_review","status: promoted",1)
