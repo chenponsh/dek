@@ -456,6 +456,24 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('<form method="post" action="/trigger-ingest" class="ingest-trigger-form">', page)
         self.assertIn('<button type="submit">立即拉取最新源</button>', page)
 
+    def test_list_action_buttons_sit_together_on_the_right_ingest_then_publish(self):
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        row = page.split('<div class="summary-row">', 1)[1].split('</div></div>', 1)[0]
+        self.assertTrue(row.startswith('<div class="summary">共 '))
+        self.assertIn('<div class="summary-actions">', row)
+        actions = row.split('<div class="summary-actions">', 1)[1]
+        self.assertLess(actions.index('class="ingest-trigger-form"'), actions.index('class="publish-trigger-form"'))
+        self.assertIn(".summary-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-left:auto}", page)
+
+    def test_list_action_buttons_do_not_change_colour_on_hover(self):
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        # The ingest button's own rule was fully shadowed by button[type=submit]
+        # except its hover, which turned the solid blue button pale grey.
+        self.assertNotIn(".ingest-trigger-form button", page)
+        self.assertIn(".summary-actions button[type=submit]:hover{filter:none;background:var(--accent)}", page)
+        # The site-wide and form-wide hover rules stay untouched.
+        self.assertIn("button[type=submit]:hover{filter:brightness(.94)}", page)
+
     def test_list_offers_a_manual_publish_button_with_approved_count(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertIn('<form method="post" action="/publish" class="publish-trigger-form">', page)

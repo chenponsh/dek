@@ -606,9 +606,8 @@ STYLE = """<style>
 .summary{margin-bottom:.8rem;color:var(--muted);font-size:.92rem}
 .summary-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:.8rem}
 .summary-row .summary{margin-bottom:0}
-.ingest-trigger-form{margin:0}
-.ingest-trigger-form button{padding:.4rem .85rem;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font-weight:600;font-size:.85rem;cursor:pointer}
-.ingest-trigger-form button:hover{background:var(--hover)}
+.summary-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-left:auto}
+.ingest-trigger-form,.publish-trigger-form{margin:0}
 .status-tabs{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center;margin:0 0 1.2rem}
 .status-tab{position:relative;display:inline-flex;align-items:center;padding:.4rem .75rem;border-radius:999px;color:var(--muted);text-decoration:none;font-weight:600;font-size:.88rem}
 .status-tab:hover{background:var(--hover);color:var(--text)}
@@ -627,6 +626,7 @@ pre{white-space:pre-wrap;max-height:30rem;overflow:auto;background:var(--panel)}
 label{display:block;margin:1rem 0;color:var(--text);font-weight:600;font-size:.9rem}
 button[type=submit]{margin-top:.5rem;padding:.55rem 1.1rem;border:0;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;font-size:.95rem}
 button[type=submit]:hover{filter:brightness(.94)}
+.summary-actions button[type=submit]:hover{filter:none;background:var(--accent)}
 .decision-actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem}
 .decision-actions button{margin-top:0}
 .decision-actions .action-reject{background:#b3261e}
@@ -837,7 +837,7 @@ class ReviewService:
             self._header() + self._sidebar()
             + '<div class="content">'
             + '<main class="review-shell">'
-            + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div>{publish_button}{ingest_button}</div>'
+            + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions">{ingest_button}{publish_button}</div></div>'
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + f'<nav class="status-tabs" aria-label="审核状态筛选">{filters}</nav>'
             + table + '</main>'
