@@ -9,6 +9,7 @@ the reviewer, never a decision.
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections import Counter, defaultdict
@@ -109,3 +110,36 @@ def suggest_folders(root: Path, question: str, answer: str, limit: int = 3) -> l
     if best < MIN_SIMILARITY:
         return []
     return ranked[:limit]
+
+
+def rough_qa(content: str) -> tuple[str, str]:
+    """The (question, answer) of the first row of a rough draft's Q&A table."""
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|") or set(stripped) <= set("|-: "):
+            continue
+        cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", stripped)[1:-1]]
+        if len(cells) < 3 or cells[0] in {"问题", "解答"}:
+            continue
+        clean = lambda value: value.replace("<br>", "\n").replace("\\|", "|").strip()
+        return clean(cells[0]), clean(cells[1])
+    return "", ""
+
+
+def read_suggestion(path: Path | None, rough_path: str, rough_sha256: str) -> str:
+    """The folder a model suggested for this exact version of a draft, or "".
+
+    Anything missing, damaged or made for a different version of the draft
+    counts as no suggestion; the caller still checks the folder exists.
+    """
+    if path is None:
+        return ""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        entry = data["items"][rough_path]
+    except (OSError, ValueError, KeyError, TypeError):
+        return ""
+    if not isinstance(entry, dict) or entry.get("rough_sha256") != rough_sha256:
+        return ""
+    folder = entry.get("folder")
+    return folder if isinstance(folder, str) and folder.startswith("wiki/") else ""

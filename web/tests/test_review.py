@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import stat
@@ -838,6 +839,37 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('<button type="button" class="suggestion-chip" data-path="wiki/05_药学研究/0507_溶出曲线/0507-0004.md">05_药学研究/0507_溶出曲线</button>', block)
         self.assertIn('data-path="wiki/01_注册申报/0106_受理审查/0106-0004.md"', block)
         self.assertNotIn('type="submit"', block)
+
+    def model_suggestion(self, item, folder, sha=None):
+        raw = (self.root / "repo" / item.path).read_bytes()
+        path = self.root / "suggestions.json"
+        path.write_text(json.dumps({"schema_version": 1, "items": {item.path: {
+            "rough_sha256": sha or "sha256:" + hashlib.sha256(raw).hexdigest(), "folder": folder, "by": "hermes"}}}), encoding="utf-8")
+        self.service.suggestions_path = path
+
+    def test_a_model_suggestion_leads_and_the_similar_folders_follow(self):
+        self.add_filed_entries()
+        item = self.rough_about("溶出曲线f2相似性因子怎么算", "比较溶出曲线时使用相似性因子f2，选择合适的溶出介质。")
+        self.model_suggestion(item, "wiki/01_注册申报/0106_受理审查")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertRegex(page, r'class="wiki-path-input"[^>]*value="wiki/01_注册申报/0106_受理审查/0106-0004\.md"')
+        block = page.split('<div class="path-suggestions">', 1)[1].split("</div>", 1)[0]
+        self.assertLess(block.index("0106_受理审查"), block.index("0507_溶出曲线"))
+
+    def test_a_model_suggestion_for_another_version_or_an_unknown_folder_is_ignored(self):
+        self.add_filed_entries()
+        item = self.rough_about("溶出曲线f2相似性因子怎么算", "比较溶出曲线时使用相似性因子f2，选择合适的溶出介质。")
+        for folder, sha in (("wiki/01_注册申报/0106_受理审查", "sha256:" + "0" * 64), ("wiki/99_不存在/9999_x", None), ("../../etc", None)):
+            self.model_suggestion(item, folder, sha)
+            page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+            self.assertRegex(page, r'class="wiki-path-input"[^>]*value="wiki/05_药学研究/0507_溶出曲线/0507-0004\.md"', folder)
+
+    def test_a_missing_suggestions_file_changes_nothing(self):
+        self.add_filed_entries()
+        item = self.rough_about("溶出曲线f2相似性因子怎么算", "比较溶出曲线时使用相似性因子f2，选择合适的溶出介质。")
+        self.service.suggestions_path = self.root / "does-not-exist.json"
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertIn('value="wiki/05_药学研究/0507_溶出曲线/0507-0004.md"', page)
 
     def test_a_target_the_draft_already_carries_wins_over_the_suggestion(self):
         self.add_filed_entries()

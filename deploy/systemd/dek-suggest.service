@@ -1,0 +1,41 @@
+[Unit]
+Description=Ask Hermes which wiki folder each pending DEK rough draft belongs in
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Started after every source ingest (see dek-source-ingest-manual.service) and
+# safe to start by hand. It only writes a small suggestions file that the
+# review page reads; a reviewer still approves every draft.
+Type=oneshot
+User=dek-qa
+Group=dek-qa
+SupplementaryGroups=dek-review-input dek-suggest-read
+WorkingDirectory=/var/lib/dek-qa
+Environment=HOME=/var/lib/dek-qa
+Environment=HERMES_HOME=/var/lib/dek-qa/hermes
+Environment=HERMES_ENV=/var/lib/dek-qa/secrets/environment
+Environment=HERMES_DISABLE_LAZY_INSTALLS=1
+EnvironmentFile=/var/lib/dek-qa/secrets/environment
+ExecStart=/usr/bin/python3 -I /opt/dek-review/app/deploy/suggest_entrypoint.py --bundle /var/lib/dek-review/input/repository.bundle --output /var/lib/dek-suggest/suggestions.json
+TimeoutStartSec=900
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/dek-qa/hermes /var/lib/dek-suggest
+ReadOnlyPaths=/opt/dek-review/app /var/lib/dek-review/input /var/lib/dek-qa/secrets
+InaccessiblePaths=/srv/projects/dek /root /etc/systemd/system /var/lib/dek-review/secrets /var/lib/dek-review/decisions /var/lib/dek-review/state

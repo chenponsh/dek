@@ -399,6 +399,7 @@ def main() -> None:
     parser.add_argument("--bundle-archive", type=Path)
     parser.add_argument("--queue", type=Path, required=True)
     parser.add_argument("--labels", type=Path)
+    parser.add_argument("--suggestions", type=Path)
     parser.add_argument("--socket", type=Path, required=True)
     parser.add_argument("--socket-group")
     parser.add_argument("--ingest-trigger", type=Path)
@@ -427,6 +428,7 @@ def main() -> None:
         clock=time.time,
         labels=ReviewerLabelStore(args.labels) if args.labels else None,
         path_prefix=REVIEW_PREFIX,
+        suggestions_path=args.suggestions,
     )
     serve_unix(
         args.socket, ReviewApp(service, claim_secret, reviewers,

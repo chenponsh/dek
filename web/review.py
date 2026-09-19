@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlencode
 import yaml
 from deploy.release_bundle import APPROVAL_ID_PATTERN
 
-from .suggest import suggest_folders
+from .suggest import read_suggestion, suggest_folders
 
 
 HASH_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -277,13 +277,21 @@ def wiki_folder_candidates(root: Path) -> list[tuple[str, str]]:
     return candidates
 
 
-def suggest_wiki_paths(root: Path, content: str, candidates: list[tuple[str, str]] | None = None, limit: int = 3) -> list[tuple[str, str]]:
-    """(folder label, next path) for the folders most like this draft, best first."""
+def suggest_wiki_paths(root: Path, content: str, candidates: list[tuple[str, str]] | None = None, limit: int = 3, preferred: str = "") -> list[tuple[str, str]]:
+    """(folder label, next path) for the folders most like this draft, best first.
+
+    `preferred` is a folder a model chose; it leads only if it is a real folder
+    in this snapshot, and the similarity picks follow it (one more chip).
+    """
     question, answer, _ = _rough_row(content)
     if not question and not answer:
         return []
     next_path = {f"wiki/{label}": path for label, path in (candidates if candidates is not None else wiki_folder_candidates(root))}
-    return [(folder[len("wiki/"):], next_path[folder]) for folder in suggest_folders(root, question, answer, limit) if folder in next_path]
+    folders = suggest_folders(root, question, answer, limit)
+    if preferred in next_path:
+        folders = [preferred] + [folder for folder in folders if folder != preferred]
+        limit += 1
+    return [(folder[len("wiki/"):], next_path[folder]) for folder in folders[:limit] if folder in next_path]
 
 
 def _yaml_scalar(value: str) -> str:
@@ -764,6 +772,7 @@ class ReviewService:
         clock: Callable[[], float],
         labels: ReviewerLabelStore | None = None,
         path_prefix: str = "",
+        suggestions_path: Path | None = None,
     ):
         if len(audit_key) < 16 or len(queue_key) < 16:
             raise ValueError("review secrets must be at least 16 bytes")
@@ -775,6 +784,7 @@ class ReviewService:
         self.audit_key, self.queue_key, self.nonces, self.clock = audit_key, queue_key, nonces, clock
         self.labels = labels
         self.path_prefix = path_prefix
+        self.suggestions_path = suggestions_path
 
     def _pending(self, root=None) -> list[RoughBinding]:
         root=root or (self.repository_source.current() if hasattr(self.repository_source,"current") else self.root)
@@ -1008,7 +1018,8 @@ class ReviewService:
             alternatives = []
             if not suggested:
                 # The draft carries no target: suggest the folders holding the most similar filed entries.
-                alternatives = suggest_wiki_paths(root, item.content)
+                alternatives = suggest_wiki_paths(
+                    root, item.content, preferred=read_suggestion(self.suggestions_path, binding.path, binding.sha256))
                 if alternatives:
                     suggested = alternatives[0][1]
             form = self._form_card(binding, nonce, wiki_path=suggested, candidate=candidate_draft(item.content, suggested), root=root,

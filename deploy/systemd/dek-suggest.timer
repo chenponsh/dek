@@ -1,0 +1,11 @@
+[Unit]
+Description=Suggest wiki folders for newly ingested DEK rough drafts
+
+[Timer]
+# Cheap when nothing is new: it only asks the model about drafts it has not seen.
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
