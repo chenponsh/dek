@@ -405,6 +405,26 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn(".side-title{display:none}", style)
         self.assertNotIn("letter-spacing:.08em}summary", style)
 
+    def test_scrollbars_are_thin_theme_aware_and_stateful(self):
+        build_site(self.vault, self.out)
+        css = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        # color-scheme lives on :root (the dark theme is html[data-theme=dark], also the root).
+        self.assertIn(":root{color-scheme:light}", css)
+        self.assertIn("html[data-theme=dark]{color-scheme:dark}", css)
+        # 10px hit area, 6px visible thumb (2px transparent border), 8px on hover, 40px minimum.
+        self.assertIn("::-webkit-scrollbar{width:10px;height:10px}", css)
+        self.assertIn("::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}", css)
+        self.assertIn("background-color:color-mix(in srgb,var(--muted) 38%,transparent);background-clip:padding-box;border:2px solid transparent;border-radius:999px", css)
+        self.assertIn("::-webkit-scrollbar-thumb:vertical{min-height:40px}", css)
+        self.assertIn("::-webkit-scrollbar-thumb:horizontal{min-width:40px}", css)
+        self.assertIn("::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--muted) 65%,transparent);border-width:1px}", css)
+        self.assertIn("::-webkit-scrollbar-thumb:active{background-color:var(--accent)}", css)
+        # Firefox only: the standard properties would override the WebKit styling in Chrome/Edge.
+        self.assertIn("@supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 38%,transparent) transparent}}", css)
+        outside = css.replace(css[css.index("@supports not selector(::-webkit-scrollbar)"):].split("}}", 1)[0] + "}}", "")
+        self.assertNotIn("scrollbar-width", outside)
+        self.assertNotIn("scrollbar-color", outside)
+
     def test_sidebar_tree_has_a_home_entry(self):
         build_site(self.vault, self.out)
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
