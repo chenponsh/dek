@@ -108,7 +108,6 @@ class ReviewServiceTests(unittest.TestCase):
             "action": "approve",
             "wiki_path": "wiki/01_Test/01-0001.md",
             "candidate_markdown": CANDIDATE,
-            "comment": "",
         }
         values.update(changes)
         return urlencode(values).encode()
@@ -135,14 +134,14 @@ class ReviewServiceTests(unittest.TestCase):
         # failed attempt had already consumed their only nonce, so they had
         # no way to retry short of a full page reload.
         nonce = self.nonces.issue("opaque-session", "ingestion/rough/pending.md", 1_900_000_900)
-        with self.assertRaisesRegex(ReviewError, "comment is required"):
-            self.service.submit_form(self.form(nonce=nonce, action="reject", wiki_path="", candidate_markdown="", comment=""),
+        with self.assertRaises(ReviewError):
+            self.service.submit_form(self.form(nonce=nonce, action="approve", wiki_path=""),
                                      session_id="opaque-session", user_id="enterprise-user")
         # Retry with the same nonce and a corrected field -- must succeed.
-        self.service.submit_form(self.form(nonce=nonce, action="reject", wiki_path="", candidate_markdown="", comment="请补充依据。"),
+        self.service.submit_form(self.form(nonce=nonce, action="approve"),
                                  session_id="opaque-session", user_id="enterprise-user")
         record = json.loads(self.queue.read_text(encoding="utf-8"))
-        self.assertEqual(record["action"], "reject")
+        self.assertEqual(record["action"], "approve")
 
     def test_nonce_accepts_a_matching_non_ascii_rough_path(self):
         path = "ingestion/rough/20260917_回退审核_0102-0001.md"
@@ -291,7 +290,6 @@ class ReviewWorkflowTests(unittest.TestCase):
             "action": action,
             "wiki_path": "wiki/01_Test/01-0001.md" if action == "approve" else "",
             "candidate_markdown": CANDIDATE if action == "approve" else "",
-            "comment": "" if action == "approve" else "请补充依据。",
         }
         values.update(changes)
         return self.service.submit_form(urlencode(values).encode(), session_id=session_id, user_id="enterprise-user", reviewer_label=nickname)
@@ -349,11 +347,31 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(item.status, "approved")
         self.assertEqual(item.reviewer, "张三")
 
-    def test_reject_requires_and_keeps_comment_for_history(self):
+    def test_reject_needs_no_comment_and_records_none(self):
         self.decide(action="reject")
         first = json.loads(self.queue.read_text(encoding="utf-8").splitlines()[0])
-        self.assertEqual(first["comment"], "请补充依据。")
         self.assertEqual(first["action"], "reject")
+        # The signed record schema still carries the field (publisher and MAC
+        # validation expect it), but it is always empty now.
+        self.assertEqual(first["comment"], "")
+
+    def test_a_stale_form_that_still_sends_a_comment_is_accepted_but_the_text_is_dropped(self):
+        self.decide(action="reject", comment="旧页面里填的意见")
+        record = json.loads(self.queue.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(record["comment"], "")
+        self.assertNotIn("旧页面里填的意见", self.queue.read_text(encoding="utf-8"))
+
+    def test_review_form_has_no_comment_field_and_history_no_comment_column(self):
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertNotIn('name="comment"', page)
+        self.assertNotIn("审核意见", page)
+        self.assertIn('name="action" value="approve">批准</button>', page)
+        self.assertIn('name="action" value="reject" class="action-reject">拒绝</button>', page)
+        self.decide(action="reject")
+        history = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertIn("<th>决定</th><th>审核人</th><th>时间</th></tr>", history)
+        self.assertNotIn("<th>意见</th>", history)
 
     def test_return_is_no_longer_an_accepted_action(self):
         with self.assertRaisesRegex(ReviewError, "invalid action"):

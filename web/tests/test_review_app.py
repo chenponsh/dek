@@ -222,7 +222,6 @@ class ReviewAppTests(unittest.TestCase):
                 "action": "reject",
                 "wiki_path": "",
                 "candidate_markdown": "",
-                "comment": "请补充依据。",
             },
         )
         self.assertEqual(status, "303 See Other")
@@ -249,8 +248,7 @@ class ReviewAppTests(unittest.TestCase):
         nonce = re.search('name="form_nonce" value="([^"]+)"', page).group(1)
         binding = rough_binding(self.rough)
         form = {"form_nonce": nonce, "rough_path": "ingestion/rough/pending.md", "rough_sha256": binding.sha256,
-                "rough_version": binding.version, "action": "reject", "wiki_path": "", "candidate_markdown": "",
-                "comment": "不合适。"}
+                "rough_version": binding.version, "action": "reject", "wiki_path": "", "candidate_markdown": ""}
         status, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form,
                                        query="status=pending&page=2&status=%3Cx%3E")
         self.assertEqual(status, "303 See Other")
@@ -268,7 +266,7 @@ class ReviewAppTests(unittest.TestCase):
         nonce = re.search('name="form_nonce" value="([^"]+)"', detail.decode("utf-8")).group(1)
         binding = rough_binding(self.rough)
         form = {"form_nonce": nonce, "rough_path": "ingestion/rough/pending.md", "rough_sha256": binding.sha256,
-                "rough_version": binding.version, "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "不合适。"}
+                "rough_version": binding.version, "action": "reject", "wiki_path": "", "candidate_markdown": ""}
         _, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form, query="page_size=5&page=3")
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected&page=3&page_size=5")
 
@@ -280,7 +278,7 @@ class ReviewAppTests(unittest.TestCase):
         nonce = re.search('name="form_nonce" value="([^"]+)"', detail.decode("utf-8")).group(1)
         binding = rough_binding(self.rough)
         form = {"form_nonce": nonce, "rough_path": "ingestion/rough/pending.md", "rough_sha256": binding.sha256,
-                "rough_version": binding.version, "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "不合适。"}
+                "rough_version": binding.version, "action": "reject", "wiki_path": "", "candidate_markdown": ""}
         _, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected")
 
@@ -295,7 +293,7 @@ class ReviewAppTests(unittest.TestCase):
             "form_nonce": nonce, "rough_path": "ingestion/rough/pending.md",
             "rough_sha256": binding.sha256, "rough_version": binding.version,
             "action": "approve", "wiki_path": "wiki/01_Test/01-0001.md",
-            "candidate_markdown": CANDIDATE, "comment": "",
+            "candidate_markdown": CANDIDATE,
         }
         for origin in ("https://review.regkb.chenponai.com", REVIEW_ORIGIN + "/", "http://regkb.chenponai.com", "https://regkb.chenponai.com.evil.test"):
             self.assertEqual(self.call("/decision", method="POST", form=form, cookie=session, origin=origin)[0], "403 Forbidden")
@@ -316,7 +314,7 @@ class ReviewAppTests(unittest.TestCase):
         form = {
             "form_nonce": nonce, "rough_path": "ingestion/rough/pending.md",
             "rough_sha256": binding.sha256, "rough_version": binding.version,
-            "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "请补充依据。",
+            "action": "reject", "wiki_path": "", "candidate_markdown": "",
         }
         with self.assertLogs("web.review.auth", level="WARNING") as captured:
             status, _, _ = self.call("/decision", method="POST", form=form, cookie=session)
@@ -339,7 +337,7 @@ class ReviewAppTests(unittest.TestCase):
         form = {
             "form_nonce": nonce, "rough_path": "ingestion/rough/pending.md",
             "rough_sha256": binding.sha256, "rough_version": binding.version,
-            "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "请补充依据。",
+            "action": "reject", "wiki_path": "", "candidate_markdown": "",
         }
         with self.assertLogs("web.review.auth", level="WARNING") as captured:
             status, _, _ = self.call(
@@ -372,7 +370,7 @@ class ReviewAppTests(unittest.TestCase):
             return {
                 "form_nonce": nonce, "rough_path": "ingestion/rough/pending.md",
                 "rough_sha256": binding.sha256, "rough_version": binding.version,
-                "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "请补充依据。",
+                "action": "reject", "wiki_path": "", "candidate_markdown": "",
             }
 
         with self.assertLogs("web.review.auth", level="WARNING") as captured:
@@ -406,7 +404,7 @@ class ReviewAppTests(unittest.TestCase):
             form={
                 "form_nonce": nonce_match.group(1), "rough_path": "ingestion/rough/pending.md",
                 "rough_sha256": binding.sha256, "rough_version": binding.version,
-                "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "补充依据",
+                "action": "reject", "wiki_path": "", "candidate_markdown": "",
             }, extra=invalid_type,
         )[0], "415 Unsupported Media Type")
 

@@ -441,7 +441,6 @@ class ReviewItem:
     status: str
     reviewer: str
     decided_at: str
-    comment: str
     action: str
     content: str
     wiki_target: str
@@ -456,7 +455,6 @@ class DecisionSummary:
     action: str
     reviewer: str
     created_at: str
-    comment: str
 
 
 class MemoryFormNonceStore:
@@ -769,7 +767,7 @@ class ReviewService:
     def history(self, relative: str) -> list[DecisionSummary]:
         labels = self._labels()
         return [
-            DecisionSummary(record.get("action", ""), labels.get(record.get("decision_id", ""), ""), record.get("created_at", ""), record.get("comment", ""))
+            DecisionSummary(record.get("action", ""), labels.get(record.get("decision_id", ""), ""), record.get("created_at", ""))
             for record in self._decisions()
             if record.get("rough_path") == relative
         ]
@@ -782,7 +780,7 @@ class ReviewService:
             title, source, date, target = self._title(binding)
             items[binding.path] = ReviewItem(
                 item_identity(binding.path), binding.path, title, source, date,
-                "pending", "", "", "", "", binding.content, target,
+                "pending", "", "", "", binding.content, target,
             )
         for path, record in ((record.get("rough_path"), record) for record in self._decisions()):
             if not isinstance(path, str) or not path:
@@ -799,7 +797,7 @@ class ReviewService:
                 existing.title if existing else PurePosixPath(path).name,
                 existing.source if existing else "",
                 existing.published_date if existing else "",
-                derived, reviewer, record.get("created_at", ""), record.get("comment", ""), action,
+                derived, reviewer, record.get("created_at", ""), action,
                 existing.content if existing else "",
                 existing.wiki_target if existing else str(record.get("wiki_path") or ""),
             )
@@ -808,7 +806,7 @@ class ReviewService:
         if needle:
             values = [
                 item for item in values
-                if needle in " ".join((item.path, item.title, item.source, item.comment, item.reviewer)).casefold()
+                if needle in " ".join((item.path, item.title, item.source, item.reviewer)).casefold()
                 or needle in item.content.casefold()
             ]
         if status:
@@ -830,7 +828,7 @@ class ReviewService:
         options_json = json.dumps([[label, path] for label, path in candidates], ensure_ascii=False)
         return f"""<article><h2>{html.escape(heading)}</h2><pre>{html.escape(rough.content)}</pre>
 <form method="post" action="{self.path_prefix}/decision{html.escape(action_query)}"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
-<label>Wiki 路径（可搜索，按文件夹名过滤，选中后按需修改末尾编号）<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label><label>候选 Wiki Markdown（已预填草稿，可修改，批准发布时提交）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><label>审核意见（拒绝时必填）<textarea name="comment" rows="3"></textarea></label><div class="decision-actions"><button type="submit" name="action" value="approve">批准</button><button type="submit" name="action" value="reject" class="action-reject">拒绝</button></div></form></article>"""
+<label>Wiki 路径（可搜索，按文件夹名过滤，选中后按需修改末尾编号）<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label><label>候选 Wiki Markdown（已预填草稿，可修改，批准发布时提交）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><div class="decision-actions"><button type="submit" name="action" value="approve">批准</button><button type="submit" name="action" value="reject" class="action-reject">拒绝</button></div></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()
@@ -931,11 +929,11 @@ class ReviewService:
         history = self.history(item.path)
         rows = "".join(
             f"<tr><td>{html.escape(ACTION_LABEL.get(record.action, record.action))}</td>"
-            f"<td>{html.escape(record.reviewer or '—')}</td><td class='meta'>{html.escape(_display_time(record.created_at))}</td><td>{html.escape(record.comment)}</td></tr>"
+            f"<td>{html.escape(record.reviewer or '—')}</td><td class='meta'>{html.escape(_display_time(record.created_at))}</td></tr>"
             for record in reversed(history)
         )
         history_block = (
-            f"<h2>处理历史（{len(history)}）</h2><table><thead><tr><th>决定</th><th>审核人</th><th>时间</th><th>意见</th></tr></thead><tbody>{rows}</tbody></table>"
+            f"<h2>处理历史（{len(history)}）</h2><table><thead><tr><th>决定</th><th>审核人</th><th>时间</th></tr></thead><tbody>{rows}</tbody></table>"
             if history else ""
         )
         decided = bool(history)
@@ -1014,7 +1012,6 @@ class ReviewService:
         # add`, so an un-normalized candidate would never byte-match what the
         # publisher actually commits (deploy/release_bundle.py prepare_change()).
         candidate = one("candidate_markdown").replace("\r\n", "\n").replace("\r", "\n")
-        comment = one("comment")
         if action == "approve":
             validate_relative_path(wiki_path, WIKI_PREFIX)
             if not candidate.strip():
@@ -1027,9 +1024,7 @@ class ReviewService:
             # non-approve decision never uses either field.
             wiki_path = ""
             candidate = ""
-        if action == "reject" and not comment.strip():
-            raise ReviewError("comment is required")
-        if len(comment) > 4000 or len(candidate.encode("utf-8")) > 900_000:
+        if len(candidate.encode("utf-8")) > 900_000:
             raise ReviewError("field too large", "413 Payload Too Large")
         decision_id = secrets.token_urlsafe(24)
         commit=subprocess.check_output(["/usr/bin/git","rev-parse","HEAD^{commit}"],cwd=root,env={"PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_GLOBAL":"/dev/null"},text=True).strip()
@@ -1042,7 +1037,9 @@ class ReviewService:
             "reviewer_digest": "hmac-sha256:" + hmac.new(self.audit_key, user_id.encode(), hashlib.sha256).hexdigest(),
             "action": action, "rough_path": binding.path, "rough_sha256": binding.sha256,
             "rough_version": binding.version, "wiki_path": wiki_path, "candidate_markdown": candidate,
-            "comment": comment.strip(), "snapshot_commit":commit,"snapshot_tree":tree,"snapshot_bundle_sha256":bundle_digest,
+            # Kept in the signed record schema (the publisher and the MAC expect
+            # the field) but no longer collected: always empty.
+            "comment": "", "snapshot_commit":commit,"snapshot_tree":tree,"snapshot_bundle_sha256":bundle_digest,
         }
         record["decision_mac"] = decision_mac(record, self.queue_key)
         # The decision queue stays append-only and MAC-bound; a later decision for the
