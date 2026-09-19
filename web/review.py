@@ -150,7 +150,8 @@ def _content_meta(item) -> str:
     if item.source:
         full.append(f"来源：{item.source}"); short.append(f"来源：{_short_source(item.source)}")
     if item.published_date:
-        full.append(f"发布日期：{item.published_date}"); short.append(f"发布日期：{item.published_date}")
+        full.append(f"发布日期：{item.published_date}")
+        short.insert(0, f"发布日期：{item.published_date}")  # first, so truncation never hides it
     return (f'<div class="meta content-meta" title="{html.escape(" · ".join(full), quote=True)}">'
             f'{html.escape(" · ".join(short))}</div>')
 
@@ -844,8 +845,7 @@ class ReviewService:
     def _sidebar(self) -> str:
         return (
             '<aside class="sidebar">'
-            '<nav id="nav-tree" data-manifest="/manifest.json" data-current=""></nav>'
-            '<div class="sidebar-resize-handle" aria-hidden="true"></div></aside>'
+            '<nav id="nav-tree" data-manifest="/manifest.json" data-current=""></nav></aside>'
         )
 
     def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:

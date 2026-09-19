@@ -423,7 +423,8 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn('>退出审核<', page)
         self.assertIn('<aside class="sidebar">', page)
         self.assertIn('<nav id="nav-tree" data-manifest="/manifest.json" data-current=""></nav>', page)
-        self.assertIn('<div class="sidebar-resize-handle" aria-hidden="true"></div>', page)
+        # The drag handle is created by app.js outside the scrolling sidebar.
+        self.assertNotIn("sidebar-resize-handle", page)
         self.assertIn('<script src="/assets/app.js" defer></script>', page)
         self.assertIn('class="status-tab active" aria-current="page" href="/?status=pending"', page)
         self.assertNotIn('class="search-box"', page)
@@ -460,7 +461,7 @@ class ReviewWorkflowTests(unittest.TestCase):
             self.assertNotIn("side-title", page)
             self.assertNotIn(">浏览<", page)
             self.assertIn('<aside class="sidebar"><nav id="nav-tree"', page)
-            self.assertIn('<div class="sidebar-resize-handle" aria-hidden="true"></div></aside>', page)
+            self.assertNotIn("sidebar-resize-handle", page)
 
     def test_content_cell_second_line_is_one_short_truncated_line_with_the_full_text_on_hover(self):
         long_source = "[[source/CDE/CDE_共性问题-常见一般性技术问题]]"
@@ -469,7 +470,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_list("opaque-session").decode("utf-8")
         cell = page[page.index("pending.md") - 300: page.index("pending.md") + 500]
         self.assertIn('title="ingestion/rough/pending.md · 来源：[[source/CDE/CDE_共性问题-常见一般性技术问题]]', cell)
-        self.assertIn('>pending.md · 来源：CDE_共性问题-常见一般性技术问题', cell)
+        self.assertIn('>发布日期：2026-09-14 · pending.md · 来源：CDE_共性问题-常见一般性技术问题', cell)
         self.assertNotIn(">ingestion/rough/pending.md", cell)
         self.assertNotIn(">[[", cell)
         self.assertIn(".content-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}", page)

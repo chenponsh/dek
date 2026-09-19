@@ -61,30 +61,51 @@
     });
   });
 
+  const SIDEBAR_KEY = "dek-sidebar-width";
+  const DEFAULT_SIDEBAR_W = 280;
   const MIN_SIDEBAR_W = 200;
-  const MAX_SIDEBAR_W = 600;
-  const savedWidth = Number(localStorage.getItem("dek-sidebar-width"));
-  if (savedWidth >= MIN_SIDEBAR_W && savedWidth <= MAX_SIDEBAR_W) {
-    root.style.setProperty("--sidebar-w", savedWidth + "px");
-  }
-  const handle = document.querySelector(".sidebar-resize-handle");
-  if (handle) {
-    const setWidth = value => {
-      const clamped = Math.min(MAX_SIDEBAR_W, Math.max(MIN_SIDEBAR_W, value));
-      root.style.setProperty("--sidebar-w", clamped + "px");
-      return clamped;
-    };
+  const drawerMode = window.matchMedia("(max-width: 760px)");
+  const maxSidebarW = () => Math.max(MIN_SIDEBAR_W, Math.floor(window.innerWidth * 0.5));
+  const clampSidebarW = value => Math.min(maxSidebarW(), Math.max(MIN_SIDEBAR_W, Math.round(value)));
+  const storedSidebarW = () => {
+    try { return Number(localStorage.getItem(SIDEBAR_KEY)); } catch (error) { return 0; }
+  };
+  const showSidebarW = () => {
+    // The drawer layout on narrow screens always uses the default width.
+    const saved = storedSidebarW();
+    if (!drawerMode.matches && saved >= MIN_SIDEBAR_W) root.style.setProperty("--sidebar-w", clampSidebarW(saved) + "px");
+    else root.style.removeProperty("--sidebar-w");
+  };
+  showSidebarW();
+  window.addEventListener("resize", showSidebarW);
+
+  if (sidebar) {
+    // Earlier pages carry a handle inside the scrolling sidebar, where the
+    // scrollbar covered it and it scrolled out of view; use one fixed handle instead.
+    document.querySelectorAll(".sidebar .sidebar-resize-handle").forEach(old => old.remove());
+    const handle = document.createElement("div");
+    handle.className = "sidebar-resize-handle";
+    handle.setAttribute("role", "separator");
+    handle.setAttribute("aria-orientation", "vertical");
+    handle.setAttribute("aria-label", "调整目录宽度（双击恢复默认）");
+    document.body.appendChild(handle);
     handle.addEventListener("pointerdown", event => {
       if (event.button !== undefined && event.button !== 0) return;
       event.preventDefault();
       handle.classList.add("dragging");
+      handle.setPointerCapture?.(event.pointerId);
       document.body.style.userSelect = "none";
-      const onMove = moveEvent => setWidth(moveEvent.clientX);
-      const onUp = upEvent => {
+      document.body.style.cursor = "col-resize";
+      let width = clampSidebarW(event.clientX);
+      const onMove = moveEvent => {
+        width = clampSidebarW(moveEvent.clientX);
+        root.style.setProperty("--sidebar-w", width + "px");
+      };
+      const onUp = () => {
         handle.classList.remove("dragging");
         document.body.style.userSelect = "";
-        const width = setWidth(upEvent.clientX);
-        localStorage.setItem("dek-sidebar-width", width);
+        document.body.style.cursor = "";
+        try { localStorage.setItem(SIDEBAR_KEY, String(width)); } catch (error) { /* storage unavailable */ }
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
         document.removeEventListener("pointercancel", onUp);
@@ -94,8 +115,8 @@
       document.addEventListener("pointercancel", onUp);
     });
     handle.addEventListener("dblclick", () => {
-      root.style.removeProperty("--sidebar-w");
-      localStorage.removeItem("dek-sidebar-width");
+      try { localStorage.removeItem(SIDEBAR_KEY); } catch (error) { /* storage unavailable */ }
+      showSidebarW();
     });
   }
 

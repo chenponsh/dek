@@ -360,7 +360,20 @@ class SiteBuildTests(unittest.TestCase):
         for page_path in (self.out / "index.html", self.out / "wiki" / "01_注册" / "条目.html"):
             with self.subTest(page=page_path):
                 page = page_path.read_text(encoding="utf-8")
-                self.assertIn('class="sidebar-resize-handle"', page)
+                # app.js creates the handle outside the scrolling sidebar.
+                self.assertNotIn('class="sidebar-resize-handle"', page)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        self.assertIn('document.body.appendChild(handle)', script)
+        self.assertIn('".sidebar .sidebar-resize-handle"', script)  # legacy in-sidebar handles are removed
+        self.assertIn('"dek-sidebar-width"', script)
+        self.assertIn("innerWidth * 0.5", script)
+        self.assertIn('addEventListener("dblclick"', script)
+        self.assertIn("body>.sidebar-resize-handle{position:fixed", style)
+        self.assertIn(".sidebar .sidebar-resize-handle{display:none}", style)
+        sidebar_rule = style.split(".sidebar{position:fixed", 1)[1].split("}", 1)[0]
+        self.assertIn("overflow-x:hidden", sidebar_rule)
+        self.assertNotIn("overflow-x:visible", sidebar_rule)
 
     def test_home_page_main_area_is_widened_but_articles_keep_a_readable_measure(self):
         build_site(self.vault, self.out)
