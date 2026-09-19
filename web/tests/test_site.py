@@ -379,6 +379,19 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn('document.querySelector(".recent-filters")', script)
         self.assertIn('classList.add("home-page")', script)
 
+    def test_sidebar_has_no_browse_title(self):
+        build_site(self.vault, self.out)
+        for page_path in (self.out / "index.html", self.out / "wiki" / "01_注册" / "条目.html"):
+            with self.subTest(page=page_path):
+                page = page_path.read_text(encoding="utf-8")
+                self.assertNotIn("side-title", page)
+                self.assertIn('<aside class="sidebar"><nav id="nav-tree"', page)
+        # Pages published before this change still carry the element until the
+        # next release rebuilds them, so the shared stylesheet hides it.
+        style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        self.assertIn(".side-title{display:none}", style)
+        self.assertNotIn("letter-spacing:.08em}summary", style)
+
     def test_sidebar_tree_has_a_home_entry(self):
         build_site(self.vault, self.out)
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
