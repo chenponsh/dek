@@ -24,6 +24,7 @@ from wsgiref.simple_server import WSGIRequestHandler, WSGIServer
 from .auth import authorize_claim
 from .review import (
     ACTION_STATUS,
+    PAGE_SIZE,
     MAX_DECISION_BYTES,
     IsolatedReviewClone,
     MemoryFormNonceStore,
@@ -61,11 +62,14 @@ NOTICES = {
 STATUS_FILTERS = {"pending", "approved", "published", "rejected"}
 
 
-def list_position(query: dict) -> tuple[str, int]:
-    """Validated (status, page) from a query string; anything odd falls back to the default."""
+def list_position(query: dict) -> tuple[str, int, int]:
+    """Validated (status, page, page_size) from a query string; anything odd falls back to the default."""
     status = query.get("status", [""])[0]
     raw = query.get("page", [""])[0]
-    return (status if status in STATUS_FILTERS else ""), (int(raw) if raw.isdigit() and len(raw) <= 6 else 1)
+    size = query.get("page_size", [""])[0]
+    return ((status if status in STATUS_FILTERS else ""),
+            (int(raw) if raw.isdigit() and len(raw) <= 6 else 1),
+            (int(size) if size.isdigit() and len(size) <= 6 else PAGE_SIZE))
 QUERY_LIMIT = 200
 ORIGIN_PATTERN = re.compile(r"(https?)://([A-Za-z0-9.\-]{1,253})(?::(\d{1,5}))?")
 
@@ -193,10 +197,10 @@ class ReviewApp:
                 return self._response(start, "403 Forbidden", b"Forbidden")
             query = parse_qs(environ.get("QUERY_STRING", ""))
             search = (query.get("q", [""])[0] or "")[:QUERY_LIMIT]
-            status_filter, page = list_position(query)
+            status_filter, page, page_size = list_position(query)
             notice = NOTICES.get(query.get("notice", [""])[0], "")
             try:
-                body = self.service.render_list(session_id, query=search, status=status_filter, notice=notice, page=page)
+                body = self.service.render_list(session_id, query=search, status=status_filter, notice=notice, page=page, page_size=page_size)
             except ReviewError as error:
                 return self._render_failure(start, error)
             return self._response(start, "200 OK", body, (("Content-Type", "text/html; charset=utf-8"),))
@@ -213,9 +217,9 @@ class ReviewApp:
             query = parse_qs(environ.get("QUERY_STRING", ""))
             notice = NOTICES.get(query.get("notice", [""])[0], "")
             unlocked = query.get("edit", [""])[0] == "1"
-            list_status, list_page = list_position(query)
+            list_status, list_page, list_size = list_position(query)
             try:
-                body = self.service.render_item(session_id, path[len("/item/"):], notice=notice, unlocked=unlocked, list_status=list_status, list_page=list_page)
+                body = self.service.render_item(session_id, path[len("/item/"):], notice=notice, unlocked=unlocked, list_status=list_status, list_page=list_page, list_size=list_size)
             except ReviewError as error:
                 return self._render_failure(start, error)
             if body is None:
@@ -269,9 +273,10 @@ class ReviewApp:
             action = values.get("action", [""])[0]
             notice = ACTION_STATUS.get(action, "decided")
             location = "%s/item/%s?notice=%s" % (REVIEW_PREFIX, item_identity(rough_path), notice)
-            position_status, position_page = list_position(parse_qs(environ.get("QUERY_STRING", "")))
+            position_status, position_page, position_size = list_position(parse_qs(environ.get("QUERY_STRING", "")))
             if position_status: location += "&status=" + position_status
             if position_page > 1: location += "&page=%d" % position_page
+            if position_size != PAGE_SIZE: location += "&page_size=%d" % position_size
             return self._response(start, "303 See Other", headers=(("Location", location),))
 
         if path == "/trigger-ingest":

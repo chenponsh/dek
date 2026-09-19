@@ -123,15 +123,35 @@ STATUS_LABELS = {
 ACTION_STATUS = {"approve": "approved", "reject": "rejected"}
 ACTION_LABEL = {"approve": "批准发布", "return": "退回澄清", "reject": "拒绝"}
 PAGE_SIZE = 20
+MIN_PAGE_SIZE, MAX_PAGE_SIZE = 5, 100
 
 
-def list_state_query(status: str = "", page: int = 1, query: str = "") -> str:
+def list_state_query(status: str = "", page: int = 1, query: str = "", size: int = PAGE_SIZE) -> str:
     """The list position as a query string ("" at the default position)."""
     params = []
     if status: params.append(("status", status))
     if query: params.append(("q", query))
     if page > 1: params.append(("page", str(page)))
+    if size != PAGE_SIZE: params.append(("page_size", str(size)))
     return "?" + urlencode(params) if params else ""
+
+
+def _short_source(source: str) -> str:
+    """"[[source/CDE/CDE_x|alias]]" -> "CDE_x": the note's own name is enough in a table cell."""
+    name = source.strip().strip("[]").split("|", 1)[0].rstrip("/")
+    return name.rsplit("/", 1)[-1] or source
+
+
+def _content_meta(item) -> str:
+    """One truncated line under the title; the full path and source stay in the tooltip."""
+    full = [item.path]
+    short = [PurePosixPath(item.path).name]
+    if item.source:
+        full.append(f"来源：{item.source}"); short.append(f"来源：{_short_source(item.source)}")
+    if item.published_date:
+        full.append(f"发布日期：{item.published_date}"); short.append(f"发布日期：{item.published_date}")
+    return (f'<div class="meta content-meta" title="{html.escape(" · ".join(full), quote=True)}">'
+            f'{html.escape(" · ".join(short))}</div>')
 
 
 def _page_window(page: int, pages: int) -> list[int | None]:
@@ -634,9 +654,12 @@ STYLE = """<style>
 .filter-count{position:absolute;top:-.3rem;right:-.3rem;display:inline-block;min-width:1.3em;padding:0 .3rem;border-radius:999px;background:var(--bg);color:var(--text);font-size:.68em;line-height:1.4;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.18)}
 .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
 .table-wrap table{display:table;width:100%}
-.col-index{width:48px}
-.col-task{width:60%}.col-status{width:14%}.col-reviewer{width:10%}.col-time{width:16%}
-th.index,td.index{width:48px;min-width:48px;text-align:center}
+.col-index{width:60px}
+.col-status,.col-reviewer,.col-time{width:1%}
+.table-wrap th,.table-wrap td.status,.table-wrap td.reviewer,.table-wrap td.time{white-space:nowrap}
+th.index,td.index{width:60px;min-width:60px;text-align:center}
+.table-wrap td.content{max-width:0;min-width:240px}
+.content-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pager{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;margin:18px 0 0;font-size:.9rem}
 .pager a,.pager .current,.pager .disabled{min-width:2rem;padding:.3rem .7rem;border:1px solid var(--line);border-radius:6px;text-align:center;text-decoration:none;color:var(--text)}
 .pager a:hover{background:var(--hover)}
@@ -819,14 +842,15 @@ class ReviewService:
             '<div class="sidebar-resize-handle" aria-hidden="true"></div></aside>'
         )
 
-    def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "", page: int = 1) -> bytes:
+    def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:
         all_items = self.list_items(query=query)
         status_counts = {key: sum(item.status == key for item in all_items) for key in STATUS_LABELS}
         items = [item for item in all_items if not status or item.status == status]
-        pages = max(1, -(-len(items) // PAGE_SIZE))
+        size = min(max(int(page_size), MIN_PAGE_SIZE), MAX_PAGE_SIZE)
+        pages = max(1, -(-len(items) // size))
         page = min(max(1, int(page)), pages)
-        first = (page - 1) * PAGE_SIZE
-        shown = items[first:first + PAGE_SIZE]
+        first = (page - 1) * size
+        shown = items[first:first + size]
         filter_parts = []
         for key, label in (("", "全部"), ("pending", "待审核"), ("approved", "已批准待发布"), ("published", "已发布"), ("rejected", "已拒绝")):
             count = len(all_items) if not key else status_counts[key]
@@ -837,19 +861,18 @@ class ReviewService:
                 + f' href="{self.path_prefix}/?status={key}">{html.escape(label)}{badge}</a>'
             )
         filters = "".join(filter_parts)
-        position = html.escape(list_state_query(status, page))
+        position = html.escape(list_state_query(status, page, size=size))
         rows = "".join(
             f'<tr data-href="{self.path_prefix}/item/{item.identity}{position}">'
             f'<td class="meta index">{number}</td>'
-            f'<td><a href="{self.path_prefix}/item/{item.identity}{position}">{html.escape(item.title)}</a><div class="meta">{html.escape(item.path)}'
-            + (f" · 来源：{html.escape(item.source)}" if item.source else "")
-            + (f" · 发布日期：{html.escape(item.published_date)}" if item.published_date else "")
-            + "</div></td>"
+            f'<td class="content"><a href="{self.path_prefix}/item/{item.identity}{position}">{html.escape(item.title)}</a>'
+            + _content_meta(item)
+            + "</td>"
             f'<td class="status status-{item.status}">'
             + ('<span class="status-dot" aria-hidden="true"></span>' if item.status == "pending" else '')
             + f'{html.escape(item.status_label)}</td>'
-            f'<td>{html.escape(item.reviewer or "—")}</td>'
-            f'<td class="meta">{html.escape(_display_time(item.decided_at) or "—")}</td>'
+            f'<td class="reviewer">{html.escape(item.reviewer or "—")}</td>'
+            f'<td class="meta time">{html.escape(_display_time(item.decided_at) or "—")}</td>'
             "</tr>"
             for number, item in enumerate(shown, start=first + 1)
         )
@@ -861,7 +884,7 @@ class ReviewService:
         pager = ""
         if pages > 1:
             def page_href(number: int) -> str:
-                return f'{self.path_prefix}/{html.escape(list_state_query(status, number, query))}'
+                return f'{self.path_prefix}/{html.escape(list_state_query(status, number, query, size))}'
             parts = [f'<a href="{page_href(page - 1)}">上一页</a>' if page > 1 else '<span class="disabled">上一页</span>']
             for number in _page_window(page, pages):
                 if number is None: parts.append('<span class="gap">…</span>')
@@ -890,12 +913,12 @@ class ReviewService:
         )
         return self._page("知识审核", body)
 
-    def render_item(self, session_id: str, identity: str, *, notice: str = "", unlocked: bool = False, list_status: str = "", list_page: int = 1) -> bytes | None:
+    def render_item(self, session_id: str, identity: str, *, notice: str = "", unlocked: bool = False, list_status: str = "", list_page: int = 1, list_size: int = PAGE_SIZE) -> bytes | None:
         item = self.find_item(identity)
         if item is None:
             return None
         root = self._snapshot_root()
-        position = list_state_query(list_status, list_page)
+        position = list_state_query(list_status, list_page, size=list_size)
         history = self.history(item.path)
         rows = "".join(
             f"<tr><td>{html.escape(ACTION_LABEL.get(record.action, record.action))}</td>"

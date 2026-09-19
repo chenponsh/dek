@@ -434,12 +434,18 @@ class ReviewWorkflowTests(unittest.TestCase):
         # referenced via var(...) rather than a second hardcoded palette.
         self.assertIn('.content{margin-left:var(--sidebar-w)}', page)
         self.assertIn('background:var(--accent);color:#fff', page)
-        self.assertIn('.col-task{width:60%}', page)
         self.assertIn('<colgroup><col class="col-index"><col class="col-task"><col class="col-status"><col class="col-reviewer"><col class="col-time"></colgroup>', page)
         self.assertIn('<thead><tr><th class="index">序号</th><th>内容</th><th>状态</th><th>审核人</th><th>处理时间</th></tr></thead>', page)
         self.assertNotIn("<th>待办</th>", page)
-        self.assertIn(".col-index{width:48px}", page)
-        self.assertIn("th.index,td.index{width:48px;min-width:48px;text-align:center}", page)
+        self.assertIn(".col-index{width:60px}", page)
+        # Index, status, reviewer and time columns fit their content on one line;
+        # the 内容 column takes whatever is left.
+        self.assertIn(".col-status,.col-reviewer,.col-time{width:1%}", page)
+        self.assertIn(".table-wrap th,.table-wrap td.status,.table-wrap td.reviewer,.table-wrap td.time{white-space:nowrap}", page)
+        self.assertNotIn(".col-task{", page)
+        # Below its minimum width the table scrolls instead of squeezing 内容 to nothing.
+        self.assertIn(".table-wrap td.content{max-width:0;min-width:240px}", page)
+        self.assertIn("th.index,td.index{width:60px;min-width:60px;text-align:center}", page)
         self.assertNotIn('<th>操作</th>', page)
         self.assertNotIn('>去审核</a>', page)
         self.assertNotIn('>查看</a>', page)
@@ -455,6 +461,18 @@ class ReviewWorkflowTests(unittest.TestCase):
             self.assertNotIn(">浏览<", page)
             self.assertIn('<aside class="sidebar"><nav id="nav-tree"', page)
             self.assertIn('<div class="sidebar-resize-handle" aria-hidden="true"></div></aside>', page)
+
+    def test_content_cell_second_line_is_one_short_truncated_line_with_the_full_text_on_hover(self):
+        long_source = "[[source/CDE/CDE_共性问题-常见一般性技术问题]]"
+        rough = ROUGH.replace('source: "[[source/example]]"', f'source: "{long_source}"')
+        (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        cell = page[page.index("pending.md") - 300: page.index("pending.md") + 500]
+        self.assertIn('title="ingestion/rough/pending.md · 来源：[[source/CDE/CDE_共性问题-常见一般性技术问题]]', cell)
+        self.assertIn('>pending.md · 来源：CDE_共性问题-常见一般性技术问题', cell)
+        self.assertNotIn(">ingestion/rough/pending.md", cell)
+        self.assertNotIn(">[[", cell)
+        self.assertIn(".content-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}", page)
 
     def test_browser_title_is_review_without_the_todo_wording(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
@@ -491,6 +509,26 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('<span class="disabled">上一页</span>', first)
         last = self.service.render_list("opaque-session", page=3).decode("utf-8")
         self.assertIn('<span class="disabled">下一页</span>', last)
+
+    def test_page_size_can_be_overridden_within_bounds_and_numbering_follows_it(self):
+        self.make_pending_items(45)  # 47 items
+        second = self.service.render_list("opaque-session", page=2, page_size=5).decode("utf-8")
+        self.assertEqual(self.row_numbers(second), [6, 7, 8, 9, 10])
+        self.assertIn("第 2/10 页", second)
+        self.assertIn('<a href="/?page_size=5">上一页</a>', second)
+        self.assertIn('<a href="/?page=3&amp;page_size=5">下一页</a>', second)
+        # Bounds: never below 5 or above 100 rows a page.
+        self.assertEqual(len(self.row_numbers(self.service.render_list("opaque-session", page_size=1).decode("utf-8"))), 5)
+        self.assertEqual(len(self.row_numbers(self.service.render_list("opaque-session", page_size=1000).decode("utf-8"))), 47)
+
+    def test_page_size_travels_with_the_list_position_to_the_item_page(self):
+        self.make_pending_items(45)
+        page = self.service.render_list("opaque-session", page=2, page_size=5).decode("utf-8")
+        link = re.search(r'<tr data-href="/item/([0-9a-f]{16})([^"]*)"', page)
+        self.assertEqual(link.group(2), "?page=2&amp;page_size=5")
+        detail = self.service.render_item("opaque-session", link.group(1), list_page=2, list_size=5).decode("utf-8")
+        self.assertIn('<a href="/?page=2&amp;page_size=5">← 返回待办列表</a>', detail)
+        self.assertIn('action="/decision?page=2&amp;page_size=5"', detail)
 
     def test_pager_is_hidden_when_everything_fits_on_one_page(self):
         page = self.service.render_list("opaque-session").decode("utf-8")

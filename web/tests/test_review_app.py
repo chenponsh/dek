@@ -256,6 +256,22 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(status, "303 See Other")
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected&status=pending&page=2")
 
+    def test_page_size_query_is_bounded_and_reaches_the_redirect(self):
+        session = self.authenticate()
+        for query in ("page_size=abc", "page_size=0", "page_size=99999999999", "page=2&page_size=5"):
+            with self.subTest(query=query):
+                self.assertEqual(self.call("/", query=query, cookie=session)[0], "200 OK")
+        _, _, body = self.call("/", cookie=session)
+        identity = re.search(r'/review/item/([0-9a-f]{16})', body.decode("utf-8")).group(1)
+        _, _, detail = self.call("/item/" + identity, query="page_size=5", cookie=session)
+        self.assertIn('href="/review/?page_size=5">← 返回待办列表', detail.decode("utf-8"))
+        nonce = re.search('name="form_nonce" value="([^"]+)"', detail.decode("utf-8")).group(1)
+        binding = rough_binding(self.rough)
+        form = {"form_nonce": nonce, "rough_path": "ingestion/rough/pending.md", "rough_sha256": binding.sha256,
+                "rough_version": binding.version, "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "不合适。"}
+        _, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form, query="page_size=5&page=3")
+        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected&page=3&page_size=5")
+
     def test_decision_redirect_without_list_position_is_unchanged(self):
         session = self.authenticate()
         _, _, body = self.call("/", cookie=session)
