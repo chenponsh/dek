@@ -487,17 +487,19 @@ class ReviewWorkflowTests(unittest.TestCase):
     def row_numbers(self, page):
         return [int(n) for n in re.findall(r'<td class="meta index">(\d+)</td>', page)]
 
-    def test_rows_are_numbered_and_the_list_is_paginated_twenty_at_a_time(self):
+    def test_rows_are_numbered_and_the_list_is_paginated_fifteen_at_a_time(self):
         self.make_pending_items(45)  # 47 items in all
         first = self.service.render_list("opaque-session").decode("utf-8")
-        self.assertEqual(self.row_numbers(first), list(range(1, 21)))
+        self.assertEqual(self.row_numbers(first), list(range(1, 16)))
         self.assertIn('<div class="summary">共 47 条</div>', first)
-        self.assertIn("第 1/3 页", first)
+        self.assertIn("第 1/4 页", first)
         second = self.service.render_list("opaque-session", page=2).decode("utf-8")
-        self.assertEqual(self.row_numbers(second), list(range(21, 41)))
+        self.assertEqual(self.row_numbers(second), list(range(16, 31)))
         third = self.service.render_list("opaque-session", page=3).decode("utf-8")
-        self.assertEqual(self.row_numbers(third), list(range(41, 48)))
-        self.assertIn("第 3/3 页", third)
+        self.assertEqual(self.row_numbers(third), list(range(31, 46)))
+        fourth = self.service.render_list("opaque-session", page=4).decode("utf-8")
+        self.assertEqual(self.row_numbers(fourth), [46, 47])
+        self.assertIn("第 4/4 页", fourth)
 
     def test_pager_links_keep_the_filter_and_disable_the_ends(self):
         self.make_pending_items(45)
@@ -507,7 +509,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('<span class="current" aria-current="page">2</span>', page)
         first = self.service.render_list("opaque-session").decode("utf-8")
         self.assertIn('<span class="disabled">上一页</span>', first)
-        last = self.service.render_list("opaque-session", page=3).decode("utf-8")
+        last = self.service.render_list("opaque-session", page=4).decode("utf-8")
         self.assertIn('<span class="disabled">下一页</span>', last)
 
     def test_page_size_can_be_overridden_within_bounds_and_numbering_follows_it(self):
@@ -537,30 +539,32 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("每页", nav)
         self.assertIn('<span class="current" aria-current="true">10</span>', nav)
         # Changing the length keeps the filter and starts again from page 1.
-        self.assertIn('<a href="/?status=pending">20</a>', nav)
+        self.assertIn('<a href="/?status=pending">15</a>', nav)
+        self.assertIn('<a href="/?status=pending&amp;page_size=20">20</a>', nav)
         self.assertIn('<a href="/?status=pending&amp;page_size=50">50</a>', nav)
         self.assertIn('<a href="/?status=pending&amp;page_size=100">100</a>', nav)
         self.assertNotIn("page=2", nav)
 
-    def test_page_length_control_shows_when_a_smaller_length_would_paginate_and_hides_otherwise(self):
-        # Two items: nothing to choose.
-        self.assertNotIn('class="page-size"', self.service.render_list("opaque-session").decode("utf-8"))
-        # 19 items fit on one page of 20 but not of 10: the choice is useful.
-        self.make_pending_items(17)
+    def test_paging_display_and_length_choice_are_shown_even_when_everything_fits_on_one_page(self):
+        # Two items, one page: the controls are still there, with both ends disabled.
         page = self.service.render_list("opaque-session").decode("utf-8")
-        self.assertIn('<nav class="page-size"', page)
-        self.assertIn('<span class="current" aria-current="true">20</span>', page)
-        self.assertNotIn('class="pager"', page)
-
-    def test_pager_is_hidden_when_everything_fits_on_one_page(self):
-        page = self.service.render_list("opaque-session").decode("utf-8")
-        self.assertNotIn('class="pager"', page)
         self.assertEqual(self.row_numbers(page), [1, 2])
+        pager = page.split('<nav class="pager"', 1)[1].split("</nav>", 1)[0]
+        self.assertIn('<span class="disabled">上一页</span>', pager)
+        self.assertIn('<span class="current" aria-current="page">1</span>', pager)
+        self.assertIn('<span class="disabled">下一页</span>', pager)
+        self.assertIn("第 1/1 页", pager)
+        self.assertIn('<span class="current" aria-current="true">15</span>', page.split('<nav class="page-size"', 1)[1])
+
+    def test_paging_display_is_shown_for_an_empty_result_too(self):
+        page = self.service.render_list("opaque-session", status="published").decode("utf-8")
+        self.assertIn("没有符合条件的条目。", page)
+        self.assertIn("第 1/1 页", page)
 
     def test_out_of_range_page_is_clamped(self):
         self.make_pending_items(45)
-        self.assertEqual(self.row_numbers(self.service.render_list("opaque-session", page=99).decode("utf-8")), list(range(41, 48)))
-        self.assertEqual(self.row_numbers(self.service.render_list("opaque-session", page=0).decode("utf-8")), list(range(1, 21)))
+        self.assertEqual(self.row_numbers(self.service.render_list("opaque-session", page=99).decode("utf-8")), [46, 47])
+        self.assertEqual(self.row_numbers(self.service.render_list("opaque-session", page=0).decode("utf-8")), list(range(1, 16)))
 
     def test_status_tabs_reset_to_the_first_page_and_keep_total_counts(self):
         self.make_pending_items(45)
@@ -574,7 +578,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         ids = re.findall(r'<tr data-href="/item/([0-9a-f]{16})', self.service.render_list("opaque-session").decode("utf-8"))
         again = re.findall(r'<tr data-href="/item/([0-9a-f]{16})', self.service.render_list("opaque-session").decode("utf-8"))
         self.assertEqual(ids, again)
-        last = self.service.render_list("opaque-session", page=3).decode("utf-8")
+        last = self.service.render_list("opaque-session", page=4).decode("utf-8")
         self.assertIn("已拒绝", last)  # decided items come after every pending one
 
     def test_rows_and_the_item_page_carry_the_list_position_so_back_returns_to_it(self):

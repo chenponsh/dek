@@ -122,9 +122,9 @@ STATUS_LABELS = {
 
 ACTION_STATUS = {"approve": "approved", "reject": "rejected"}
 ACTION_LABEL = {"approve": "批准发布", "return": "退回澄清", "reject": "拒绝"}
-PAGE_SIZE = 20
+PAGE_SIZE = 15
 MIN_PAGE_SIZE, MAX_PAGE_SIZE = 5, 100
-PAGE_SIZE_CHOICES = (10, 20, 50, 100)
+PAGE_SIZE_CHOICES = (10, 15, 20, 50, 100)
 
 
 def list_state_query(status: str = "", page: int = 1, query: str = "", size: int = PAGE_SIZE) -> str:
@@ -887,25 +887,21 @@ class ReviewService:
             + (rows or '<tr><td colspan="5">没有符合条件的条目。</td></tr>')
             + "</tbody></table></div>"
         )
-        pager = ""
-        if pages > 1:
-            def page_href(number: int) -> str:
-                return f'{self.path_prefix}/{html.escape(list_state_query(status, number, query, size))}'
-            parts = [f'<a href="{page_href(page - 1)}">上一页</a>' if page > 1 else '<span class="disabled">上一页</span>']
-            for number in _page_window(page, pages):
-                if number is None: parts.append('<span class="gap">…</span>')
-                elif number == page: parts.append(f'<span class="current" aria-current="page">{number}</span>')
-                else: parts.append(f'<a href="{page_href(number)}">{number}</a>')
-            parts.append(f'<a href="{page_href(page + 1)}">下一页</a>' if page < pages else '<span class="disabled">下一页</span>')
-            parts.append(f'<span class="page-info">第 {page}/{pages} 页</span>')
-            pager = f'<nav class="pager" aria-label="分页">{"".join(parts)}</nav>'
-        size_nav = ""
-        if len(items) > PAGE_SIZE_CHOICES[0]:
-            choices = []
-            for choice in PAGE_SIZE_CHOICES:
-                if choice == size: choices.append(f'<span class="current" aria-current="true">{choice}</span>')
-                else: choices.append(f'<a href="{self.path_prefix}/{html.escape(list_state_query(status, 1, query, choice))}">{choice}</a>')
-            size_nav = f'<nav class="page-size" aria-label="每页条数">每页{"".join(choices)}条</nav>'
+        def page_href(number: int) -> str:
+            return f'{self.path_prefix}/{html.escape(list_state_query(status, number, query, size))}'
+        parts = [f'<a href="{page_href(page - 1)}">上一页</a>' if page > 1 else '<span class="disabled">上一页</span>']
+        for number in _page_window(page, pages):
+            if number is None: parts.append('<span class="gap">…</span>')
+            elif number == page: parts.append(f'<span class="current" aria-current="page">{number}</span>')
+            else: parts.append(f'<a href="{page_href(number)}">{number}</a>')
+        parts.append(f'<a href="{page_href(page + 1)}">下一页</a>' if page < pages else '<span class="disabled">下一页</span>')
+        parts.append(f'<span class="page-info">第 {page}/{pages} 页</span>')
+        pager = f'<nav class="pager" aria-label="分页">{"".join(parts)}</nav>'
+        choices = []
+        for choice in PAGE_SIZE_CHOICES:
+            if choice == size: choices.append(f'<span class="current" aria-current="true">{choice}</span>')
+            else: choices.append(f'<a href="{self.path_prefix}/{html.escape(list_state_query(status, 1, query, choice))}">{choice}</a>')
+        size_nav = f'<nav class="page-size" aria-label="每页条数">每页{"".join(choices)}条</nav>'
         ingest_button = (
             f'<form method="post" action="{self.path_prefix}/trigger-ingest" class="ingest-trigger-form">'
             '<button type="submit">立即拉取最新源</button></form>'
@@ -921,7 +917,7 @@ class ReviewService:
             + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions">{ingest_button}{publish_button}</div></div>'
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + f'<nav class="status-tabs" aria-label="审核状态筛选">{filters}</nav>'
-            + table + (f'<div class="list-footer">{pager}{size_nav}</div>' if pager or size_nav else '') + '</main>'
+            + table + f'<div class="list-footer">{pager}{size_nav}</div>' + '</main>'
             + '</div>'
         )
         return self._page("知识审核", body)
