@@ -152,7 +152,8 @@ class PublicationOrderTests(unittest.TestCase):
     def test_candidates_follow_parent_commit_chain_not_random_decision_id(self):
         from deploy.activator_entrypoint import order_candidates_by_ancestry
 
-        active = {"commit": "a" * 40}
+        # A decision-derived active generation: the strict commit chain applies.
+        active = {"decision_id": "current-active", "commit": "a" * 40}
         newer = ({"decision_id": "aaa", "parent_commit": "b" * 40, "commit": "c" * 40}, Path("newer"))
         next_one = ({"decision_id": "zzz", "parent_commit": "a" * 40, "commit": "b" * 40}, Path("next"))
         ordered = order_candidates_by_ancestry([newer, next_one], active)
@@ -354,11 +355,19 @@ class ManualPublishTriggerTests(unittest.TestCase):
         self.assertIn("PathExists=/var/lib/dek-review/state/publish-trigger-requested", path_unit)
         self.assertIn("Unit=dek-review-publish-manual.service", path_unit)
 
-    def test_manual_publish_service_chains_builder_then_publisher_then_activator(self):
+    def test_manual_publish_service_prepares_builds_publishes_then_activates_in_one_click(self):
+        # A freshly approved decision only gets its package prepared by the
+        # publisher; the builder has nothing to build until that has run. With
+        # builder first, the first click did nothing and the reviewer had to
+        # click "发布" a second time.
         text = Path("deploy/systemd/dek-review-publish-manual.service").read_text(encoding="utf-8")
+        publisher = "systemctl start --wait dek-review-publish.service"
+        self.assertEqual(text.count(publisher), 2)
+        prepare = text.index(publisher)
         build = text.index("systemctl start --wait dek-builder.service")
-        publish = text.index("systemctl start --wait dek-review-publish.service")
+        publish = text.index(publisher, prepare + 1)
         activate = text.index("systemctl start --wait dek-activator.service")
+        self.assertLess(prepare, build)
         self.assertLess(build, publish)
         self.assertLess(publish, activate)
 

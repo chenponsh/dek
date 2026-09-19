@@ -1,10 +1,11 @@
 [Unit]
-Description=Consume a reviewer-requested manual DEK publish trigger: build, publish, activate
+Description=Consume a reviewer-requested manual DEK publish trigger: prepare, build, publish, activate
 After=network-online.target
 
 [Service]
 Type=oneshot
 ExecStart=/bin/rm -f /var/lib/dek-review/state/publish-trigger-requested
+ExecStart=/usr/bin/systemctl start --wait dek-review-publish.service
 ExecStart=/usr/bin/systemctl start --wait dek-builder.service
 ExecStart=/usr/bin/systemctl start --wait dek-review-publish.service
 ExecStart=/usr/bin/systemctl start --wait dek-activator.service

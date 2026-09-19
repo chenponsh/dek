@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -251,8 +252,13 @@ class PublisherActivationGateTests(unittest.TestCase):
                     raise BundleError("push failed")
                 return b""
 
-            with patch("deploy.release_bundle._run", side_effect=failed_run):
-                with self.assertRaisesRegex(BundleError, "push failed"):
+            # A rejected push is only benign when the commit is already an
+            # ancestor of the remote tip; here it is not, so publish() must fail
+            # and leave no gate behind.
+            not_an_ancestor = SimpleNamespace(returncode=1, stdout=b"", stderr=b"")
+            with patch("deploy.release_bundle._run", side_effect=failed_run), \
+                    patch("deploy.release_bundle._run_status", return_value=not_an_ancestor):
+                with self.assertRaisesRegex(BundleError, "not an ancestor"):
                     publisher.publish(package)
             self.assertFalse((package / "activation-ready.json").exists())
             self.assertFalse((package / "activation-ready.sig").exists())

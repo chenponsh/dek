@@ -150,9 +150,11 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
             result["blocking"] = True
             result["alerts"].append(f"CPC remote revision detected: {config['cpc']['path']}")
         elif additions:
-            entry.update(status="candidate_new", reason="新增文章需要人工主题分类和正文核对", candidates=[article.filename for article in additions[:20]])
-            result["blocking"] = True
-            result["alerts"].append(f"manual classification required: {config['cpc']['path']}")
+            # CPC articles are whole documents that nothing here imports, so
+            # blocking on them would stop every other source's writes until
+            # someone imports them by hand. Report them and carry on.
+            entry.update(status="candidate_new", reason="新增文章需要人工导入、主题分类和正文核对", candidates=[article.filename for article in additions[:20]])
+            result["alerts"].append(f"manual import required: {config['cpc']['path']}")
         elif unavailable:
             entry.update(status="skipped_revision_check_unavailable", reason="既有文章缺少内容哈希基线或详情无法可靠规范化", unverified=unavailable)
         else:
@@ -195,15 +197,25 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
                     entry["status"] = "updated_with_new" if additions else "no_change"
                     if additions:
                         writes[path] = replace_last_updated(insert_rows(note, additions), day)
-                        rough_path = ROOT / "ingestion" / "rough" / f"{now:%Y%m%d}_{path.stem}_增量.md"
-                        if rough_path.exists():
-                            raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
-                        writes[rough_path] = rough_content(source["path"], additions, day)
-                        rough_relative = str(rough_path.relative_to(ROOT))
-                        result["rough_created"].append(rough_relative)
-                        result["rough_sources"][rough_relative] = source["path"]
-                        if source.get("auto_classified") is True and source.get("auto_ingest") is True:
-                            result["auto_write_paths"].extend((source["path"], str(rough_path.relative_to(ROOT))))
+                        # One draft per question: the review page turns one
+                        # rough into one wiki page, so a batched table could
+                        # never be approved as-is.
+                        prefix = f"{now:%Y%m%d}_{path.stem}_增量_"
+                        taken = [int(m.group(1)) for existing in (ROOT / "ingestion" / "rough").glob(prefix + "*.md")
+                                 if (m := re.fullmatch(re.escape(prefix) + r"(\d+)\.md", existing.name))]
+                        auto = source.get("auto_classified") is True and source.get("auto_ingest") is True
+                        if auto:
+                            result["auto_write_paths"].append(source["path"])
+                        for number, row in enumerate(additions, start=max(taken, default=0) + 1):
+                            rough_path = ROOT / "ingestion" / "rough" / f"{prefix}{number}.md"
+                            if rough_path.exists():
+                                raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
+                            writes[rough_path] = rough_content(source["path"], [row], day)
+                            rough_relative = str(rough_path.relative_to(ROOT))
+                            result["rough_created"].append(rough_relative)
+                            result["rough_sources"][rough_relative] = source["path"]
+                            if auto:
+                                result["auto_write_paths"].append(rough_relative)
                 result["report"][source["path"]] = entry
         except CDEBrowserUnavailable as exc:
             diagnostics = exc.diagnostics
@@ -277,7 +289,9 @@ def validate_automatic_plan(config: dict[str, Any], report: dict[str, Any], writ
     rough_paths = {path for path in planned if path.startswith("ingestion/rough/")}
     if source_paths - source_allowlist or planned != source_paths | rough_paths:
         raise SafetyStop("scheduled plan contains a non-allowlisted path")
-    if rough_paths != set(report.get("rough_created", [])) or len(source_paths) != len(rough_paths):
+    rough_sources = report.get("rough_sources", {})
+    if (rough_paths != set(report.get("rough_created", []))
+            or {rough_sources.get(path) for path in rough_paths} != source_paths):
         raise SafetyStop("scheduled source and rough writes are not paired")
     if any(report.get("report", {}).get(path, {}).get("status") != "updated_with_new" for path in source_paths):
         raise SafetyStop("scheduled source is not explicitly marked updated_with_new")

@@ -70,6 +70,7 @@ class CoreTests(unittest.TestCase):
             "auto_write_paths": planned,
             "report": {str(source.relative_to(root)): {"status": "updated_with_new"}} if writes else {},
             "rough_created": planned[1:],
+            "rough_sources": {planned[1]: planned[0]} if writes else {},
         }
         contents = {source: NOTE + "new\n", rough: "rough\n"} if writes else {}
         config = {"cde": {"sources": [{
@@ -356,6 +357,56 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(report["blocking"])
             self.assertEqual(report["report"]["cde.md"]["status"], "failed")
             self.assertEqual(writes, {})
+
+    def cde_inspect(self, root, remote_rows, *, auto=True):
+        note = "---\nlast_updated: 2026-01-01\n---\n\n## 内容\n\n| 问题 | 解答 | 发布日期 |\n| --- | --- | --- |\n"
+        (root / "shanghai.md").write_text(note, encoding="utf-8")
+        (root / "source").mkdir(exist_ok=True)
+        (root / "source" / "cde.md").write_text(note, encoding="utf-8")
+        (root / "included").mkdir(exist_ok=True); (root / "excluded").mkdir(exist_ok=True)
+        (root / "ingestion" / "rough").mkdir(parents=True, exist_ok=True)
+        config = {"no_fetch_rule": [], "known_unautomated": [], "shanghai": {"url": "x", "path": "shanghai.md"}, "cpc": {"list_url": "x", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"enabled": True, "url": "x", "sources": [{"type": 1, "path": "source/cde.md", "auto_classified": auto, "auto_ingest": auto}]}}
+        remote = {1: (remote_rows, {"remote_count": len(remote_rows)})}
+        with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.object(cli, "fetch_shanghai", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cpc", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cde", return_value=(remote, {})):
+            return config, *cli.inspect(config, datetime(2026, 9, 19, 12, 0).astimezone())
+
+    def test_cde_additions_get_one_rough_draft_per_question(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rows = [Row("问题甲", "解答甲", "2026-02-01"), Row("问题乙", "解答乙", "2026-02-02")]
+            config, report, writes = self.cde_inspect(root, rows)
+            self.assertFalse(report["blocking"])
+            roughs = sorted(str(path.relative_to(root)) for path in writes if path.parent.name == "rough")
+            self.assertEqual(roughs, ["ingestion/rough/20260919_cde_增量_1.md", "ingestion/rough/20260919_cde_增量_2.md"])
+            first = writes[root / roughs[0]]
+            self.assertIn("问题甲", first); self.assertNotIn("问题乙", first)
+            self.assertIn("published_date: 2026-02-01", first)
+            self.assertEqual(sorted(report["rough_created"]), roughs)
+            self.assertEqual(set(report["rough_sources"].values()), {"source/cde.md"})
+            # A batch of several questions must still pass the scheduled-write validation.
+            with patch.object(cli, "ROOT", root):
+                self.assertEqual(cli.validate_automatic_plan(config, report, writes), set(report["planned_writes"]))
+
+    def test_cde_rough_numbering_continues_after_existing_drafts_of_the_same_day(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "ingestion" / "rough").mkdir(parents=True)
+            (root / "ingestion" / "rough" / "20260919_cde_增量_1.md").write_text("earlier\n", encoding="utf-8")
+            _config, report, writes = self.cde_inspect(root, [Row("新问题", "新解答", "2026-02-03")])
+            self.assertEqual(report["rough_created"], ["ingestion/rough/20260919_cde_增量_2.md"])
+
+    def test_unclassified_cde_source_still_blocks_when_not_opted_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _config, report, writes = self.cde_inspect(Path(directory), [Row("新问题", "新解答", "2026-02-03")], auto=False)
+            self.assertTrue(report["blocking"]); self.assertEqual(writes, {})
+
+    def test_plan_rejects_a_rough_not_mapped_to_a_planned_source(self):
+        root, remote, source = self.scheduled_repo()
+        config, report, writes = self.scheduled_plan(root, source)
+        report["rough_sources"] = {}
+        with patch.object(cli, "ROOT", root):
+            with self.assertRaisesRegex(SafetyStop, "not paired"):
+                cli.validate_automatic_plan(config, report, writes)
 
     def test_expired_approval_report_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -670,10 +721,13 @@ class CoreTests(unittest.TestCase):
         with self.assertRaisesRegex(SafetyStop, "not clean"):
             core.reconcile_remote(root)
 
-    def test_cpc_new_article_is_blocking_candidate(self):
+    def test_cpc_new_article_is_reported_but_does_not_block_other_sources(self):
+        # CPC articles are whole documents that nothing imports automatically;
+        # blocking on them stopped every other source's writes indefinitely.
         report = self.inspect_cpc(article_exists=False)
-        self.assertTrue(report["blocking"])
+        self.assertFalse(report["blocking"])
         self.assertEqual(report["report"]["cpc.md"]["status"], "candidate_new")
+        self.assertTrue(any("cpc.md" in alert for alert in report["alerts"]))
 
     def test_cpc_existing_content_unchanged(self):
         report = self.inspect_cpc(remote_hash="sha256:" + "a" * 64)
