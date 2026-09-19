@@ -142,16 +142,12 @@ def _short_source(source: str) -> str:
     return name.rsplit("/", 1)[-1] or source
 
 
-ROUGH_STATUS_LABELS = {"pending_review": "待审核", "promoted": "已上架", "rejected": "已拒绝"}
-
-
 def rough_display(content: str) -> str:
-    """The text of a rough draft for the 原文 box: its body, then its metadata as plain Chinese lines.
+    """The text of a rough draft for the 原文 box: its body, then one line with the suggested wiki path.
 
-    The frontmatter keys stay English on disk (ingestion, audit and the publisher
-    read them by name); only the page translates them, and it leaves out the
-    machine-only ones (source_item_key), empty fields and 发布日期 (the Q&A
-    table already has that column).
+    The frontmatter itself stays out of the box and English on disk (ingestion,
+    audit and the publisher read it by name). The suggested path is shown the
+    way the form below is prefilled with it.
     """
     match = re.match(r"\A---\s*\n(.*?)\n---(?:[ \t]*\n|\Z)\n*", content, re.S)
     if not match:
@@ -160,22 +156,10 @@ def rough_display(content: str) -> str:
         meta = _frontmatter(content)
     except ReviewError:
         return content
-    def text(value) -> str:
-        if isinstance(value, (list, tuple)):
-            return "、".join(str(item) for item in value if str(item).strip())
-        return "" if value is None else str(value).strip()
-    lines = []
-    for label, keys, always in (("入库日期", ("ingested_at", "date"), False),
-                                ("来源", ("source",), False), ("状态", ("status",), False),
-                                ("目标位置", ("wiki_target",), True), ("审核时间", ("reviewed_at",), False),
-                                ("推荐标签", ("recommended_tags",), False)):
-        value = next((text(meta.get(key)) for key in keys if text(meta.get(key))), "")
-        if label == "来源" and value: value = _short_source(value)
-        if label == "状态" and value: value = ROUGH_STATUS_LABELS.get(value, value)
-        if not value and always: value = "未指定"
-        if value: lines.append(f"{label}：{value}")
-    body = content[match.end():]
-    return body.rstrip("\n") + "\n\n" + "\n".join(lines) if lines else body
+    raw = meta.get("wiki_target")
+    written = "" if raw is None else str(raw).strip()
+    suggestion = default_wiki_path(written) or written or "暂无"
+    return content[match.end():].rstrip("\n") + "\n\n建议路径：" + suggestion
 
 
 def _content_meta(item) -> str:
@@ -984,8 +968,7 @@ class ReviewService:
             form = self._form_card(binding, nonce, wiki_path=suggested, candidate=candidate_draft(item.content, suggested), root=root, action_query=position)
             if decided:
                 form = (
-                    '<div class="notice">注意：该条目已有处理决定，提交将新增一条决定并覆盖当前显示的状态，请谨慎确认后再提交。'
-                    '原文里的“状态”是创建时的初始值，不随审核结果更新，请以上方"状态"为准。</div>' + form
+                    '<div class="notice">注意：该条目已有处理决定，提交将新增一条决定并覆盖当前显示的状态，请谨慎确认后再提交。</div>' + form
                 )
         else:
             form = '<p class="notice">该条目已不在待审核快照中，无法再提交决定。</p>'

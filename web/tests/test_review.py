@@ -723,48 +723,39 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('name="form_nonce"', page)
         self.assertNotIn("已有处理决定", page)
 
-    def test_detail_of_a_decided_item_flags_the_stale_frontmatter_status(self):
-        # The rough file's own `status:` line is written once at ingest time and
-        # never updated; the true status is the "状态：" line derived from the
-        # decision queue above it. Without a note, a reviewer skimming the raw
-        # preview could mistake the frozen "pending_review" for the real state.
+    def test_detail_of_a_decided_item_no_longer_needs_a_stale_status_note(self):
+        # The 原文 box used to show the rough's frozen `status:` line, which needed
+        # a warning once an item had been decided. It shows no status any more.
         self.decide(action="reject")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         page = self.service.render_item("opaque-session", item.identity, unlocked=True).decode("utf-8")
-        self.assertIn("状态：待审核", page)
-        self.assertIn("原文里的“状态”是创建时的初始值，不随审核结果更新", page)
+        pre = page.split("<article><h2>原文</h2><pre>", 1)[1].split("</pre>", 1)[0]
+        self.assertNotIn("状态", pre)
+        self.assertNotIn("pending_review", pre)
+        self.assertNotIn("不随审核结果更新", page)
+        self.assertIn("提交将新增一条决定并覆盖当前显示的状态", page)
 
-    def test_raw_text_ends_with_the_draft_metadata_as_plain_chinese_lines(self):
+    def test_raw_text_ends_with_only_the_suggested_path(self):
         rough = ROUGH.replace("date: 2026-09-14\n", "date: 2026-09-19\npublished_date: 2026-03-16\ningested_at: 2026-09-19\n") \
                      .replace('source: "[[source/example]]"', 'source: "[[source/CDE/CDE_共性问题-受理共性问题]]"')
         (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         pre = page.split("<article><h2>原文</h2><pre>", 1)[1].split("</pre>", 1)[0]
-        # The text first, then the fields as plain "字段：值" lines in the same box - no box of their own.
         self.assertTrue(pre.startswith("## 新增问答"))
-        self.assertTrue(pre.endswith("| Q | A | 2026-09-14 |\n\n入库日期：2026-09-19\n来源：CDE_共性问题-受理共性问题\n状态：待审核\n目标位置：未指定"), pre)
-        # 发布日期 is not repeated: the Q&A table has its own column.
-        self.assertNotIn("发布日期：", pre)
-        for hidden in ("source_item_key", "sha256:item-version", "recommended_tags", "reviewed_at", "ingested_at", "published_date", "status: pending_review"):
-            self.assertNotIn(hidden, page.split("<form", 1)[0], hidden)
+        self.assertTrue(pre.endswith("| Q | A | 2026-09-14 |\n\n建议路径：暂无"), pre)
+        for gone in ("入库日期", "来源", "状态", "发布日期：", "目标位置", "source_item_key", "ingested_at", "published_date"):
+            self.assertNotIn(gone, pre, gone)
         for box in ("<details", "rough-info", "<dl>", "处理信息"):
             self.assertNotIn(box, page)
 
-    def test_display_lists_a_chosen_target_and_review_time_and_skips_empty_fields(self):
-        rough = ROUGH.replace("wiki_target:\n", "wiki_target: wiki/01_Test/01-0001.md\n").replace("reviewed_at:\n", "reviewed_at: 2026-09-20\n")
-        shown = rough_display(rough)
-        self.assertIn("目标位置：wiki/01_Test/01-0001.md", shown)
-        self.assertIn("审核时间：2026-09-20", shown)
-        self.assertNotIn("推荐标签", shown)
-        self.assertTrue(shown.startswith("## 新增问答"))
-
-    def test_display_translates_status_values_and_lists_tags(self):
-        shown = rough_display(ROUGH.replace("status: pending_review", "status: promoted").replace("recommended_tags:\n", "recommended_tags:\n  - 注册\n  - 变更\n"))
-        self.assertIn("状态：已上架", shown)
-        self.assertIn("推荐标签：注册、变更", shown)
-        # An unknown value is shown as it is rather than hidden.
-        self.assertIn("状态：weird", rough_display(ROUGH.replace("status: pending_review", "status: weird")))
+    def test_suggested_path_is_shown_as_the_path_the_form_is_prefilled_with(self):
+        wikilink = ROUGH.replace("wiki_target:\n", 'wiki_target: "[[wiki/01_Test/01-0001]]"\n')
+        self.assertTrue(rough_display(wikilink).endswith("\n\n建议路径：wiki/01_Test/01-0001.md"))
+        plain = ROUGH.replace("wiki_target:\n", "wiki_target: wiki/01_Test/01-0001.md\n")
+        self.assertTrue(rough_display(plain).endswith("\n\n建议路径：wiki/01_Test/01-0001.md"))
+        # Something that is not a path is shown as written rather than hidden.
+        self.assertTrue(rough_display(ROUGH.replace("wiki_target:\n", "wiki_target: 待定\n")).endswith("建议路径：待定"))
 
     def test_content_without_frontmatter_is_shown_as_is(self):
         self.assertEqual(rough_display("just text\n"), "just text\n")
