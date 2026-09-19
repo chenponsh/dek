@@ -94,15 +94,62 @@
       .map(item => item.document);
   }
 
+  function queryTerms(query) {
+    return normalize(query).split(" ").filter(Boolean);
+  }
+
+  function escapeText(value) {
+    return String(value).replace(/[&<>"']/g, character => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[character]);
+  }
+
+  // [start, end) ranges of `text` where a query term occurs, merged. Matching is
+  // on the lower-cased text itself so the positions stay valid for the original.
+  function matchRanges(text, query) {
+    const lowered = String(text).toLowerCase();
+    if (lowered.length !== String(text).length) return [];
+    const ranges = [];
+    for (const term of queryTerms(query)) {
+      for (let at = lowered.indexOf(term); at >= 0; at = lowered.indexOf(term, at + term.length)) {
+        ranges.push([at, at + term.length]);
+      }
+    }
+    ranges.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+    const merged = [];
+    for (const range of ranges) {
+      const last = merged[merged.length - 1];
+      if (last && range[0] <= last[1]) last[1] = Math.max(last[1], range[1]);
+      else merged.push([...range]);
+    }
+    return merged;
+  }
+
+  // `text` as HTML-safe markup with the query's words wrapped in <mark>.
+  function highlight(text, query) {
+    const source = String(text);
+    let html = "";
+    let cursor = 0;
+    for (const [start, end] of matchRanges(source, query)) {
+      html += escapeText(source.slice(cursor, start)) + "<mark>" + escapeText(source.slice(start, end)) + "</mark>";
+      cursor = end;
+    }
+    return html + escapeText(source.slice(cursor));
+  }
+
   function resultSnippet(document, query, length = 140) {
     const text = String(document.text || "").replace(/\s+/g, " ").trim();
     if (!text) return "";
-    const terms = normalize(query).split(" ").filter(Boolean);
-    const normalizedText = normalize(text);
     let position = -1;
-    for (const term of terms) {
-      position = normalizedText.indexOf(term);
-      if (position >= 0) break;
+    const first = matchRanges(text, query)[0];
+    if (first) position = first[0];
+    else {
+      // No literal hit (a fuzzy match): fall back to the normalised position.
+      const normalizedText = normalize(text);
+      for (const term of queryTerms(query)) {
+        position = normalizedText.indexOf(term);
+        if (position >= 0) break;
+      }
     }
     const start = Math.max(0, position < 0 ? 0 : position - 35);
     return `${start ? "…" : ""}${text.slice(start, start + length)}${start + length < text.length ? "…" : ""}`;
@@ -145,5 +192,21 @@
       .sort((left, right) => String(right.date || "").localeCompare(String(left.date || "")));
   }
 
-  return { normalize, scoreDocument, searchDocuments, resultSnippet, resultUrl, recentDocuments, recentDocumentsInRange };
+  // How many documents under `prefix` ("wiki", "wiki/16_x") fall in the date range.
+  // With no bounds every document counts, dated or not, so the figure is the total.
+  function countInRange(documents, prefix, start, end) {
+    const inside = prefix + "/";
+    let count = 0;
+    for (const document of documents) {
+      if (!(document.path === prefix || String(document.path).startsWith(inside))) continue;
+      if (start || end) {
+        const day = String(document.date || "").slice(0, 10);
+        if (!day || (start && day < start) || (end && day > end)) continue;
+      }
+      count += 1;
+    }
+    return count;
+  }
+
+  return { normalize, scoreDocument, searchDocuments, resultSnippet, highlight, resultUrl, recentDocuments, recentDocumentsInRange, countInRange };
 });

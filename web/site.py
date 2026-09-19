@@ -238,7 +238,7 @@ def _dataview_overview_table(doc: dict, from_path: str, by_path: dict[str, dict]
             f'<td>{question}</td><td>{source_cell}</td><td>{date_cell}</td></tr>'
         )
     return (
-        '<div class="table-wrap"><table><thead><tr><th>项目</th><th>问题</th><th>来源</th><th>日期</th></tr></thead>'
+        '<div class="table-wrap"><table><thead><tr><th>项目</th><th>问题</th><th>来源</th><th>发布日期</th></tr></thead>'
         f'<tbody>{"".join(body_rows)}</tbody></table></div>'
     )
 
@@ -260,6 +260,23 @@ def _render_body(doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[di
 def _toc(rendered: str) -> str:
     headings = re.findall(r'<h([2-4]) id="([^"]+)">(.*?)</h\1>', rendered)
     return "".join(f'<a class="toc-{level}" href="#{anchor}">{re.sub("<.*?>", "", text)}</a>' for level, anchor, text in headings)
+
+
+SUBCATEGORY_SHARE = 0.25   # a Wiki category this large (of the Wiki) shows its biggest sub-folders on the home page
+SUBCATEGORY_LIMIT = 3
+
+
+def _first_document_href(node: dict) -> str:
+    """The link a folder card points at: its first document."""
+    target = node
+    while target["type"] == "directory" and target["children"]:
+        target = target["children"][0]
+    return quote(str(target.get("url", "#")), safe="/.-_")
+
+
+def _count_html(path: str, total: int, css: str, suffix: str = " 篇") -> str:
+    """A count the home page script re-computes for the chosen date range; `total` is the unfiltered count."""
+    return f'<span class="{css}" data-count-path="{html.escape(path, quote=True)}" data-total="{total}">{total}{suffix}</span>'
 
 
 def _manifest_tree(documents: list[dict]) -> list[dict]:
@@ -309,7 +326,7 @@ def _note_properties(doc: dict, by_path: dict[str, dict], by_stem: dict[str, lis
     # "question" duplicates the <h1> title directly above this table, and "tags"
     # duplicates "tag_pages" (and the badge chips under the title); both are
     # dropped here so the table doesn't push the article below the fold.
-    labels = (("no", "编号"), ("date", "日期"), ("source", "来源"), ("tag_pages", "标签页面"))
+    labels = (("no", "编号"), ("date", "发布日期"), ("source", "来源"), ("tag_pages", "标签页面"))
     rows = []
     for key, label in labels:
         value = doc["meta"].get(key)
@@ -423,12 +440,17 @@ def build_site(vault: Path, output: Path) -> dict:
     for root_node, label in zip(tree, ("Wiki · 正式知识", "Source · 来源材料")):
         cards = []
         for child in root_node["children"]:
-            target = child
-            while target["type"] == "directory" and target["children"]:
-                target = target["children"][0]
-            href = quote(str(target.get("url", "#")), safe="/.-_")
-            cards.append(f'<a class="folder-card" href="{href}"><strong>{html.escape(child["name"])}</strong><span>{child.get("count", 1)} 篇</span></a>')
-        home_sections.append(f'<section class="home-section"><h2>{label}<span>{root_node["count"]}</span></h2><div class="folder-grid">{"".join(cards)}</div></section>')
+            subs = ""
+            # A category holding a large share of its section gets its biggest
+            # sub-folders on the card, so its inner structure is visible.
+            if root_node["name"] == "wiki" and child["type"] == "directory" and root_node["count"] and child["count"] / root_node["count"] >= SUBCATEGORY_SHARE:
+                biggest = sorted((c for c in child["children"] if c["type"] == "directory"), key=lambda c: (-c["count"], c["path"]))[:SUBCATEGORY_LIMIT]
+                subs = "".join(f'<a class="card-sub" href="{_first_document_href(c)}" title="{html.escape(c["name"], quote=True)}"><span class="card-sub-name">{html.escape(c["name"])}</span>{_count_html(c["path"], c["count"], "card-sub-count")}</a>' for c in biggest)
+                subs = f'<div class="card-subs">{subs}</div>' if subs else ""
+            cards.append(
+                f'<div class="folder-card{" has-subs" if subs else ""}"><a class="folder-card-link" href="{_first_document_href(child)}" title="{html.escape(child["name"], quote=True)}">'
+                f'<strong>{html.escape(child["name"])}</strong>{_count_html(child["path"], child.get("count", 1), "card-count")}</a>{subs}</div>')
+        home_sections.append(f'<section class="home-section"><h2>{label}{_count_html(root_node["path"], root_node["count"], "section-count", suffix="")}</h2><div class="folder-grid">{"".join(cards)}</div></section>')
     # The filter controls stay near the top (so reviewers don't have to scroll
     # past every folder card to find them again), but the actual result list
     # moves below the Wiki/Source cards -- see recent_results_html below.
@@ -439,11 +461,13 @@ def build_site(vault: Path, output: Path) -> dict:
         '<button type="button" class="recent-tab" data-days="30">30天</button>'
         '<button type="button" class="recent-tab" data-days="90">90天</button>'
         '<button type="button" class="recent-tab" data-days="0">全部</button>'
+        '<button type="button" class="recent-tab" id="recent-custom" aria-controls="recent-range" aria-expanded="false">自定义</button>'
         '</div>'
-        '<div class="recent-range">'
+        '<div class="recent-range" id="recent-range" hidden>'
         '<label>开始日期 <input type="date" id="recent-start"></label>'
         '<label>结束日期 <input type="date" id="recent-end"></label>'
         '</div>'
+        '<p class="recent-summary" id="recent-summary" aria-live="polite"></p>'
         '</section>'
     )
     recent_results_html = '<section class="recent-section"><div id="recent-list" class="recent-list" data-index="assets/search-index.json">正在加载最近信息…</div></section>'

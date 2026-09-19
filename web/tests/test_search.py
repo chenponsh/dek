@@ -23,6 +23,30 @@ class FuzzySearchTests(unittest.TestCase):
         result = subprocess.run(["node", "-e", script], check=True, text=True, capture_output=True)
         return json.loads(result.stdout)
 
+    def test_highlight_marks_every_query_word_and_escapes_the_text(self):
+        html = self.run_javascript("s.highlight('溶出曲线 <b>f2</b> 相似性因子', '溶出 F2')")
+        self.assertEqual(html, "<mark>溶出</mark>曲线 &lt;b&gt;<mark>f2</mark>&lt;/b&gt; 相似性因子")
+
+    def test_highlight_of_text_without_a_hit_is_just_the_escaped_text(self):
+        self.assertEqual(self.run_javascript("s.highlight('a & b', 'zzz')"), "a &amp; b")
+
+    def test_highlight_merges_overlapping_hits(self):
+        self.assertEqual(self.run_javascript("s.highlight('溶出曲线', '溶出 出曲')"), "<mark>溶出曲</mark>线")
+
+    def test_snippet_is_centred_on_the_literal_hit(self):
+        snippet = self.run_javascript("s.resultSnippet({text: '无关的话。'.repeat(30) + '这里讲溶出曲线怎么算'}, '溶出曲线')")
+        self.assertIn("溶出曲线", snippet)
+        self.assertTrue(snippet.startswith("…"))
+
+    def test_count_in_range_counts_a_folder_and_ignores_similarly_named_ones(self):
+        documents = json.dumps([
+            {"path": "wiki/16_a/1.md", "date": "2026-09-01"}, {"path": "wiki/16_a/2.md", "date": "2026-01-01"},
+            {"path": "wiki/16_a/3.md", "date": None}, {"path": "wiki/16_ab/1.md", "date": "2026-09-01"},
+            {"path": "source/x.md", "date": "2026-09-01"}])
+        self.assertEqual(self.run_javascript(f"s.countInRange({documents}, 'wiki/16_a', '', '')"), 3)          # no range: the total, undated included
+        self.assertEqual(self.run_javascript(f"s.countInRange({documents}, 'wiki/16_a', '2026-08-01', '')"), 1)  # a range: dated and inside
+        self.assertEqual(self.run_javascript(f"s.countInRange({documents}, 'wiki', '2026-08-01', '2026-09-30')"), 2)
+
     def test_result_url_resolves_from_site_root_not_assets_directory(self):
         url = self.run_javascript("s.resultUrl({url:'wiki/中文.html'}, 'https://regkb.chenponai.com/kb/assets/search-index.json')")
         self.assertEqual(url, "https://regkb.chenponai.com/kb/wiki/%E4%B8%AD%E6%96%87.html")

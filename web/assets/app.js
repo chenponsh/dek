@@ -276,7 +276,7 @@
       searchStatus.textContent = "正在搜索…";
       const hits = DEKSearch.searchDocuments(docs, query, 30);
       results.innerHTML = hits.length
-        ? `<div class="result-count">找到 ${hits.length} 条相关结果</div>${hits.map(doc => `<a class="result" href="${DEKSearch.resultUrl(doc, indexUrl)}"><strong>${escapeHtml(doc.title)}</strong><small>${doc.kind.toUpperCase()} · ${escapeHtml(doc.path)}</small><span class="result-snippet">${escapeHtml(DEKSearch.resultSnippet(doc, query))}</span></a>`).join("")}`
+        ? `<div class="result-count">找到 ${hits.length} 条相关结果</div>${hits.map(doc => `<a class="result" href="${DEKSearch.resultUrl(doc, indexUrl)}"><strong>${DEKSearch.highlight(doc.title, query)}</strong><small>${doc.kind.toUpperCase()} · ${escapeHtml(doc.path)}</small><span class="result-snippet">${DEKSearch.highlight(DEKSearch.resultSnippet(doc, query), query)}</span></a>`).join("")}`
         : '<div class="result empty-result">没有找到相关内容，请尝试缩短关键词</div>';
       searchStatus.textContent = hits.length ? `搜索完成，共 ${hits.length} 条结果` : "搜索完成，没有结果";
       results.classList.add("open");
@@ -330,7 +330,7 @@
   const recentList = document.querySelector("#recent-list");
   if (recentList) {
     const indexUrl = new URL(recentList.dataset.index, location.href);
-    const tabs = [...document.querySelectorAll(".recent-tab")];
+    const tabs = [...document.querySelectorAll(".recent-tab[data-days]")];
     const startInput = document.querySelector("#recent-start");
     const endInput = document.querySelector("#recent-end");
     let recentDocs = [];
@@ -349,16 +349,50 @@
       }
       recentList.innerHTML = docs.map(doc => {
         const href = DEKSearch.resultUrl(doc, indexUrl);
-        const dateLabel = doc.date || "日期待确认";
+        const dateLabel = doc.date ? `发布于 ${doc.date}` : "日期待确认";
         return `<a class="recent-item" href="${href}"><span class="recent-date">${escapeHtml(dateLabel)}</span><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.kind.toUpperCase())} · ${escapeHtml(doc.path)}</small></a>`;
       }).join("");
     }
 
+    const customButton = document.querySelector("#recent-custom");
+    const rangeBox = document.querySelector("#recent-range");
+    const summary = document.querySelector("#recent-summary");
+
+    function setCustomOpen(open) {
+      if (rangeBox) rangeBox.hidden = !open;
+      customButton?.classList.toggle("active", open);
+      customButton?.setAttribute("aria-expanded", String(open));
+    }
+
+    // The folder-card and section counts follow the chosen range; with no range
+    // they are the plain totals. Documents without a date are outside any range.
+    function updateCounts(start, end) {
+      const filtered = Boolean(start || end);
+      document.querySelectorAll("[data-count-path]").forEach(element => {
+        const total = Number(element.dataset.total);
+        const shown = filtered ? DEKSearch.countInRange(recentDocs, element.dataset.countPath, start, end) : total;
+        const sub = element.classList.contains("section-count");
+        element.textContent = !filtered ? (sub ? String(total) : `${total} 篇`) : (sub ? `${shown} / ${total}` : `${shown} 篇 · 共 ${total}`);
+        element.closest(".folder-card-link, .card-sub")?.classList.toggle("is-empty", filtered && shown === 0);
+      });
+    }
+
     function renderRange() {
-      renderRecentList(DEKSearch.recentDocumentsInRange(recentDocs, startInput?.value || "", endInput?.value || ""));
+      const start = startInput?.value || "";
+      const end = endInput?.value || "";
+      const docs = DEKSearch.recentDocumentsInRange(recentDocs, start, end);
+      renderRecentList(docs);
+      updateCounts(start, end);
+      if (summary) {
+        const undated = recentDocs.filter(doc => !doc.date).length;
+        summary.textContent = (start || end)
+          ? `${start || "最早"} 至 ${end || "今天"}：共 ${docs.length} 篇。上方分类卡片的数字也按这个范围统计（“共”为全部篇数）。`
+          : `全部 ${recentDocs.length} 篇` + (undated ? `，其中 ${undated} 篇没有日期（如目录页），不在下方列表中。` : "。");
+      }
     }
 
     function applyDays(days) {
+      setCustomOpen(false);
       tabs.forEach(tab => tab.classList.toggle("active", tab.dataset.days === String(days)));
       if (!startInput || !endInput) return;
       if (days === 0) {
@@ -385,8 +419,15 @@
     loadRecent();
 
     tabs.forEach(tab => tab.addEventListener("click", () => applyDays(Number(tab.dataset.days))));
+    customButton?.addEventListener("click", () => {
+      const open = rangeBox?.hidden !== false;
+      tabs.forEach(tab => tab.classList.remove("active"));
+      setCustomOpen(open);
+      if (!open) applyDays(7);
+    });
     [startInput, endInput].forEach(field => field?.addEventListener("change", () => {
       tabs.forEach(tab => tab.classList.remove("active"));
+      setCustomOpen(true);
       renderRange();
     }));
   }

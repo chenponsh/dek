@@ -1,3 +1,4 @@
+import re
 import json
 import tempfile
 import unittest
@@ -310,6 +311,61 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn('id="recent-end"', homepage)
         self.assertIn('type="date"', homepage)
         self.assertIn("recentDocumentsInRange", script)
+
+    def add_big_category(self):
+        """A category holding most of the wiki, with sub-folders of unequal size."""
+        for folder, count in (("1601_持有人变更", 1), ("1619_生产场地变更", 4), ("1620_变更资料要求", 3), ("1621_过渡期", 2), ("1622_其他", 1)):
+            directory = self.vault / "wiki" / "16_注册变更" / folder
+            directory.mkdir(parents=True)
+            for number in range(count):
+                (directory / f"{folder[:4]}-{number + 1:04d}.md").write_text(
+                    f"---\nno: {number + 1}\ndate: 2026-0{number + 1}-01\nquestion: 问题{folder}{number}\n---\n\n正文。", encoding="utf-8")
+
+    def test_folder_cards_carry_totals_the_page_script_can_recompute_for_a_date_range(self):
+        build_site(self.vault, self.out)
+        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertRegex(homepage, r'<span class="card-count" data-count-path="wiki/01_注册" data-total="\d+">\d+ 篇</span>')
+        self.assertRegex(homepage, r'<span class="section-count" data-count-path="wiki" data-total="\d+">\d+</span>')
+        self.assertIn("countInRange", script)
+        self.assertIn('id="recent-summary"', homepage)
+
+    def test_a_category_holding_most_of_the_wiki_shows_its_three_biggest_sub_folders(self):
+        self.add_big_category()
+        build_site(self.vault, self.out)
+        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        card = homepage.split('<div class="folder-card has-subs">', 1)[1].split('<div class="folder-card', 1)[0]
+        names = re.findall(r'<span class="card-sub-name">([^<]+)</span>', card)
+        self.assertEqual(names, ["1619_生产场地变更", "1620_变更资料要求", "1621_过渡期"])
+        self.assertIn('data-count-path="wiki/16_注册变更/1619_生产场地变更" data-total="4"', card)
+        main_link = card.split('<a class="folder-card-link"', 1)[1].split("</a>", 1)[0]
+        self.assertNotIn("<a ", main_link)   # the sub-folder links sit beside the card link, not inside it
+        self.assertEqual(homepage.count("has-subs"), 1)   # small categories stay plain cards
+
+    def test_sub_folders_are_only_listed_on_wiki_cards(self):
+        for folder in ("甲", "乙", "丙"):
+            (self.vault / "source" / "大来源" / folder).mkdir(parents=True)
+            (self.vault / "source" / "大来源" / folder / "x.md").write_text("---\nsource_url: https://example.com\n---\n\n正文。", encoding="utf-8")
+        build_site(self.vault, self.out)
+        self.assertNotIn("has-subs", (self.out / "index.html").read_text(encoding="utf-8"))
+
+    def test_every_card_link_has_the_full_name_as_a_hover_title(self):
+        build_site(self.vault, self.out)
+        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        self.assertRegex(homepage, r'<a class="folder-card-link" href="[^"]+" title="01_注册">')
+
+    def test_custom_dates_are_collapsed_behind_a_button_and_the_presets_stay(self):
+        build_site(self.vault, self.out)
+        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        self.assertRegex(homepage, r'<div class="recent-range" id="recent-range" hidden>')
+        self.assertIn('id="recent-custom"', homepage)
+        self.assertEqual(re.findall(r'data-days="(\d+)"', homepage), ["7", "30", "90", "0"])
+
+    def test_dates_are_labelled_as_publication_dates(self):
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("发布于 ${doc.date}", script)
+        self.assertIn("日期待确认", script)
 
     def test_homepage_recent_results_are_the_last_section_but_filters_stay_up_top(self):
         build_site(self.vault, self.out)
