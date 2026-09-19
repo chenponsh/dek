@@ -244,7 +244,7 @@ class ReviewAppTests(unittest.TestCase):
         identity = re.search(r'/review/item/([0-9a-f]{16})', body.decode("utf-8")).group(1)
         _, _, detail = self.call("/item/" + identity, query="status=pending&page=1&x=1", cookie=session)
         page = detail.decode("utf-8")
-        self.assertIn('href="/review/?status=pending">← 返回待办列表', page)
+        self.assertIn('href="/review/?status=pending">← 返回列表', page)
         self.assertIn('action="/review/decision?status=pending"', page)
         nonce = re.search('name="form_nonce" value="([^"]+)"', page).group(1)
         binding = rough_binding(self.rough)
@@ -264,7 +264,7 @@ class ReviewAppTests(unittest.TestCase):
         _, _, body = self.call("/", cookie=session)
         identity = re.search(r'/review/item/([0-9a-f]{16})', body.decode("utf-8")).group(1)
         _, _, detail = self.call("/item/" + identity, query="page_size=5", cookie=session)
-        self.assertIn('href="/review/?page_size=5">← 返回待办列表', detail.decode("utf-8"))
+        self.assertIn('href="/review/?page_size=5">← 返回列表', detail.decode("utf-8"))
         nonce = re.search('name="form_nonce" value="([^"]+)"', detail.decode("utf-8")).group(1)
         binding = rough_binding(self.rough)
         form = {"form_nonce": nonce, "rough_path": "ingestion/rough/pending.md", "rough_sha256": binding.sha256,

@@ -529,7 +529,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         link = re.search(r'<tr data-href="/item/([0-9a-f]{16})([^"]*)"', page)
         self.assertEqual(link.group(2), "?page=2&amp;page_size=5")
         detail = self.service.render_item("opaque-session", link.group(1), list_page=2, list_size=5).decode("utf-8")
-        self.assertIn('<a href="/?page=2&amp;page_size=5">← 返回待办列表</a>', detail)
+        self.assertIn('<a href="/?page=2&amp;page_size=5">← 返回列表</a>', detail)
         self.assertIn('action="/decision?page=2&amp;page_size=5"', detail)
 
     def test_users_can_pick_the_page_length_from_a_control_below_the_table(self):
@@ -587,10 +587,10 @@ class ReviewWorkflowTests(unittest.TestCase):
         identity = re.search(r'<tr data-href="/item/([0-9a-f]{16})([^"]*)"', page)
         self.assertEqual(identity.group(2), "?status=pending&amp;page=2")
         detail = self.service.render_item("opaque-session", identity.group(1), list_status="pending", list_page=2).decode("utf-8")
-        self.assertIn('<a href="/?status=pending&amp;page=2">← 返回待办列表</a>', detail)
+        self.assertIn('<a href="/?status=pending&amp;page=2">← 返回列表</a>', detail)
         self.assertIn('action="/decision?status=pending&amp;page=2"', detail)
         plain = self.service.render_item("opaque-session", identity.group(1)).decode("utf-8")
-        self.assertIn('<a href="/">← 返回待办列表</a>', plain)
+        self.assertIn('<a href="/">← 返回列表</a>', plain)
         self.assertIn('action="/decision"', plain)
 
     def test_list_rows_carry_a_data_href_for_whole_row_navigation(self):
@@ -642,6 +642,24 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertLess(page.index('value="approve"'), page.index('value="reject"'))
         self.assertIsNone(self.service.render_item("opaque-session", "0" * 16))
         self.assertIsNone(self.service.render_item("opaque-session", "not-an-identity"))
+
+    def test_detail_page_shows_the_file_name_once_and_labels_the_raw_text(self):
+        # The h1 already carries the name; the raw-text block used to repeat it.
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        for state in ("pending", "approve", "reject"):
+            if state != "pending":
+                self.decide(action=state)
+                self.clock_value += 60
+            for unlocked in (False, True):
+                with self.subTest(state=state, unlocked=unlocked):
+                    page = self.service.render_item("opaque-session", item.identity, unlocked=unlocked).decode("utf-8")
+                    self.assertEqual(page.count("pending.md</h1>"), 1)
+                    self.assertNotIn("<h2>pending.md</h2>", page)
+                    self.assertNotIn("<article><h2>pending.md", page)
+                    if state == "pending" or unlocked:
+                        self.assertIn("<article><h2>原文</h2><pre>", page)
+                    self.assertIn("← 返回列表</a>", page)
+                    self.assertNotIn("返回待办列表", page)
 
     def test_detail_of_a_decided_item_is_locked_by_default(self):
         self.decide(action="reject")

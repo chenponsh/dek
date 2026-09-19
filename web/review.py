@@ -744,7 +744,7 @@ class ReviewService:
         root=self.repository_source.current() if hasattr(self.repository_source,"current") else self.root
         for rough in self._pending(root):
             nonce = self.nonces.issue(session_id, rough.path, int(self.clock()) + 900, str(root))
-            cards.append(self._form_card(rough, nonce, root=root))
+            cards.append(self._form_card(rough, nonce, root=root, heading=PurePosixPath(rough.path).name))
         content = "".join(cards) or "<p>当前没有待审核 rough。</p>"
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>审核 · DEK</title>{STYLE}</head><body><h1>待审核内容</h1>{content}</body></html>""".encode()
 
@@ -824,10 +824,10 @@ class ReviewService:
                 return item
         return None
 
-    def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None, action_query: str = "") -> str:
+    def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None, action_query: str = "", heading: str = "原文") -> str:
         candidates = wiki_folder_candidates(root) if root else []
         options_json = json.dumps([[label, path] for label, path in candidates], ensure_ascii=False)
-        return f"""<article><h2>{html.escape(PurePosixPath(rough.path).name)}</h2><pre>{html.escape(rough.content)}</pre>
+        return f"""<article><h2>{html.escape(heading)}</h2><pre>{html.escape(rough.content)}</pre>
 <form method="post" action="{self.path_prefix}/decision{html.escape(action_query)}"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
 <label>Wiki 路径（可搜索，按文件夹名过滤，选中后按需修改末尾编号）<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label><label>候选 Wiki Markdown（已预填草稿，可修改，批准发布时提交）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><label>审核意见（拒绝时必填）<textarea name="comment" rows="3"></textarea></label><div class="decision-actions"><button type="submit" name="action" value="approve">批准</button><button type="submit" name="action" value="reject" class="action-reject">拒绝</button></div></form></article>"""
 
@@ -974,7 +974,7 @@ class ReviewService:
         body = (
             self._header() + self._sidebar()
             + '<div class="content">'
-            + f'<main class="review-shell"><p><a href="{self.path_prefix}/{html.escape(position)}">← 返回待办列表</a></p><h1>{html.escape(item.title)}</h1><div class="meta">{html.escape(meta)}</div>'
+            + f'<main class="review-shell"><p><a href="{self.path_prefix}/{html.escape(position)}">← 返回列表</a></p><h1>{html.escape(item.title)}</h1><div class="meta">{html.escape(meta)}</div>'
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + links_block + form + history_block + '</main>'
             + '</div>'
