@@ -186,7 +186,7 @@ class ReviewAppTests(unittest.TestCase):
         status, _, body = self.call("/", cookie=session)
         self.assertEqual(status, "200 OK")
         page = body.decode("utf-8")
-        self.assertIn("待办", page)
+        self.assertIn("<th>内容</th>", page)
         self.assertIn("待审核", page)
         self.assertNotIn("name=\"q\"", page)
         identity = re.search(r'/review/item/([0-9a-f]{16})', page).group(1)
@@ -233,6 +233,40 @@ class ReviewAppTests(unittest.TestCase):
         page = after.decode("utf-8")
         self.assertIn("已拒绝", page)
         self.assertIn("审阅人", page)
+
+    def test_list_position_query_is_validated_and_reaches_the_item_page_and_decision_redirect(self):
+        session = self.authenticate()
+        # Unknown or malformed list state is ignored, never an error.
+        for query in ("page=abc", "page=-3", "status=returned", "status=%3Cscript%3E&page=999"):
+            with self.subTest(query=query):
+                self.assertEqual(self.call("/", query=query, cookie=session)[0], "200 OK")
+        _, _, body = self.call("/", cookie=session)
+        identity = re.search(r'/review/item/([0-9a-f]{16})', body.decode("utf-8")).group(1)
+        _, _, detail = self.call("/item/" + identity, query="status=pending&page=1&x=1", cookie=session)
+        page = detail.decode("utf-8")
+        self.assertIn('href="/review/?status=pending">← 返回待办列表', page)
+        self.assertIn('action="/review/decision?status=pending"', page)
+        nonce = re.search('name="form_nonce" value="([^"]+)"', page).group(1)
+        binding = rough_binding(self.rough)
+        form = {"form_nonce": nonce, "rough_path": "ingestion/rough/pending.md", "rough_sha256": binding.sha256,
+                "rough_version": binding.version, "action": "reject", "wiki_path": "", "candidate_markdown": "",
+                "comment": "不合适。"}
+        status, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form,
+                                       query="status=pending&page=2&status=%3Cx%3E")
+        self.assertEqual(status, "303 See Other")
+        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected&status=pending&page=2")
+
+    def test_decision_redirect_without_list_position_is_unchanged(self):
+        session = self.authenticate()
+        _, _, body = self.call("/", cookie=session)
+        identity = re.search(r'/review/item/([0-9a-f]{16})', body.decode("utf-8")).group(1)
+        _, _, detail = self.call("/item/" + identity, cookie=session)
+        nonce = re.search('name="form_nonce" value="([^"]+)"', detail.decode("utf-8")).group(1)
+        binding = rough_binding(self.rough)
+        form = {"form_nonce": nonce, "rough_path": "ingestion/rough/pending.md", "rough_sha256": binding.sha256,
+                "rough_version": binding.version, "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "不合适。"}
+        _, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
+        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected")
 
     def test_post_requires_exact_origin_and_single_use_nonce(self):
         session = self.authenticate()

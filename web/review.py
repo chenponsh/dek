@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Callable
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 
 import yaml
 from deploy.release_bundle import APPROVAL_ID_PATTERN
@@ -116,13 +116,35 @@ class RoughBinding:
 STATUS_LABELS = {
     "pending": "待审核",
     "approved": "已批准待发布",
-    "returned": "已退回",
     "rejected": "已拒绝",
     "published": "已发布",
 }
 
-ACTION_STATUS = {"approve": "approved", "return": "returned", "reject": "rejected"}
+ACTION_STATUS = {"approve": "approved", "reject": "rejected"}
 ACTION_LABEL = {"approve": "批准发布", "return": "退回澄清", "reject": "拒绝"}
+PAGE_SIZE = 20
+
+
+def list_state_query(status: str = "", page: int = 1, query: str = "") -> str:
+    """The list position as a query string ("" at the default position)."""
+    params = []
+    if status: params.append(("status", status))
+    if query: params.append(("q", query))
+    if page > 1: params.append(("page", str(page)))
+    return "?" + urlencode(params) if params else ""
+
+
+def _page_window(page: int, pages: int) -> list[int | None]:
+    if pages <= 7:
+        return list(range(1, pages + 1))
+    shown = sorted(n for n in {1, pages, page - 1, page, page + 1} if 1 <= n <= pages)
+    window: list[int | None] = []
+    previous = 0
+    for number in shown:
+        if number - previous > 1: window.append(None)
+        window.append(number); previous = number
+    return window
+
 NICKNAME_LIMIT = 40
 NICKNAME_FALLBACK = "同事"
 
@@ -612,7 +634,16 @@ STYLE = """<style>
 .filter-count{position:absolute;top:-.3rem;right:-.3rem;display:inline-block;min-width:1.3em;padding:0 .3rem;border-radius:999px;background:var(--bg);color:var(--text);font-size:.68em;line-height:1.4;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.18)}
 .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
 .table-wrap table{display:table;width:100%}
+.col-index{width:48px}
 .col-task{width:60%}.col-status{width:14%}.col-reviewer{width:10%}.col-time{width:16%}
+th.index,td.index{width:48px;min-width:48px;text-align:center}
+.pager{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;margin:18px 0 0;font-size:.9rem}
+.pager a,.pager .current,.pager .disabled{min-width:2rem;padding:.3rem .7rem;border:1px solid var(--line);border-radius:6px;text-align:center;text-decoration:none;color:var(--text)}
+.pager a:hover{background:var(--hover)}
+.pager .current{background:var(--accent);border-color:var(--accent);color:#fff}
+.pager .disabled{color:var(--muted);opacity:.5}
+.pager .gap,.pager .page-info{color:var(--muted);padding:0 .3rem}
+.pager .page-info{margin-left:.6rem}
 .table-wrap tbody tr:hover{background:var(--hover)}
 .table-wrap tbody tr[data-href]{cursor:pointer}
 .status{white-space:nowrap;font-weight:600}
@@ -764,11 +795,11 @@ class ReviewService:
                 return item
         return None
 
-    def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None) -> str:
+    def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None, action_query: str = "") -> str:
         candidates = wiki_folder_candidates(root) if root else []
         options_json = json.dumps([[label, path] for label, path in candidates], ensure_ascii=False)
         return f"""<article><h2>{html.escape(PurePosixPath(rough.path).name)}</h2><pre>{html.escape(rough.content)}</pre>
-<form method="post" action="{self.path_prefix}/decision"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
+<form method="post" action="{self.path_prefix}/decision{html.escape(action_query)}"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
 <label>Wiki 路径（可搜索，按文件夹名过滤，选中后按需修改末尾编号）<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label><label>候选 Wiki Markdown（已预填草稿，可修改，批准发布时提交）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><label>审核意见（拒绝时必填）<textarea name="comment" rows="3"></textarea></label><div class="decision-actions"><button type="submit" name="action" value="approve">批准</button><button type="submit" name="action" value="reject" class="action-reject">拒绝</button></div></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
@@ -788,12 +819,16 @@ class ReviewService:
             '<div class="sidebar-resize-handle" aria-hidden="true"></div></aside>'
         )
 
-    def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "") -> bytes:
+    def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "", page: int = 1) -> bytes:
         all_items = self.list_items(query=query)
         status_counts = {key: sum(item.status == key for item in all_items) for key in STATUS_LABELS}
         items = [item for item in all_items if not status or item.status == status]
+        pages = max(1, -(-len(items) // PAGE_SIZE))
+        page = min(max(1, int(page)), pages)
+        first = (page - 1) * PAGE_SIZE
+        shown = items[first:first + PAGE_SIZE]
         filter_parts = []
-        for key, label in (("", "全部"), ("pending", "待审核"), ("approved", "已批准待发布"), ("published", "已发布"), ("returned", "已退回"), ("rejected", "已拒绝")):
+        for key, label in (("", "全部"), ("pending", "待审核"), ("approved", "已批准待发布"), ("published", "已发布"), ("rejected", "已拒绝")):
             count = len(all_items) if not key else status_counts[key]
             badge = f'<sup class="filter-count">{count}</sup>' if count else ""
             filter_parts.append(
@@ -802,9 +837,11 @@ class ReviewService:
                 + f' href="{self.path_prefix}/?status={key}">{html.escape(label)}{badge}</a>'
             )
         filters = "".join(filter_parts)
+        position = html.escape(list_state_query(status, page))
         rows = "".join(
-            f'<tr data-href="{self.path_prefix}/item/{item.identity}">'
-            f'<td><a href="{self.path_prefix}/item/{item.identity}">{html.escape(item.title)}</a><div class="meta">{html.escape(item.path)}'
+            f'<tr data-href="{self.path_prefix}/item/{item.identity}{position}">'
+            f'<td class="meta index">{number}</td>'
+            f'<td><a href="{self.path_prefix}/item/{item.identity}{position}">{html.escape(item.title)}</a><div class="meta">{html.escape(item.path)}'
             + (f" · 来源：{html.escape(item.source)}" if item.source else "")
             + (f" · 发布日期：{html.escape(item.published_date)}" if item.published_date else "")
             + "</div></td>"
@@ -814,13 +851,25 @@ class ReviewService:
             f'<td>{html.escape(item.reviewer or "—")}</td>'
             f'<td class="meta">{html.escape(_display_time(item.decided_at) or "—")}</td>'
             "</tr>"
-            for item in items
+            for number, item in enumerate(shown, start=first + 1)
         )
         table = (
-            '<div class="table-wrap"><table><colgroup><col class="col-task"><col class="col-status"><col class="col-reviewer"><col class="col-time"></colgroup><thead><tr><th>待办</th><th>状态</th><th>审核人</th><th>处理时间</th></tr></thead><tbody>'
-            + (rows or '<tr><td colspan="4">没有符合条件的条目。</td></tr>')
+            '<div class="table-wrap"><table><colgroup><col class="col-index"><col class="col-task"><col class="col-status"><col class="col-reviewer"><col class="col-time"></colgroup><thead><tr><th class="index">序号</th><th>内容</th><th>状态</th><th>审核人</th><th>处理时间</th></tr></thead><tbody>'
+            + (rows or '<tr><td colspan="5">没有符合条件的条目。</td></tr>')
             + "</tbody></table></div>"
         )
+        pager = ""
+        if pages > 1:
+            def page_href(number: int) -> str:
+                return f'{self.path_prefix}/{html.escape(list_state_query(status, number, query))}'
+            parts = [f'<a href="{page_href(page - 1)}">上一页</a>' if page > 1 else '<span class="disabled">上一页</span>']
+            for number in _page_window(page, pages):
+                if number is None: parts.append('<span class="gap">…</span>')
+                elif number == page: parts.append(f'<span class="current" aria-current="page">{number}</span>')
+                else: parts.append(f'<a href="{page_href(number)}">{number}</a>')
+            parts.append(f'<a href="{page_href(page + 1)}">下一页</a>' if page < pages else '<span class="disabled">下一页</span>')
+            parts.append(f'<span class="page-info">第 {page}/{pages} 页</span>')
+            pager = f'<nav class="pager" aria-label="分页">{"".join(parts)}</nav>'
         ingest_button = (
             f'<form method="post" action="{self.path_prefix}/trigger-ingest" class="ingest-trigger-form">'
             '<button type="submit">立即拉取最新源</button></form>'
@@ -836,16 +885,17 @@ class ReviewService:
             + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions">{ingest_button}{publish_button}</div></div>'
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + f'<nav class="status-tabs" aria-label="审核状态筛选">{filters}</nav>'
-            + table + '</main>'
+            + table + pager + '</main>'
             + '</div>'
         )
-        return self._page("知识审核待办", body)
+        return self._page("知识审核", body)
 
-    def render_item(self, session_id: str, identity: str, *, notice: str = "", unlocked: bool = False) -> bytes | None:
+    def render_item(self, session_id: str, identity: str, *, notice: str = "", unlocked: bool = False, list_status: str = "", list_page: int = 1) -> bytes | None:
         item = self.find_item(identity)
         if item is None:
             return None
         root = self._snapshot_root()
+        position = list_state_query(list_status, list_page)
         history = self.history(item.path)
         rows = "".join(
             f"<tr><td>{html.escape(ACTION_LABEL.get(record.action, record.action))}</td>"
@@ -860,13 +910,13 @@ class ReviewService:
         if item.content and decided and not unlocked:
             form = (
                 '<p class="notice">该条目已有处理决定（见下方处理历史）。表单已锁定，避免误改已批准/已处理的内容。'
-                f'如确需修改并重新提交，<a href="{self.path_prefix}/item/{identity}?edit=1">点击重新编辑</a>。</p>'
+                f'如确需修改并重新提交，<a href="{self.path_prefix}/item/{identity}?edit=1{html.escape(position.replace("?", "&", 1))}">点击重新编辑</a>。</p>'
             )
         elif item.content:
             nonce = self.nonces.issue(session_id, item.path, int(self.clock()) + 900, str(root))
             binding = rough_binding_at(root, validate_relative_path(item.path, ROUGH_PREFIX))
             suggested = default_wiki_path(item.wiki_target)
-            form = self._form_card(binding, nonce, wiki_path=suggested, candidate=candidate_draft(item.content, suggested), root=root)
+            form = self._form_card(binding, nonce, wiki_path=suggested, candidate=candidate_draft(item.content, suggested), root=root, action_query=position)
             if decided:
                 form = (
                     '<div class="notice">注意：该条目已有处理决定，提交将新增一条决定并覆盖当前显示的状态，请谨慎确认后再提交。'
@@ -892,7 +942,7 @@ class ReviewService:
         body = (
             self._header() + self._sidebar()
             + '<div class="content">'
-            + f'<main class="review-shell"><p><a href="{self.path_prefix}/">← 返回待办列表</a></p><h1>{html.escape(item.title)}</h1><div class="meta">{html.escape(meta)}</div>'
+            + f'<main class="review-shell"><p><a href="{self.path_prefix}/{html.escape(position)}">← 返回待办列表</a></p><h1>{html.escape(item.title)}</h1><div class="meta">{html.escape(meta)}</div>'
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + links_block + form + history_block + '</main>'
             + '</div>'

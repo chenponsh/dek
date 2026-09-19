@@ -51,7 +51,6 @@ auth_logger = logging.getLogger("web.review.auth")
 
 NOTICES = {
     "approved": "已记录：批准发布。发布流程启用后才会写入知识库。",
-    "returned": "已记录：退回澄清。",
     "rejected": "已记录：拒绝。",
     "decided": "决定已记录。",
     "ingest_triggered": "已提交拉取请求，新的来源会在后台抓取，稍后刷新查看。",
@@ -59,7 +58,14 @@ NOTICES = {
     "publish_triggered": "已提交发布请求，已批准的内容会在后台构建并发布，稍后刷新查看。",
     "publish_cooldown": "刚触发过一次发布，请稍等片刻再试。",
 }
-STATUS_FILTERS = {"pending", "approved", "published", "returned", "rejected"}
+STATUS_FILTERS = {"pending", "approved", "published", "rejected"}
+
+
+def list_position(query: dict) -> tuple[str, int]:
+    """Validated (status, page) from a query string; anything odd falls back to the default."""
+    status = query.get("status", [""])[0]
+    raw = query.get("page", [""])[0]
+    return (status if status in STATUS_FILTERS else ""), (int(raw) if raw.isdigit() and len(raw) <= 6 else 1)
 QUERY_LIMIT = 200
 ORIGIN_PATTERN = re.compile(r"(https?)://([A-Za-z0-9.\-]{1,253})(?::(\d{1,5}))?")
 
@@ -187,12 +193,10 @@ class ReviewApp:
                 return self._response(start, "403 Forbidden", b"Forbidden")
             query = parse_qs(environ.get("QUERY_STRING", ""))
             search = (query.get("q", [""])[0] or "")[:QUERY_LIMIT]
-            status_filter = query.get("status", [""])[0]
-            if status_filter not in STATUS_FILTERS:
-                status_filter = ""
+            status_filter, page = list_position(query)
             notice = NOTICES.get(query.get("notice", [""])[0], "")
             try:
-                body = self.service.render_list(session_id, query=search, status=status_filter, notice=notice)
+                body = self.service.render_list(session_id, query=search, status=status_filter, notice=notice, page=page)
             except ReviewError as error:
                 return self._render_failure(start, error)
             return self._response(start, "200 OK", body, (("Content-Type", "text/html; charset=utf-8"),))
@@ -209,8 +213,9 @@ class ReviewApp:
             query = parse_qs(environ.get("QUERY_STRING", ""))
             notice = NOTICES.get(query.get("notice", [""])[0], "")
             unlocked = query.get("edit", [""])[0] == "1"
+            list_status, list_page = list_position(query)
             try:
-                body = self.service.render_item(session_id, path[len("/item/"):], notice=notice, unlocked=unlocked)
+                body = self.service.render_item(session_id, path[len("/item/"):], notice=notice, unlocked=unlocked, list_status=list_status, list_page=list_page)
             except ReviewError as error:
                 return self._render_failure(start, error)
             if body is None:
@@ -264,6 +269,9 @@ class ReviewApp:
             action = values.get("action", [""])[0]
             notice = ACTION_STATUS.get(action, "decided")
             location = "%s/item/%s?notice=%s" % (REVIEW_PREFIX, item_identity(rough_path), notice)
+            position_status, position_page = list_position(parse_qs(environ.get("QUERY_STRING", "")))
+            if position_status: location += "&status=" + position_status
+            if position_page > 1: location += "&page=%d" % position_page
             return self._response(start, "303 See Other", headers=(("Location", location),))
 
         if path == "/trigger-ingest":

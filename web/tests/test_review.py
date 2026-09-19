@@ -1,4 +1,5 @@
 import json
+import re
 import stat
 import subprocess
 import tempfile
@@ -359,15 +360,16 @@ class ReviewWorkflowTests(unittest.TestCase):
             self.decide(action="return")
         self.assertFalse(self.queue.exists())
 
-    def test_historical_return_decisions_still_display_as_returned(self):
+    def test_a_legacy_return_record_leaves_the_item_pending_and_stays_in_its_history(self):
         self.decide(action="reject")
         record = json.loads(self.queue.read_text(encoding="utf-8"))
         record["action"] = "return"
         record["decision_mac"] = decision_mac({k: v for k, v in record.items() if k != "decision_mac"}, b"queue-key-0123456789abcdef")
         self.queue.write_text(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
-        self.assertEqual(item.status, "returned")
-        self.assertEqual(item.status_label, "已退回")
+        self.assertEqual(item.status, "pending")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertIn("退回澄清", page)
 
     def test_approve_of_a_vanished_rough_reports_published(self):
         self.decide(action="approve")
@@ -401,7 +403,8 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('>待审核<sup class="filter-count">1</sup></a>', page)
         self.assertIn('>已批准待发布<sup class="filter-count">1</sup></a>', page)
         self.assertIn('>已发布</a>', page)
-        self.assertIn('>已退回</a>', page)
+        self.assertNotIn('已退回', page)
+        self.assertNotIn('status=returned', page)
         self.assertIn('>已拒绝</a>', page)
         self.assertNotIn('<sup class="filter-count">0</sup>', page)
 
@@ -432,12 +435,16 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('.content{margin-left:var(--sidebar-w)}', page)
         self.assertIn('background:var(--accent);color:#fff', page)
         self.assertIn('.col-task{width:60%}', page)
-        self.assertIn('<colgroup><col class="col-task"><col class="col-status"><col class="col-reviewer"><col class="col-time"></colgroup>', page)
+        self.assertIn('<colgroup><col class="col-index"><col class="col-task"><col class="col-status"><col class="col-reviewer"><col class="col-time"></colgroup>', page)
+        self.assertIn('<thead><tr><th class="index">序号</th><th>内容</th><th>状态</th><th>审核人</th><th>处理时间</th></tr></thead>', page)
+        self.assertNotIn("<th>待办</th>", page)
+        self.assertIn(".col-index{width:48px}", page)
+        self.assertIn("th.index,td.index{width:48px;min-width:48px;text-align:center}", page)
         self.assertNotIn('<th>操作</th>', page)
         self.assertNotIn('>去审核</a>', page)
         self.assertNotIn('>查看</a>', page)
         empty = self.service.render_list("opaque-session", status="approved").decode("utf-8")
-        self.assertIn('<td colspan="4">没有符合条件的条目。</td>', empty)
+        self.assertIn('<td colspan="5">没有符合条件的条目。</td>', empty)
 
     def test_review_sidebar_has_no_browse_title_above_the_tree(self):
         # The sidebar is a single group, so a title only cost a line of height.
@@ -448,6 +455,79 @@ class ReviewWorkflowTests(unittest.TestCase):
             self.assertNotIn(">浏览<", page)
             self.assertIn('<aside class="sidebar"><nav id="nav-tree"', page)
             self.assertIn('<div class="sidebar-resize-handle" aria-hidden="true"></div></aside>', page)
+
+    def test_browser_title_is_review_without_the_todo_wording(self):
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        self.assertIn("<title>知识审核 · DEK</title>", page)
+        self.assertNotIn("待办</title>", page)
+
+    def make_pending_items(self, count):
+        rough_dir = self.root / "repo" / "ingestion" / "rough"
+        for number in range(count):
+            (rough_dir / f"extra-{number:03d}.md").write_text(ROUGH.replace("2026-09-14", f"2026-07-{1 + number % 28:02d}"), encoding="utf-8")
+
+    def row_numbers(self, page):
+        return [int(n) for n in re.findall(r'<td class="meta index">(\d+)</td>', page)]
+
+    def test_rows_are_numbered_and_the_list_is_paginated_twenty_at_a_time(self):
+        self.make_pending_items(45)  # 47 items in all
+        first = self.service.render_list("opaque-session").decode("utf-8")
+        self.assertEqual(self.row_numbers(first), list(range(1, 21)))
+        self.assertIn('<div class="summary">共 47 条</div>', first)
+        self.assertIn("第 1/3 页", first)
+        second = self.service.render_list("opaque-session", page=2).decode("utf-8")
+        self.assertEqual(self.row_numbers(second), list(range(21, 41)))
+        third = self.service.render_list("opaque-session", page=3).decode("utf-8")
+        self.assertEqual(self.row_numbers(third), list(range(41, 48)))
+        self.assertIn("第 3/3 页", third)
+
+    def test_pager_links_keep_the_filter_and_disable_the_ends(self):
+        self.make_pending_items(45)
+        page = self.service.render_list("opaque-session", status="pending", page=2).decode("utf-8")
+        self.assertIn('<a href="/?status=pending">上一页</a>', page)
+        self.assertIn('<a href="/?status=pending&amp;page=3">下一页</a>', page)
+        self.assertIn('<span class="current" aria-current="page">2</span>', page)
+        first = self.service.render_list("opaque-session").decode("utf-8")
+        self.assertIn('<span class="disabled">上一页</span>', first)
+        last = self.service.render_list("opaque-session", page=3).decode("utf-8")
+        self.assertIn('<span class="disabled">下一页</span>', last)
+
+    def test_pager_is_hidden_when_everything_fits_on_one_page(self):
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        self.assertNotIn('class="pager"', page)
+        self.assertEqual(self.row_numbers(page), [1, 2])
+
+    def test_out_of_range_page_is_clamped(self):
+        self.make_pending_items(45)
+        self.assertEqual(self.row_numbers(self.service.render_list("opaque-session", page=99).decode("utf-8")), list(range(41, 48)))
+        self.assertEqual(self.row_numbers(self.service.render_list("opaque-session", page=0).decode("utf-8")), list(range(1, 21)))
+
+    def test_status_tabs_reset_to_the_first_page_and_keep_total_counts(self):
+        self.make_pending_items(45)
+        page = self.service.render_list("opaque-session", page=2).decode("utf-8")
+        self.assertIn('href="/?status=pending">待审核<sup class="filter-count">47</sup>', page)
+        self.assertNotIn('status=pending&amp;page', page.split('<nav class="status-tabs"', 1)[1].split("</nav>", 1)[0])
+
+    def test_pagination_ordering_is_stable_and_pending_first_by_oldest_publish_date(self):
+        self.make_pending_items(45)
+        self.decide(action="reject")
+        ids = re.findall(r'<tr data-href="/item/([0-9a-f]{16})', self.service.render_list("opaque-session").decode("utf-8"))
+        again = re.findall(r'<tr data-href="/item/([0-9a-f]{16})', self.service.render_list("opaque-session").decode("utf-8"))
+        self.assertEqual(ids, again)
+        last = self.service.render_list("opaque-session", page=3).decode("utf-8")
+        self.assertIn("已拒绝", last)  # decided items come after every pending one
+
+    def test_rows_and_the_item_page_carry_the_list_position_so_back_returns_to_it(self):
+        self.make_pending_items(45)
+        page = self.service.render_list("opaque-session", status="pending", page=2).decode("utf-8")
+        identity = re.search(r'<tr data-href="/item/([0-9a-f]{16})([^"]*)"', page)
+        self.assertEqual(identity.group(2), "?status=pending&amp;page=2")
+        detail = self.service.render_item("opaque-session", identity.group(1), list_status="pending", list_page=2).decode("utf-8")
+        self.assertIn('<a href="/?status=pending&amp;page=2">← 返回待办列表</a>', detail)
+        self.assertIn('action="/decision?status=pending&amp;page=2"', detail)
+        plain = self.service.render_item("opaque-session", identity.group(1)).decode("utf-8")
+        self.assertIn('<a href="/">← 返回待办列表</a>', plain)
+        self.assertIn('action="/decision"', plain)
 
     def test_list_rows_carry_a_data_href_for_whole_row_navigation(self):
         item = self.service.list_items()[0]
