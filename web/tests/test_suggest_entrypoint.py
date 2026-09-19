@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from deploy.suggest_entrypoint import build_prompt, parse_choice, run
+from deploy.suggest_entrypoint import build_prompt, hermes_env, parse_choice, run
 from web.suggest import read_suggestion
 
 
@@ -162,6 +162,19 @@ class ReadSuggestionTests(unittest.TestCase):
             bad.write_text("{not json", encoding="utf-8")
             self.assertEqual(read_suggestion(bad, "a", "b"), "")
             self.assertEqual(read_suggestion(None, "a", "b"), "")
+
+
+class HermesEnvTests(unittest.TestCase):
+    def test_passes_the_proxy_but_none_of_the_chat_secrets(self):
+        env = hermes_env({"HTTPS_PROXY": "http://proxy:1", "no_proxy": "localhost", "DINGTALK_CLIENT_SECRET": "s3cret",
+                          "DEK_REVIEW_AUDIT_KEY": "k", "HOME": "/h"})
+        self.assertEqual(env["HTTPS_PROXY"], "http://proxy:1")
+        self.assertEqual(env["no_proxy"], "localhost")
+        self.assertEqual(env["HOME"], "/h")
+        self.assertFalse([name for name in env if name.startswith(("DINGTALK", "DEK_"))])
+
+    def test_works_without_any_proxy(self):
+        self.assertNotIn("HTTPS_PROXY", hermes_env({}))
 
 
 class BuildPromptTests(unittest.TestCase):

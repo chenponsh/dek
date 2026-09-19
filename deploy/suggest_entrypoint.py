@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from web.suggest import folder_index, rough_qa, suggest_folders
 
 HERMES = "/var/lib/dek-qa/venv/bin/hermes"
-CALL_TIMEOUT = 180
+CALL_TIMEOUT = 90
 ANSWER_LIMIT = 1500
 
 _PENDING = re.compile(r"(?m)^status:\s*pending_review\s*$")
@@ -63,10 +63,22 @@ def parse_choice(output: object, count: int) -> int | None:
     return number if 1 <= number <= count else None
 
 
+_PROXY_VARIABLES = ("http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
+
+
+def hermes_env(environ) -> dict[str, str]:
+    """The environment Hermes runs with: its location, and the proxy it needs to
+    reach the model from this network. Nothing else (the QA bot's chat secrets
+    live in the same environment file) is passed on."""
+    env = {"PATH": "/usr/bin:/bin", "HOME": environ.get("HOME", "/var/lib/dek-qa"),
+           "HERMES_HOME": environ.get("HERMES_HOME", "/var/lib/dek-qa/hermes"),
+           "HERMES_ENV": environ.get("HERMES_ENV", "/var/lib/dek-qa/secrets/environment"), "HERMES_DISABLE_LAZY_INSTALLS": "1"}
+    env.update({name: environ[name] for name in _PROXY_VARIABLES if environ.get(name)})
+    return env
+
+
 def hermes_ask(prompt: str) -> str:
-    env = {"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", "/var/lib/dek-qa"),
-           "HERMES_HOME": os.environ.get("HERMES_HOME", "/var/lib/dek-qa/hermes"),
-           "HERMES_ENV": os.environ.get("HERMES_ENV", "/var/lib/dek-qa/secrets/environment"), "HERMES_DISABLE_LAZY_INSTALLS": "1"}
+    env = hermes_env(os.environ)
     result = subprocess.run(
         [HERMES, "-p", "dek-qa", "--ignore-rules", "-t", "todo", "--reasoning", "low", "-z", prompt],
         capture_output=True, text=True, timeout=CALL_TIMEOUT, stdin=subprocess.DEVNULL, env=env)
