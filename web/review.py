@@ -27,7 +27,6 @@ VERSION_PATTERN = re.compile(r"^sha256:[A-Za-z0-9._:-]{1,200}$")
 ROUGH_PREFIX = PurePosixPath("ingestion/rough")
 WIKI_PREFIX = PurePosixPath("wiki")
 MAX_DECISION_BYTES = 1_048_576
-KNOWLEDGE_BASE_URL = "https://regkb.chenponai.com/"
 BEIJING = timezone(timedelta(hours=8))
 
 
@@ -599,8 +598,6 @@ def validate_decision(record: object, key: bytes) -> dict:
 ERROR_STATUS = "500 Internal Server Error"
 
 STYLE = """<style>
-.kb-return-link{margin-left:auto;flex:0 0 auto;padding:.4rem .85rem;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font-weight:600;text-decoration:none;font-size:.85rem}
-.kb-return-link:hover{background:var(--hover)}
 .content{margin-left:var(--sidebar-w)}
 .review-shell{max-width:900px;margin:0 auto;padding:88px 40px 100px}
 .summary{margin-bottom:.8rem;color:var(--muted);font-size:.92rem}
@@ -781,8 +778,7 @@ class ReviewService:
         return (
             '<header><button id="menu-toggle" aria-label="打开目录">☰</button>'
             '<strong role="heading" aria-level="1">知识审核</strong>'
-            + f'<a class="kb-return-link" href="{KNOWLEDGE_BASE_URL}">返回知识库</a>'
-            + '</header>'
+            '</header>'
         )
 
     def _sidebar(self) -> str:

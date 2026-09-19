@@ -412,7 +412,10 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn('class="brand-logo"', page)
         self.assertIn('<header><button id="menu-toggle" aria-label="打开目录">☰</button>', page)
         self.assertIn('<strong role="heading" aria-level="1">知识审核</strong>', page)
-        self.assertIn('<a class="kb-return-link" href="https://regkb.chenponai.com/">返回知识库</a>', page)
+        # The sidebar's 首页 entry already leads back to the knowledge base.
+        self.assertNotIn("kb-return-link", page)
+        self.assertNotIn("返回知识库", page)
+        self.assertIn('<strong role="heading" aria-level="1">知识审核</strong></header>', page)
         self.assertNotIn('<form class="logout-form"', page)
         self.assertNotIn('>退出审核<', page)
         self.assertIn('<aside class="sidebar">', page)
