@@ -184,14 +184,15 @@ def rough_display(content: str) -> str:
 
 
 def _content_meta(item) -> str:
-    """One truncated line under the title; the full path and source stay in the tooltip."""
+    """One truncated line under the title (date, source); the tooltip carries the full path too."""
     full = [item.path]
-    short = [PurePosixPath(item.path).name]
+    short = []
+    if item.published_date:
+        full.append(f"发布日期：{item.published_date}"); short.append(f"发布日期：{item.published_date}")
     if item.source:
         full.append(f"来源：{item.source}"); short.append(f"来源：{_short_source(item.source)}")
-    if item.published_date:
-        full.append(f"发布日期：{item.published_date}")
-        short.insert(0, f"发布日期：{item.published_date}")  # first, so truncation never hides it
+    if not short:
+        return ""
     return (f'<div class="meta content-meta" title="{html.escape(" · ".join(full), quote=True)}">'
             f'{html.escape(" · ".join(short))}</div>')
 
@@ -718,7 +719,7 @@ th.index,td.index{width:60px;min-width:60px;text-align:center}
 .status-dot{display:inline-block;width:.55rem;height:.55rem;margin-right:.4rem;border-radius:50%;background:var(--accent);vertical-align:.04rem}
 .meta{color:var(--muted);font-size:.9em}
 .sources .meta a{overflow-wrap:anywhere}
-pre,textarea,input:not([type=hidden]),select{box-sizing:border-box;width:100%;font:inherit;border:1px solid var(--line);border-radius:8px;padding:.6rem .75rem;background:var(--bg);color:var(--text)}
+pre,textarea,input:not([type=hidden]),select{box-sizing:border-box;width:100%;font:inherit;font-weight:400;border:1px solid var(--line);border-radius:8px;padding:.6rem .75rem;background:var(--bg);color:var(--text)}
 pre{white-space:pre-wrap;max-height:30rem;overflow:auto;background:var(--panel)}
 label{display:block;margin:1rem 0;color:var(--text);font-weight:600;font-size:.9rem}
 button[type=submit]{margin-top:.5rem;padding:.55rem 1.1rem;border:0;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;font-size:.95rem}
@@ -731,10 +732,10 @@ button[type=submit]:hover{filter:brightness(.94)}
 .combo{position:relative}
 .combo-list{display:none;position:absolute;top:100%;left:0;right:0;max-height:14rem;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.14);z-index:5;margin-top:4px}
 .combo-list.open{display:block}
-.combo-option{padding:.5rem .7rem;cursor:pointer}
+.combo-option{display:flex;align-items:baseline;gap:.8rem;padding:.5rem .7rem;cursor:pointer}
 .combo-option:hover,.combo-option.active{background:var(--hover)}
-.combo-option strong{display:block;font-weight:600}
-.combo-option small{display:block;color:var(--muted);font-size:.78em}
+.combo-folder{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
+.combo-file{flex:none;margin-left:auto;color:var(--muted);font-size:.85em;font-weight:400}
 @media(max-width:760px){.content{margin-left:0}.review-shell{padding:82px 20px 70px}}
 </style>"""
 
@@ -996,7 +997,7 @@ class ReviewService:
             form = '<p class="notice">该条目已不在待审核快照中，无法再提交决定。</p>'
         meta = " · ".join(part for part in (
             f"状态：{item.status_label}",
-            f"来源：{item.source}" if item.source else "",
+            f"来源：{_short_source(item.source)}" if item.source else "",
             f"发布日期：{item.published_date}" if item.published_date else "",
             f"目标：{item.wiki_target}" if item.wiki_target else "",
         ) if part)

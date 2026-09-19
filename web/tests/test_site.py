@@ -433,6 +433,29 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn("Math.min(100, Math.max(5,", script)
         self.assertIn("form.requestSubmit()", script)
 
+    def test_inputs_are_regular_weight_and_share_one_focus_style(self):
+        build_site(self.vault, self.out)
+        css = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("input,textarea{font-weight:400}", css)
+        self.assertIn("::placeholder{color:var(--muted);opacity:.7;font-weight:400}", css)
+        focus = "{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent)}"
+        self.assertIn("input:not([type=hidden]):focus-visible,textarea:focus-visible" + focus, css)
+        # The search box's own copy of that rule is gone.
+        self.assertNotIn(".search-wrap input:focus{", css)
+        self.assertEqual(css.count("box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent)"), 1)
+
+    def test_wiki_path_dropdown_supports_the_keyboard_and_shows_one_line_rows(self):
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        for token in ('"ArrowDown"', '"ArrowUp"', '"Enter"', '"Escape"', 'classList.toggle("active"', "scrollIntoView", "aria-activedescendant"):
+            self.assertIn(token, script)
+        self.assertIn('<span class="combo-folder">', script)
+        self.assertIn('<small class="combo-file">', script)
+        # Enter must never fall through to the form's default button (批准).
+        self.assertIn('event.key === "Enter"', script)
+        self.assertIn("event.preventDefault()", script)
+
     def test_sidebar_tree_has_a_home_entry(self):
         build_site(self.vault, self.out)
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")

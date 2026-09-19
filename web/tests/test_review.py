@@ -488,11 +488,34 @@ class ReviewWorkflowTests(unittest.TestCase):
         (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
         page = self.service.render_list("opaque-session").decode("utf-8")
         cell = page[page.index("pending.md") - 300: page.index("pending.md") + 500]
-        self.assertIn('title="ingestion/rough/pending.md · 来源：[[source/CDE/CDE_共性问题-常见一般性技术问题]]', cell)
-        self.assertIn('>发布日期：2026-09-14 · pending.md · 来源：CDE_共性问题-常见一般性技术问题', cell)
+        self.assertIn('title="ingestion/rough/pending.md · 发布日期：2026-09-14 · 来源：[[source/CDE/CDE_共性问题-常见一般性技术问题]]"', cell)
+        self.assertIn('>发布日期：2026-09-14 · 来源：CDE_共性问题-常见一般性技术问题</div>', cell)
+        self.assertNotIn(">发布日期：2026-09-14 · pending.md", cell)
         self.assertNotIn(">ingestion/rough/pending.md", cell)
         self.assertNotIn(">[[", cell)
         self.assertIn(".content-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}", page)
+
+    def test_item_header_shows_the_source_the_way_the_list_does(self):
+        rough = ROUGH.replace('source: "[[source/example]]"', 'source: "[[source/CDE/CDE_共性问题-受理共性问题]]"')
+        (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        header = re.search(r'<h1>[^<]*</h1><div class="meta">([^<]*)</div>', page).group(1)
+        self.assertIn("来源：CDE_共性问题-受理共性问题", header)
+        self.assertNotIn("[[", header)
+
+    def test_form_text_is_regular_weight_and_the_dropdown_row_is_one_line(self):
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        item = self.service.list_items()[0]
+        detail = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        # Inputs sit inside bold labels and used to inherit the weight.
+        self.assertRegex(detail, r"pre,textarea,input:not\(\[type=hidden\]\),select\{[^}]*font:inherit;font-weight:400;")
+        # One line per folder: path left (ellipsis), file name right in grey.
+        self.assertIn(".combo-option{display:flex;align-items:baseline;gap:.8rem;padding:.5rem .7rem;cursor:pointer}", detail)
+        self.assertIn(".combo-folder{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}", detail)
+        self.assertIn(".combo-file{flex:none;margin-left:auto;color:var(--muted);font-size:.85em;font-weight:400}", detail)
+        self.assertNotIn(".combo-option strong", detail)
+        self.assertNotIn(".combo-option small", detail)
 
     def test_browser_title_is_review_without_the_todo_wording(self):
         page = self.service.render_list("opaque-session").decode("utf-8")

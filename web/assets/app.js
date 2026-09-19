@@ -18,22 +18,61 @@
     if (!list) return;
     let options = [];
     try { options = JSON.parse(input.dataset.options || "[]"); } catch (_) { options = []; }
+    let active = -1;
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+    const items = () => [...list.querySelectorAll(".combo-option")];
+    const setActive = index => {
+      const rows = items();
+      active = rows.length ? (index + rows.length) % rows.length : -1;
+      rows.forEach((row, i) => row.classList.toggle("active", i === active));
+      if (active >= 0) {
+        rows[active].scrollIntoView({ block: "nearest" });
+        input.setAttribute("aria-activedescendant", rows[active].id);
+      } else input.removeAttribute("aria-activedescendant");
+    };
+    const close = () => {
+      list.classList.remove("open");
+      input.setAttribute("aria-expanded", "false");
+      setActive(-1);
+    };
+    const choose = row => { input.value = row.dataset.path; close(); };
     const render = () => {
+      // Matching is by folder name only; the row shows the folder and the file name.
       const query = input.value.trim().toLowerCase();
       const matches = query ? options.filter(([label]) => label.toLowerCase().includes(query)) : options;
-      list.innerHTML = matches.slice(0, 30).map(([label, path]) =>
-        `<div class="combo-option" role="option" data-path="${escapeHtml(path)}"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(path)}</small></div>`
+      list.innerHTML = matches.slice(0, 30).map(([label, path], i) =>
+        `<div class="combo-option" role="option" id="combo-opt-${i}" data-path="${escapeHtml(path)}" title="${escapeHtml(path)}"><span class="combo-folder">${escapeHtml(label)}</span><small class="combo-file">${escapeHtml(path.split("/").pop())}</small></div>`
       ).join("");
       list.classList.toggle("open", matches.length > 0);
+      input.setAttribute("aria-expanded", matches.length > 0 ? "true" : "false");
+      setActive(-1);
     };
     input.addEventListener("focus", render);
     input.addEventListener("input", render);
-    input.addEventListener("blur", () => setTimeout(() => list.classList.remove("open"), 150));
+    input.addEventListener("blur", () => setTimeout(close, 150));
+    input.addEventListener("keydown", event => {
+      const open = list.classList.contains("open");
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (!open) render();
+        setActive(active + (event.key === "ArrowDown" ? 1 : -1));
+      } else if (event.key === "Enter") {
+        // Never let Enter fall through to the form's default button (批准).
+        event.preventDefault();
+        const rows = items();
+        if (open && active >= 0 && rows[active]) choose(rows[active]);
+      } else if (event.key === "Escape" && open) {
+        event.preventDefault();
+        close();
+      }
+    });
     list.addEventListener("mousedown", event => {
       const option = event.target.closest(".combo-option");
       if (!option) return;
-      input.value = option.dataset.path;
-      list.classList.remove("open");
+      event.preventDefault();
+      choose(option);
     });
     // A rough with no wiki_target suggestion of its own prefills this blank;
     // clicking 批准 without picking a folder first used to 400 server-side

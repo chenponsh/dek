@@ -1,4 +1,5 @@
 import io
+import json
 import re
 import socket
 import tempfile
@@ -279,6 +280,39 @@ class ReviewAppTests(unittest.TestCase):
                 status, _, body = self.call("/", query="page_size=" + raw, cookie=session)
                 self.assertEqual(status, "200 OK")
                 self.assertIn(f'name="page_size" min="5" max="100" step="1" value="{want}"', body.decode("utf-8"))
+
+    def test_full_walk_reject_without_a_comment_then_change_your_mind_and_approve(self):
+        session = self.authenticate()
+        _, _, body = self.call("/", cookie=session)
+        identity = re.search(r'/review/item/([0-9a-f]{16})', body.decode("utf-8")).group(1)
+        binding = rough_binding(self.rough)
+
+        def submit(action, *, edit=False, **extra):
+            _, _, detail = self.call("/item/" + identity, query="edit=1" if edit else "", cookie=session)
+            page = detail.decode("utf-8")
+            self.assertNotIn('name="comment"', page)
+            nonce = re.search('name="form_nonce" value="([^"]+)"', page).group(1)
+            form = {"form_nonce": nonce, "rough_path": "ingestion/rough/pending.md", "rough_sha256": binding.sha256,
+                    "rough_version": binding.version, "action": action, "wiki_path": "", "candidate_markdown": ""}
+            form.update(extra)
+            return self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
+
+        # 拒绝 with no comment field at all: no 400, redirected to the item, shown as 已拒绝.
+        status, headers, _ = submit("reject")
+        self.assertEqual(status, "303 See Other")
+        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected")
+        _, _, after = self.call("/item/" + identity, query="notice=rejected", cookie=session)
+        self.assertIn("已拒绝", after.decode("utf-8"))
+        self.assertIn("已记录：拒绝。", after.decode("utf-8"))
+        # A rejected item is locked but can be re-opened, and 批准 then wins.
+        status, headers, _ = submit("approve", edit=True, wiki_path="wiki/01_Test/01-0001.md", candidate_markdown=CANDIDATE)
+        self.assertEqual(status, "303 See Other")
+        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=approved")
+        _, _, done = self.call("/item/" + identity, cookie=session)
+        self.assertIn("已批准待发布", done.decode("utf-8"))
+        records = [json.loads(line) for line in (self.root / "state/decisions.jsonl").read_text().splitlines()]
+        self.assertEqual([r["action"] for r in records], ["reject", "approve"])
+        self.assertEqual([r["comment"] for r in records], ["", ""])
 
     def test_decision_redirect_without_list_position_is_unchanged(self):
         session = self.authenticate()
