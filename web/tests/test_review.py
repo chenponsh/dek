@@ -696,7 +696,7 @@ class ReviewWorkflowTests(unittest.TestCase):
                     self.assertNotIn("<article><h2>pending.md", page)
                     if state == "pending" or unlocked:
                         self.assertIn("<article><h2>原文</h2>", page)
-                        self.assertIn("<pre>## 新增问答", page)
+                        self.assertIn("<pre>问题：Q\n解答：A\n发布日期：2026-09-14", page)
                     self.assertIn("← 返回列表</a>", page)
                     self.assertNotIn("返回待办列表", page)
 
@@ -742,9 +742,13 @@ class ReviewWorkflowTests(unittest.TestCase):
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         pre = page.split("<article><h2>原文</h2><pre>", 1)[1].split("</pre>", 1)[0]
-        self.assertTrue(pre.startswith("## 新增问答"))
-        self.assertTrue(pre.endswith("| Q | A | 2026-09-14 |\n\n建议路径：暂无"), pre)
-        for gone in ("入库日期", "来源", "状态", "发布日期：", "目标位置", "source_item_key", "ingested_at", "published_date"):
+        self.assertTrue(pre.startswith("问题：Q\n"), pre)
+        self.assertTrue(pre.endswith("问题：Q\n解答：A\n发布日期：2026-09-14\n\n建议路径：暂无"), pre)
+        self.assertNotIn("|", pre)
+        self.assertNotIn("## 新增问答", pre)
+        # 发布日期 appears once per Q&A block, from the table; the frontmatter fields do not.
+        self.assertEqual(pre.count("发布日期："), 1)
+        for gone in ("入库日期", "来源", "状态", "目标位置", "source_item_key", "ingested_at", "published_date"):
             self.assertNotIn(gone, pre, gone)
         for box in ("<details", "rough-info", "<dl>", "处理信息"):
             self.assertNotIn(box, page)
@@ -756,6 +760,20 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertTrue(rough_display(plain).endswith("\n\n建议路径：wiki/01_Test/01-0001.md"))
         # Something that is not a path is shown as written rather than hidden.
         self.assertTrue(rough_display(ROUGH.replace("wiki_target:\n", "wiki_target: 待定\n")).endswith("建议路径：待定"))
+
+    def test_qa_table_rows_are_shown_as_question_answer_and_date_lines(self):
+        body = ("## 新增问答\n\n| 问题 | 解答 | 发布日期 |\n| --- | --- | --- |\n"
+                "| 第一问？ | 第一段。<br>第二段，含 \\| 竖线。 | 2026-03-16 |\n"
+                "| 第二问？ | 答二 | 2026-03-17 |\n")
+        shown = rough_display(ROUGH.split("## 新增问答", 1)[0] + body)
+        self.assertEqual(shown, "问题：第一问？\n解答：第一段。\n第二段，含 | 竖线。\n发布日期：2026-03-16\n\n"
+                                "问题：第二问？\n解答：答二\n发布日期：2026-03-17\n\n建议路径：暂无")
+
+    def test_text_that_is_not_a_qa_table_is_left_alone(self):
+        shown = rough_display(ROUGH.split("## 新增问答", 1)[0] + "自由说明文字\n\n| a | b |\n| - | - |\n| 1 | 2 |\n")
+        self.assertIn("自由说明文字", shown)
+        self.assertIn("| a | b |", shown)
+        self.assertTrue(shown.endswith("建议路径：暂无"))
 
     def test_content_without_frontmatter_is_shown_as_is(self):
         self.assertEqual(rough_display("just text\n"), "just text\n")
@@ -845,6 +863,11 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("来源网址", page)
         self.assertIn('href="https://www.cde.org.cn/main/xxgk/listpage/07edef25f1e7354bfd8490baa0ce056b"', page)
         self.assertIn("国家药品监督管理局药品审评中心", page)
+        # The address printed under the name is a link as well, not plain text.
+        url = "https://www.cde.org.cn/main/xxgk/listpage/07edef25f1e7354bfd8490baa0ce056b"
+        self.assertIn(f'<div class="meta"><a href="{url}" target="_blank" rel="noopener noreferrer">{url}</a></div>', page)
+        self.assertNotIn(f'<div class="meta">{url}</div>', page)
+        self.assertIn(".sources .meta a{overflow-wrap:anywhere}", page)
 
     def test_source_urls_follow_direct_wikilinks_and_inline_links(self):
         content = (

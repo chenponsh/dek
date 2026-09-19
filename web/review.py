@@ -142,8 +142,29 @@ def _short_source(source: str) -> str:
     return name.rsplit("/", 1)[-1] or source
 
 
+QA_TABLE = re.compile(r"^\|[ \t]*问题[ \t]*\|[ \t]*解答[ \t]*\|[ \t]*发布日期[ \t]*\|[ \t]*\n\|[ \t:|-]+\|[ \t]*\n((?:\|[^\n]*(?:\n|\Z))*)", re.M)
+
+
+def _qa_lines(body: str) -> str:
+    """Turn the draft's | 问题 | 解答 | 发布日期 | table into 问题：/解答：/发布日期： lines."""
+    table = QA_TABLE.search(body)
+    if not table:
+        return body
+    blocks = []
+    for line in table.group(1).splitlines():
+        cells = [cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", line)[1:-1]]
+        if len(cells) == 3:
+            question, answer, date = cells
+            blocks.append(f"问题：{question}\n解答：{re.sub(r'<br\s*/?>', chr(10), answer)}\n发布日期：{date}")
+    if not blocks:
+        return body
+    before = re.sub(r"(?m)^##[ \t]*新增问答[ \t]*\n*\Z", "", body[:table.start()])
+    after = body[table.end():].strip("\n")
+    return (before.rstrip("\n") + "\n\n" if before.strip() else "") + "\n\n".join(blocks) + ("\n\n" + after if after else "")
+
+
 def rough_display(content: str) -> str:
-    """The text of a rough draft for the 原文 box: its body, then one line with the suggested wiki path.
+    """The text of a rough draft for the 原文 box: its Q&A as readable lines, then the suggested wiki path.
 
     The frontmatter itself stays out of the box and English on disk (ingestion,
     audit and the publisher read it by name). The suggested path is shown the
@@ -159,7 +180,7 @@ def rough_display(content: str) -> str:
     raw = meta.get("wiki_target")
     written = "" if raw is None else str(raw).strip()
     suggestion = default_wiki_path(written) or written or "暂无"
-    return content[match.end():].rstrip("\n") + "\n\n建议路径：" + suggestion
+    return _qa_lines(content[match.end():]).rstrip("\n") + "\n\n建议路径：" + suggestion
 
 
 def _content_meta(item) -> str:
@@ -696,6 +717,7 @@ th.index,td.index{width:60px;min-width:60px;text-align:center}
 .status{white-space:nowrap;font-weight:600}
 .status-dot{display:inline-block;width:.55rem;height:.55rem;margin-right:.4rem;border-radius:50%;background:var(--accent);vertical-align:.04rem}
 .meta{color:var(--muted);font-size:.9em}
+.sources .meta a{overflow-wrap:anywhere}
 pre,textarea,input:not([type=hidden]),select{box-sizing:border-box;width:100%;font:inherit;border:1px solid var(--line);border-radius:8px;padding:.6rem .75rem;background:var(--bg);color:var(--text)}
 pre{white-space:pre-wrap;max-height:30rem;overflow:auto;background:var(--panel)}
 label{display:block;margin:1rem 0;color:var(--text);font-weight:600;font-size:.9rem}
@@ -983,7 +1005,7 @@ class ReviewService:
         if links:
             rows_html = "".join(
                 f'<li><a href="{html.escape(link["url"], quote=True)}" target="_blank" rel="noopener noreferrer">{html.escape(link["label"])}</a>'
-                f'<div class="meta">{html.escape(link["url"])}</div></li>'
+                f'<div class="meta"><a href="{html.escape(link["url"], quote=True)}" target="_blank" rel="noopener noreferrer">{html.escape(link["url"])}</a></div></li>'
                 for link in links
             )
             links_block = f'<h2>来源网址</h2><ul class="sources">{rows_html}</ul>'
