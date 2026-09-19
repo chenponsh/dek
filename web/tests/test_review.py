@@ -436,6 +436,16 @@ class ReviewWorkflowTests(unittest.TestCase):
         empty = self.service.render_list("opaque-session", status="approved").decode("utf-8")
         self.assertIn('<td colspan="4">没有符合条件的条目。</td>', empty)
 
+    def test_review_sidebar_has_no_browse_title_above_the_tree(self):
+        # The sidebar is a single group, so a title only cost a line of height.
+        item = self.service.list_items()[0]
+        for page in (self.service.render_list("opaque-session").decode("utf-8"),
+                     self.service.render_item("opaque-session", item.identity).decode("utf-8")):
+            self.assertNotIn("side-title", page)
+            self.assertNotIn(">浏览<", page)
+            self.assertIn('<aside class="sidebar"><nav id="nav-tree"', page)
+            self.assertIn('<div class="sidebar-resize-handle" aria-hidden="true"></div></aside>', page)
+
     def test_list_rows_carry_a_data_href_for_whole_row_navigation(self):
         item = self.service.list_items()[0]
         page = self.service.render_list("opaque-session").decode("utf-8")

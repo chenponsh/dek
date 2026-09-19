@@ -787,7 +787,7 @@ class ReviewService:
 
     def _sidebar(self) -> str:
         return (
-            '<aside class="sidebar"><div class="side-title">浏览</div>'
+            '<aside class="sidebar">'
             '<nav id="nav-tree" data-manifest="/manifest.json" data-current=""></nav>'
             '<div class="sidebar-resize-handle" aria-hidden="true"></div></aside>'
         )
