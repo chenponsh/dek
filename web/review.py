@@ -629,7 +629,6 @@ button[type=submit]{margin-top:.5rem;padding:.55rem 1.1rem;border:0;border-radiu
 button[type=submit]:hover{filter:brightness(.94)}
 .decision-actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem}
 .decision-actions button{margin-top:0}
-.decision-actions .action-return{background:#a15c00}
 .decision-actions .action-reject{background:#b3261e}
 .notice{border-left:4px solid var(--accent);background:var(--panel);padding:.65rem .85rem;margin:1rem 0;border-radius:0 8px 8px 0}
 .combo{position:relative}
@@ -773,7 +772,7 @@ class ReviewService:
         options_json = json.dumps([[label, path] for label, path in candidates], ensure_ascii=False)
         return f"""<article><h2>{html.escape(PurePosixPath(rough.path).name)}</h2><pre>{html.escape(rough.content)}</pre>
 <form method="post" action="{self.path_prefix}/decision"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
-<label>Wiki 路径（可搜索，按文件夹名过滤，选中后按需修改末尾编号）<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label><label>候选 Wiki Markdown（已预填草稿，可修改，批准发布时提交）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><label>审核意见（退回或拒绝时必填）<textarea name="comment" rows="3"></textarea></label><div class="decision-actions"><button type="submit" name="action" value="approve">批准</button><button type="submit" name="action" value="reject" class="action-reject">拒绝</button><button type="submit" name="action" value="return" class="action-return">退回</button></div></form></article>"""
+<label>Wiki 路径（可搜索，按文件夹名过滤，选中后按需修改末尾编号）<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label><label>候选 Wiki Markdown（已预填草稿，可修改，批准发布时提交）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><label>审核意见（拒绝时必填）<textarea name="comment" rows="3"></textarea></label><div class="decision-actions"><button type="submit" name="action" value="approve">批准</button><button type="submit" name="action" value="reject" class="action-reject">拒绝</button></div></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()
@@ -922,7 +921,7 @@ class ReviewService:
         if snapshot_root is None:
             raise ReviewError("invalid form nonce", "403 Forbidden")
         action = one("action")
-        if action not in {"approve", "reject", "return"}:
+        if action not in {"approve", "reject"}:
             raise ReviewError("invalid action")
         relative = validate_relative_path(rough_path, ROUGH_PREFIX)
         root=Path(snapshot_root) if snapshot_root else (self.repository_source.current() if hasattr(self.repository_source,"current") else self.root)
@@ -944,13 +943,13 @@ class ReviewService:
                 raise ReviewError("approve requires candidate markdown")
             _frontmatter(candidate)
         else:
-            # The three decision buttons share one <form>; return/reject may
-            # submit whatever wiki_path/candidate_markdown were left over
-            # from an in-progress approve edit. Ignore rather than reject --
-            # a non-approve decision never uses either field.
+            # Both decision buttons share one <form>; reject may submit
+            # whatever wiki_path/candidate_markdown were left over from an
+            # in-progress approve edit. Ignore rather than reject -- a
+            # non-approve decision never uses either field.
             wiki_path = ""
             candidate = ""
-        if action in {"reject", "return"} and not comment.strip():
+        if action == "reject" and not comment.strip():
             raise ReviewError("comment is required")
         if len(comment) > 4000 or len(candidate.encode("utf-8")) > 900_000:
             raise ReviewError("field too large", "413 Payload Too Large")

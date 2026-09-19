@@ -135,13 +135,13 @@ class ReviewServiceTests(unittest.TestCase):
         # no way to retry short of a full page reload.
         nonce = self.nonces.issue("opaque-session", "ingestion/rough/pending.md", 1_900_000_900)
         with self.assertRaisesRegex(ReviewError, "comment is required"):
-            self.service.submit_form(self.form(nonce=nonce, action="return", wiki_path="", candidate_markdown="", comment=""),
+            self.service.submit_form(self.form(nonce=nonce, action="reject", wiki_path="", candidate_markdown="", comment=""),
                                      session_id="opaque-session", user_id="enterprise-user")
         # Retry with the same nonce and a corrected field -- must succeed.
-        self.service.submit_form(self.form(nonce=nonce, action="return", wiki_path="", candidate_markdown="", comment="请补充依据。"),
+        self.service.submit_form(self.form(nonce=nonce, action="reject", wiki_path="", candidate_markdown="", comment="请补充依据。"),
                                  session_id="opaque-session", user_id="enterprise-user")
         record = json.loads(self.queue.read_text(encoding="utf-8"))
-        self.assertEqual(record["action"], "return")
+        self.assertEqual(record["action"], "reject")
 
     def test_nonce_accepts_a_matching_non_ascii_rough_path(self):
         path = "ingestion/rough/20260917_回退审核_0102-0001.md"
@@ -280,7 +280,7 @@ class ReviewWorkflowTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def decide(self, *, session_id="opaque-session", path="ingestion/rough/pending.md", action="return", nickname="彭文艳", **changes):
+    def decide(self, *, session_id="opaque-session", path="ingestion/rough/pending.md", action="reject", nickname="彭文艳", **changes):
         binding = rough_binding(self.root / "repo" / path, relative=path)
         values = {
             "form_nonce": self.nonces.issue(session_id, path, self.clock_value + 900, str(self.root / "repo")),
@@ -314,14 +314,14 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(item.reviewer, "彭文艳")
         self.assertEqual(item.decided_at, "2030-03-17T17:46:40+00:00")
 
-    def test_return_or_reject_ignores_leftover_wiki_path_and_candidate(self):
-        # The three decision buttons (批准/退回/拒绝) share one <form>; a
-        # reviewer who typed a candidate then clicked 退回/拒绝 without
+    def test_reject_ignores_leftover_wiki_path_and_candidate(self):
+        # The two decision buttons (批准/拒绝) share one <form>; a
+        # reviewer who typed a candidate then clicked 拒绝 without
         # clearing those fields used to get a 400 ("non-approve decision
         # cannot include a candidate") instead of the decision going through.
-        self.decide(action="return", wiki_path="wiki/01_Test/01-0001.md", candidate_markdown=CANDIDATE)
+        self.decide(action="reject", wiki_path="wiki/01_Test/01-0001.md", candidate_markdown=CANDIDATE)
         record = json.loads(self.queue.read_text(encoding="utf-8"))
-        self.assertEqual(record["action"], "return")
+        self.assertEqual(record["action"], "reject")
         self.assertEqual(record["wiki_path"], "")
         self.assertEqual(record["candidate_markdown"], "")
 
@@ -339,7 +339,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn("2030-03-17T17:46:40+00:00", detail)
 
     def test_redecision_keeps_history_and_list_shows_latest(self):
-        self.decide(action="return", nickname="彭文艳")
+        self.decide(action="reject", nickname="彭文艳")
         self.clock_value += 60
         self.decide(action="approve", nickname="张三")
         lines = [line for line in self.queue.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -348,11 +348,26 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(item.status, "approved")
         self.assertEqual(item.reviewer, "张三")
 
-    def test_return_requires_and_keeps_comment_for_history(self):
-        self.decide(action="return")
+    def test_reject_requires_and_keeps_comment_for_history(self):
+        self.decide(action="reject")
         first = json.loads(self.queue.read_text(encoding="utf-8").splitlines()[0])
         self.assertEqual(first["comment"], "请补充依据。")
-        self.assertEqual(first["action"], "return")
+        self.assertEqual(first["action"], "reject")
+
+    def test_return_is_no_longer_an_accepted_action(self):
+        with self.assertRaisesRegex(ReviewError, "invalid action"):
+            self.decide(action="return")
+        self.assertFalse(self.queue.exists())
+
+    def test_historical_return_decisions_still_display_as_returned(self):
+        self.decide(action="reject")
+        record = json.loads(self.queue.read_text(encoding="utf-8"))
+        record["action"] = "return"
+        record["decision_mac"] = decision_mac({k: v for k, v in record.items() if k != "decision_mac"}, b"queue-key-0123456789abcdef")
+        self.queue.write_text(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        self.assertEqual(item.status, "returned")
+        self.assertEqual(item.status_label, "已退回")
 
     def test_approve_of_a_vanished_rough_reports_published(self):
         self.decide(action="approve")
@@ -362,10 +377,10 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(item.status_label, "已发布")
 
     def test_list_renders_rows_links_and_supports_search_and_status_filters(self):
-        self.decide(action="return")
+        self.decide(action="reject")
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertIn("待审核", page)
-        self.assertIn("已退回", page)
+        self.assertIn("已拒绝", page)
         self.assertIn("/item/", page)
         self.assertNotIn("name=\"q\"", page)
         self.assertIn("ingestion/rough/other.md", page)
@@ -447,26 +462,26 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("ingestion/rough/", page)
         self.assertIn('<button type="submit" name="action" value="approve">批准</button>', page)
         self.assertIn('<button type="submit" name="action" value="reject" class="action-reject">拒绝</button>', page)
-        self.assertIn('<button type="submit" name="action" value="return" class="action-return">退回</button>', page)
+        self.assertNotIn('value="return"', page)
+        self.assertNotIn("退回</button>", page)
         self.assertLess(page.index('value="approve"'), page.index('value="reject"'))
-        self.assertLess(page.index('value="reject"'), page.index('value="return"'))
         self.assertIsNone(self.service.render_item("opaque-session", "0" * 16))
         self.assertIsNone(self.service.render_item("opaque-session", "not-an-identity"))
 
     def test_detail_of_a_decided_item_is_locked_by_default(self):
-        self.decide(action="return")
+        self.decide(action="reject")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
-        self.assertIn("已退回", page)
+        self.assertIn("已拒绝", page)
         self.assertNotIn('name="form_nonce"', page)
         self.assertIn(f'href="/item/{item.identity}?edit=1"', page)
         self.assertIn("已有处理决定", page)
 
     def test_detail_of_a_decided_item_unlocks_for_redecision_when_requested(self):
-        self.decide(action="return")
+        self.decide(action="reject")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         page = self.service.render_item("opaque-session", item.identity, unlocked=True).decode("utf-8")
-        self.assertIn("已退回", page)
+        self.assertIn("已拒绝", page)
         self.assertIn('name="form_nonce"', page)
         self.assertIn("提交将新增一条决定", page)
 
@@ -481,7 +496,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         # never updated; the true status is the "状态：" line derived from the
         # decision queue above it. Without a note, a reviewer skimming the raw
         # preview could mistake the frozen "pending_review" for the real state.
-        self.decide(action="return")
+        self.decide(action="reject")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         page = self.service.render_item("opaque-session", item.identity, unlocked=True).decode("utf-8")
         self.assertIn("status: pending_review", page)

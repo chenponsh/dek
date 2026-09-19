@@ -362,6 +362,15 @@ class SiteBuildTests(unittest.TestCase):
                 page = page_path.read_text(encoding="utf-8")
                 self.assertIn('class="sidebar-resize-handle"', page)
 
+    def test_home_page_main_area_is_widened_but_articles_keep_a_readable_measure(self):
+        build_site(self.vault, self.out)
+        home = (self.out / "index.html").read_text(encoding="utf-8")
+        article = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        self.assertIn('<main class="document home-page">', home)
+        self.assertNotIn("home-page", article)
+        style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        self.assertIn(".document.home-page{max-width:1440px;margin-right:0}", style)
+
     def test_sidebar_tree_has_a_home_entry(self):
         build_site(self.vault, self.out)
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")

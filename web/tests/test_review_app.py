@@ -219,19 +219,19 @@ class ReviewAppTests(unittest.TestCase):
                 "rough_path": "ingestion/rough/pending.md",
                 "rough_sha256": binding.sha256,
                 "rough_version": binding.version,
-                "action": "return",
+                "action": "reject",
                 "wiki_path": "",
                 "candidate_markdown": "",
                 "comment": "请补充依据。",
             },
         )
         self.assertEqual(status, "303 See Other")
-        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=returned")
+        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected")
 
-        status, _, after = self.call("/item/" + identity, query="notice=returned", cookie=session)
+        status, _, after = self.call("/item/" + identity, query="notice=rejected", cookie=session)
         self.assertEqual(status, "200 OK")
         page = after.decode("utf-8")
-        self.assertIn("已退回", page)
+        self.assertIn("已拒绝", page)
         self.assertIn("审阅人", page)
 
     def test_post_requires_exact_origin_and_single_use_nonce(self):
@@ -266,7 +266,7 @@ class ReviewAppTests(unittest.TestCase):
         form = {
             "form_nonce": nonce, "rough_path": "ingestion/rough/pending.md",
             "rough_sha256": binding.sha256, "rough_version": binding.version,
-            "action": "return", "wiki_path": "", "candidate_markdown": "", "comment": "请补充依据。",
+            "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "请补充依据。",
         }
         with self.assertLogs("web.review.auth", level="WARNING") as captured:
             status, _, _ = self.call("/decision", method="POST", form=form, cookie=session)
@@ -289,7 +289,7 @@ class ReviewAppTests(unittest.TestCase):
         form = {
             "form_nonce": nonce, "rough_path": "ingestion/rough/pending.md",
             "rough_sha256": binding.sha256, "rough_version": binding.version,
-            "action": "return", "wiki_path": "", "candidate_markdown": "", "comment": "请补充依据。",
+            "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "请补充依据。",
         }
         with self.assertLogs("web.review.auth", level="WARNING") as captured:
             status, _, _ = self.call(
@@ -322,7 +322,7 @@ class ReviewAppTests(unittest.TestCase):
             return {
                 "form_nonce": nonce, "rough_path": "ingestion/rough/pending.md",
                 "rough_sha256": binding.sha256, "rough_version": binding.version,
-                "action": "return", "wiki_path": "", "candidate_markdown": "", "comment": "请补充依据。",
+                "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "请补充依据。",
             }
 
         with self.assertLogs("web.review.auth", level="WARNING") as captured:
@@ -356,7 +356,7 @@ class ReviewAppTests(unittest.TestCase):
             form={
                 "form_nonce": nonce_match.group(1), "rough_path": "ingestion/rough/pending.md",
                 "rough_sha256": binding.sha256, "rough_version": binding.version,
-                "action": "return", "wiki_path": "", "candidate_markdown": "", "comment": "补充依据",
+                "action": "reject", "wiki_path": "", "candidate_markdown": "", "comment": "补充依据",
             }, extra=invalid_type,
         )[0], "415 Unsupported Media Type")
 
