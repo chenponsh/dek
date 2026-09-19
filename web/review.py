@@ -124,6 +124,7 @@ ACTION_STATUS = {"approve": "approved", "reject": "rejected"}
 ACTION_LABEL = {"approve": "批准发布", "return": "退回澄清", "reject": "拒绝"}
 PAGE_SIZE = 20
 MIN_PAGE_SIZE, MAX_PAGE_SIZE = 5, 100
+PAGE_SIZE_CHOICES = (10, 20, 50, 100)
 
 
 def list_state_query(status: str = "", page: int = 1, query: str = "", size: int = PAGE_SIZE) -> str:
@@ -660,7 +661,12 @@ STYLE = """<style>
 th.index,td.index{width:60px;min-width:60px;text-align:center}
 .table-wrap td.content{max-width:0;min-width:240px}
 .content-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pager{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;margin:18px 0 0;font-size:.9rem}
+.list-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:18px}
+.pager,.page-size{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:.9rem}
+.page-size{margin-left:auto;color:var(--muted)}
+.page-size a,.page-size .current{min-width:2rem;padding:.3rem .6rem;border:1px solid var(--line);border-radius:6px;text-align:center;text-decoration:none;color:var(--text)}
+.page-size a:hover{background:var(--hover)}
+.page-size .current{background:var(--accent);border-color:var(--accent);color:#fff}
 .pager a,.pager .current,.pager .disabled{min-width:2rem;padding:.3rem .7rem;border:1px solid var(--line);border-radius:6px;text-align:center;text-decoration:none;color:var(--text)}
 .pager a:hover{background:var(--hover)}
 .pager .current{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -893,6 +899,13 @@ class ReviewService:
             parts.append(f'<a href="{page_href(page + 1)}">下一页</a>' if page < pages else '<span class="disabled">下一页</span>')
             parts.append(f'<span class="page-info">第 {page}/{pages} 页</span>')
             pager = f'<nav class="pager" aria-label="分页">{"".join(parts)}</nav>'
+        size_nav = ""
+        if len(items) > PAGE_SIZE_CHOICES[0]:
+            choices = []
+            for choice in PAGE_SIZE_CHOICES:
+                if choice == size: choices.append(f'<span class="current" aria-current="true">{choice}</span>')
+                else: choices.append(f'<a href="{self.path_prefix}/{html.escape(list_state_query(status, 1, query, choice))}">{choice}</a>')
+            size_nav = f'<nav class="page-size" aria-label="每页条数">每页{"".join(choices)}条</nav>'
         ingest_button = (
             f'<form method="post" action="{self.path_prefix}/trigger-ingest" class="ingest-trigger-form">'
             '<button type="submit">立即拉取最新源</button></form>'
@@ -908,7 +921,7 @@ class ReviewService:
             + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions">{ingest_button}{publish_button}</div></div>'
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + f'<nav class="status-tabs" aria-label="审核状态筛选">{filters}</nav>'
-            + table + pager + '</main>'
+            + table + (f'<div class="list-footer">{pager}{size_nav}</div>' if pager or size_nav else '') + '</main>'
             + '</div>'
         )
         return self._page("知识审核", body)

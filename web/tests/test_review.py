@@ -530,6 +530,28 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('<a href="/?page=2&amp;page_size=5">← 返回待办列表</a>', detail)
         self.assertIn('action="/decision?page=2&amp;page_size=5"', detail)
 
+    def test_users_can_pick_the_page_length_from_a_control_below_the_table(self):
+        self.make_pending_items(45)  # 47 items
+        page = self.service.render_list("opaque-session", status="pending", page=2, page_size=10).decode("utf-8")
+        nav = page.split('<nav class="page-size"', 1)[1].split("</nav>", 1)[0]
+        self.assertIn("每页", nav)
+        self.assertIn('<span class="current" aria-current="true">10</span>', nav)
+        # Changing the length keeps the filter and starts again from page 1.
+        self.assertIn('<a href="/?status=pending">20</a>', nav)
+        self.assertIn('<a href="/?status=pending&amp;page_size=50">50</a>', nav)
+        self.assertIn('<a href="/?status=pending&amp;page_size=100">100</a>', nav)
+        self.assertNotIn("page=2", nav)
+
+    def test_page_length_control_shows_when_a_smaller_length_would_paginate_and_hides_otherwise(self):
+        # Two items: nothing to choose.
+        self.assertNotIn('class="page-size"', self.service.render_list("opaque-session").decode("utf-8"))
+        # 19 items fit on one page of 20 but not of 10: the choice is useful.
+        self.make_pending_items(17)
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        self.assertIn('<nav class="page-size"', page)
+        self.assertIn('<span class="current" aria-current="true">20</span>', page)
+        self.assertNotIn('class="pager"', page)
+
     def test_pager_is_hidden_when_everything_fits_on_one_page(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertNotIn('class="pager"', page)
