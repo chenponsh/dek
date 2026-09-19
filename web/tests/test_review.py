@@ -510,12 +510,11 @@ class ReviewWorkflowTests(unittest.TestCase):
         detail = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         # Inputs sit inside bold labels and used to inherit the weight.
         self.assertRegex(detail, r"pre,textarea,input:not\(\[type=hidden\]\),select\{[^}]*font:inherit;font-weight:400;")
-        # One line per folder: path left (ellipsis), file name right in grey.
-        self.assertIn(".combo-option{display:flex;align-items:baseline;gap:.8rem;padding:.5rem .7rem;cursor:pointer}", detail)
-        self.assertIn(".combo-folder{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}", detail)
-        self.assertIn(".combo-file{flex:none;margin-left:auto;color:var(--muted);font-size:.85em;font-weight:400}", detail)
-        self.assertNotIn(".combo-option strong", detail)
-        self.assertNotIn(".combo-option small", detail)
+        # One line per option: the full path, left aligned (ellipsis if it is too long).
+        self.assertIn(".combo-option{padding:.5rem .7rem;cursor:pointer}", detail)
+        self.assertIn(".combo-path{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}", detail)
+        for gone in (".combo-folder", ".combo-file", ".combo-option strong", ".combo-option small", "display:flex;align-items:baseline"):
+            self.assertNotIn(gone, detail)
 
     def test_browser_title_is_review_without_the_todo_wording(self):
         page = self.service.render_list("opaque-session").decode("utf-8")

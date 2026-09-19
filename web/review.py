@@ -732,10 +732,9 @@ button[type=submit]:hover{filter:brightness(.94)}
 .combo{position:relative}
 .combo-list{display:none;position:absolute;top:100%;left:0;right:0;max-height:14rem;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.14);z-index:5;margin-top:4px}
 .combo-list.open{display:block}
-.combo-option{display:flex;align-items:baseline;gap:.8rem;padding:.5rem .7rem;cursor:pointer}
+.combo-option{padding:.5rem .7rem;cursor:pointer}
 .combo-option:hover,.combo-option.active{background:var(--hover)}
-.combo-folder{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
-.combo-file{flex:none;margin-left:auto;color:var(--muted);font-size:.85em;font-weight:400}
+.combo-path{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
 @media(max-width:760px){.content{margin-left:0}.review-shell{padding:82px 20px 70px}}
 </style>"""
 

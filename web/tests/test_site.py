@@ -450,8 +450,10 @@ class SiteBuildTests(unittest.TestCase):
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
         for token in ('"ArrowDown"', '"ArrowUp"', '"Enter"', '"Escape"', 'classList.toggle("active"', "scrollIntoView", "aria-activedescendant"):
             self.assertIn(token, script)
-        self.assertIn('<span class="combo-folder">', script)
-        self.assertIn('<small class="combo-file">', script)
+        # Each option is one line with the full path, left aligned.
+        self.assertIn('<span class="combo-path">${escapeHtml(path)}</span>', script)
+        self.assertNotIn("combo-folder", script)
+        self.assertNotIn("combo-file", script)
         # Enter must never fall through to the form's default button (批准).
         self.assertIn('event.key === "Enter"', script)
         self.assertIn("event.preventDefault()", script)

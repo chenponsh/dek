@@ -39,11 +39,11 @@
     };
     const choose = row => { input.value = row.dataset.path; close(); };
     const render = () => {
-      // Matching is by folder name only; the row shows the folder and the file name.
+      // Matching is by folder name only; each row shows the full suggested path.
       const query = input.value.trim().toLowerCase();
       const matches = query ? options.filter(([label]) => label.toLowerCase().includes(query)) : options;
       list.innerHTML = matches.slice(0, 30).map(([label, path], i) =>
-        `<div class="combo-option" role="option" id="combo-opt-${i}" data-path="${escapeHtml(path)}" title="${escapeHtml(path)}"><span class="combo-folder">${escapeHtml(label)}</span><small class="combo-file">${escapeHtml(path.split("/").pop())}</small></div>`
+        `<div class="combo-option" role="option" id="combo-opt-${i}" data-path="${escapeHtml(path)}" title="${escapeHtml(path)}"><span class="combo-path">${escapeHtml(path)}</span></div>`
       ).join("");
       list.classList.toggle("open", matches.length > 0);
       input.setAttribute("aria-expanded", matches.length > 0 ? "true" : "false");
