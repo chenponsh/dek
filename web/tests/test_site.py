@@ -458,6 +458,15 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn('event.key === "Enter"', script)
         self.assertIn("event.preventDefault()", script)
 
+    def test_choosing_a_path_keeps_the_candidate_number_and_tags_in_step(self):
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        css = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        for token in ("syncCandidateToPath", '".suggestion-chip"', "dataset.path", "candidate_markdown"):
+            self.assertIn(token, script)
+        # Both the dropdown and the suggestion buttons go through the same step.
+        self.assertEqual(script.count("syncCandidateToPath("), 3)
+
     def test_sidebar_tree_has_a_home_entry(self):
         build_site(self.vault, self.out)
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")

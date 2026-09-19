@@ -13,6 +13,33 @@
   const sidebar = document.querySelector(".sidebar");
   document.querySelector("#menu-toggle")?.addEventListener("click", () => sidebar?.classList.toggle("open"));
 
+  // Keep the candidate note's number and tags in step with the chosen path, the
+  // way the server builds them for a suggested one (only those three keys change).
+  function syncCandidateToPath(box, path) {
+    const parts = /^wiki\/(.+)\/([^/]+)\.md$/.exec(path);
+    if (!box || !parts) return;
+    const segments = parts[1].split("/");
+    const digits = (/-(\d+)$/.exec(parts[2]) || ["", ""])[1];
+    const number = digits.replace(/^0+/, "") || digits;
+    const tags = segments.map((_, index) => segments.slice(0, index + 1).join("/"));
+    const tagPages = tags.map(tag => `  - "[[${tag.split("/").pop()}]]"`);
+    const tagList = tags.map(tag => `  - "${tag}"`);
+    const text = box.value.replace(/\r\n/g, "\n");
+    const front = /^---\n([\s\S]*?)\n---(\n|$)/.exec(text);
+    if (!front) return;
+    const lines = front[1].split("\n");
+    const out = [];
+    for (let i = 0; i < lines.length;) {
+      if (/^no:/.test(lines[i])) { out.push(`no: ${number}`); i += 1; }
+      else if (/^(tag_pages|tags):/.test(lines[i])) {
+        out.push(lines[i].startsWith("tag_pages") ? "tag_pages:" : "tags:", ...(lines[i].startsWith("tag_pages") ? tagPages : tagList));
+        i += 1;
+        while (i < lines.length && /^\s+- /.test(lines[i])) i += 1;
+      } else { out.push(lines[i]); i += 1; }
+    }
+    box.value = "---\n" + out.join("\n") + "\n---" + front[2] + text.slice(front[0].length);
+  }
+
   document.querySelectorAll(".wiki-path-input").forEach(input => {
     const list = input.nextElementSibling;
     if (!list) return;
@@ -37,7 +64,8 @@
       input.setAttribute("aria-expanded", "false");
       setActive(-1);
     };
-    const choose = row => { input.value = row.dataset.path; close(); };
+    const candidateBox = () => input.closest("form")?.querySelector('[name="candidate_markdown"]');
+    const choose = row => { input.value = row.dataset.path; syncCandidateToPath(candidateBox(), input.value); close(); };
     const render = () => {
       // Matching is by folder name only; each row shows the full suggested path.
       const query = input.value.trim().toLowerCase();
@@ -73,6 +101,13 @@
       if (!option) return;
       event.preventDefault();
       choose(option);
+    });
+    // The system's suggested folders sit under the box as buttons.
+    input.closest("form")?.addEventListener("click", event => {
+      const chip = event.target.closest(".suggestion-chip");
+      if (!chip) return;
+      input.value = chip.dataset.path;
+      syncCandidateToPath(candidateBox(), chip.dataset.path);
     });
     // A rough with no wiki_target suggestion of its own prefills this blank;
     // clicking 批准 without picking a folder first used to 400 server-side

@@ -797,6 +797,63 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("| a | b |", shown)
         self.assertTrue(shown.endswith("建议路径：暂无"))
 
+    def add_filed_entries(self):
+        wiki = self.root / "repo" / "wiki"
+        for folder, entries in {
+            "05_药学研究/0507_溶出曲线": ["溶出曲线相似性因子f2如何计算，溶出介质如何选择，溶出度方法学验证", "溶出曲线研究取样点转速和溶出介质选择", "溶出度检查方法专属性线性准确度验证"],
+            "01_注册申报/0106_受理审查": ["受理审查提交申报资料光盘和档案盒", "受理审查不通过补充资料后重新提交", "受理审查时限和资料目录核对"],
+        }.items():
+            directory = wiki / folder; directory.mkdir(parents=True, exist_ok=True)
+            prefix = folder.split("/")[-1][:4]
+            for number, text in enumerate(entries, 1):
+                (directory / f"{prefix}-{number:04d}.md").write_text(
+                    f'---\nno: {number}\ndate: 2026-01-01\nquestion: "{text}"\nsource:\ntag_pages:\ntags:\n---\n\n{text}\n', encoding="utf-8")
+
+    def rough_about(self, question, answer, **frontmatter):
+        rough = ROUGH.replace("| Q | A | 2026-09-14 |", f"| {question} | {answer} | 2026-09-14 |")
+        for key, value in frontmatter.items():
+            rough = rough.replace(f"{key}:\n", f"{key}: {value}\n")
+        (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
+        return next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+
+    def test_the_item_page_suggests_a_path_and_uses_it_everywhere(self):
+        self.add_filed_entries()
+        item = self.rough_about("溶出曲线f2相似性因子怎么算", "比较溶出曲线时使用相似性因子f2，选择合适的溶出介质。")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        path = "wiki/05_药学研究/0507_溶出曲线/0507-0004.md"
+        # Prefilled in the Wiki path box ...
+        self.assertRegex(page, r'class="wiki-path-input"[^>]*value="' + path.replace(".", r"\.") + '"')
+        # ... shown as the 建议路径 line under the original text ...
+        self.assertIn("\n\n建议路径：" + path + "</pre>", page)
+        # ... and the candidate draft already carries its number and tags.
+        self.assertIn("no: 4", page)
+        self.assertIn("&quot;05_药学研究/0507_溶出曲线&quot;", page)
+
+    def test_alternatives_are_offered_as_buttons_that_do_not_submit(self):
+        self.add_filed_entries()
+        item = self.rough_about("溶出曲线f2相似性因子怎么算", "比较溶出曲线时使用相似性因子f2，选择合适的溶出介质。受理审查资料光盘也要提交。")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        block = page.split('<div class="path-suggestions">', 1)[1].split("</div>", 1)[0]
+        self.assertIn("系统建议", block)
+        self.assertIn('<button type="button" class="suggestion-chip" data-path="wiki/05_药学研究/0507_溶出曲线/0507-0004.md">05_药学研究/0507_溶出曲线</button>', block)
+        self.assertIn('data-path="wiki/01_注册申报/0106_受理审查/0106-0004.md"', block)
+        self.assertNotIn('type="submit"', block)
+
+    def test_a_target_the_draft_already_carries_wins_over_the_suggestion(self):
+        self.add_filed_entries()
+        item = self.rough_about("溶出曲线f2相似性因子怎么算", "溶出介质", wiki_target="wiki/01_注册申报/0106_受理审查/0106-0009.md")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertIn('value="wiki/01_注册申报/0106_受理审查/0106-0009.md"', page)
+        self.assertIn("建议路径：wiki/01_注册申报/0106_受理审查/0106-0009.md", page)
+        self.assertNotIn('<div class="path-suggestions">', page)
+
+    def test_nothing_is_prefilled_when_there_is_nothing_to_go_on(self):
+        item = self.rough_about("Q", "A")   # no filed entries at all
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertIn('class="wiki-path-input" autocomplete="off" value=""', page)
+        self.assertIn("建议路径：暂无", page)
+        self.assertNotIn('<div class="path-suggestions">', page)
+
     def test_content_without_frontmatter_is_shown_as_is(self):
         self.assertEqual(rough_display("just text\n"), "just text\n")
 
