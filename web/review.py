@@ -662,8 +662,8 @@ th.index,td.index{width:60px;min-width:60px;text-align:center}
 .list-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:18px}
 .pager,.page-size{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:.9rem}
 .page-size{margin-left:auto;color:var(--muted)}
-.page-size input[type=number]{width:4.5rem;box-sizing:border-box;padding:.3rem .5rem;text-align:center;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:inherit;line-height:inherit;appearance:textfield;-moz-appearance:textfield}
-.page-size input[type=number]:focus{outline:none;border-color:var(--accent)}
+.page-size input[type=number]{width:52px;box-sizing:border-box;padding:.3rem .5rem;text-align:center;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--muted);font:inherit;line-height:inherit;appearance:textfield;-moz-appearance:textfield}
+.page-size input[type=number]:focus{outline:none;border-color:var(--accent);background:var(--panel);color:var(--text)}
 .page-size input[type=number]::-webkit-inner-spin-button,.page-size input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .pager a,.pager .current,.pager .disabled{min-width:2rem;padding:.3rem .7rem;border:1px solid var(--line);border-radius:6px;text-align:center;text-decoration:none;color:var(--text)}
 .pager a:hover{background:var(--hover)}

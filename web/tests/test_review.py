@@ -588,8 +588,8 @@ class ReviewWorkflowTests(unittest.TestCase):
 
     def test_page_length_input_is_styled_and_wired_up(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
-        self.assertIn(".page-size input[type=number]{width:4.5rem;box-sizing:border-box;padding:.3rem .5rem;text-align:center;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:inherit;line-height:inherit;appearance:textfield;-moz-appearance:textfield}", page)
-        self.assertIn(".page-size input[type=number]:focus{outline:none;border-color:var(--accent)}", page)
+        self.assertIn(".page-size input[type=number]{width:52px;box-sizing:border-box;padding:.3rem .5rem;text-align:center;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--muted);font:inherit;line-height:inherit;appearance:textfield;-moz-appearance:textfield}", page)
+        self.assertIn(".page-size input[type=number]:focus{outline:none;border-color:var(--accent);background:var(--panel);color:var(--text)}", page)
         self.assertIn(".page-size input[type=number]::-webkit-inner-spin-button,.page-size input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}", page)
         self.assertNotIn(".page-size a", page)
 
