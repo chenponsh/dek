@@ -124,7 +124,6 @@ ACTION_STATUS = {"approve": "approved", "reject": "rejected"}
 ACTION_LABEL = {"approve": "批准发布", "return": "退回澄清", "reject": "拒绝"}
 PAGE_SIZE = 15
 MIN_PAGE_SIZE, MAX_PAGE_SIZE = 5, 100
-PAGE_SIZE_CHOICES = (10, 15, 20, 50, 100)
 
 
 def list_state_query(status: str = "", page: int = 1, query: str = "", size: int = PAGE_SIZE) -> str:
@@ -663,9 +662,9 @@ th.index,td.index{width:60px;min-width:60px;text-align:center}
 .list-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:18px}
 .pager,.page-size{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:.9rem}
 .page-size{margin-left:auto;color:var(--muted)}
-.page-size a,.page-size .current{min-width:2rem;padding:.3rem .6rem;border:1px solid var(--line);border-radius:6px;text-align:center;text-decoration:none;color:var(--text)}
-.page-size a:hover{background:var(--hover)}
-.page-size .current{background:var(--accent);border-color:var(--accent);color:#fff}
+.page-size input[type=number]{width:4.5rem;box-sizing:border-box;padding:.3rem .5rem;text-align:center;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:inherit;line-height:inherit;appearance:textfield;-moz-appearance:textfield}
+.page-size input[type=number]:focus{outline:none;border-color:var(--accent)}
+.page-size input[type=number]::-webkit-inner-spin-button,.page-size input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .pager a,.pager .current,.pager .disabled{min-width:2rem;padding:.3rem .7rem;border:1px solid var(--line);border-radius:6px;text-align:center;text-decoration:none;color:var(--text)}
 .pager a:hover{background:var(--hover)}
 .pager .current{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -855,6 +854,7 @@ class ReviewService:
         page = min(max(1, int(page)), pages)
         first = (page - 1) * size
         shown = items[first:first + size]
+        tab_size = html.escape(f"&page_size={size}") if size != PAGE_SIZE else ""
         filter_parts = []
         for key, label in (("", "全部"), ("pending", "待审核"), ("approved", "已批准待发布"), ("published", "已发布"), ("rejected", "已拒绝")):
             count = len(all_items) if not key else status_counts[key]
@@ -862,7 +862,7 @@ class ReviewService:
             filter_parts.append(
                 f'<a class="status-tab{" active" if key == status else ""}"'
                 + (' aria-current="page"' if key == status else '')
-                + f' href="{self.path_prefix}/?status={key}">{html.escape(label)}{badge}</a>'
+                + f' href="{self.path_prefix}/?status={key}{tab_size}">{html.escape(label)}{badge}</a>'
             )
         filters = "".join(filter_parts)
         position = html.escape(list_state_query(status, page, size=size))
@@ -895,11 +895,10 @@ class ReviewService:
         parts.append(f'<a href="{page_href(page + 1)}">下一页</a>' if page < pages else '<span class="disabled">下一页</span>')
         parts.append(f'<span class="page-info">第 {page}/{pages} 页</span>')
         pager = f'<nav class="pager" aria-label="分页">{"".join(parts)}</nav>'
-        choices = []
-        for choice in PAGE_SIZE_CHOICES:
-            if choice == size: choices.append(f'<span class="current" aria-current="true">{choice}</span>')
-            else: choices.append(f'<a href="{self.path_prefix}/{html.escape(list_state_query(status, 1, query, choice))}">{choice}</a>')
-        size_nav = f'<nav class="page-size" aria-label="每页条数">每页{"".join(choices)}条</nav>'
+        hidden = "".join(f'<input type="hidden" name="{name}" value="{html.escape(value)}">'
+                         for name, value in (("status", status), ("q", query)) if value)
+        size_nav = (f'<form method="get" action="{self.path_prefix}/" class="page-size">每页{hidden}'
+                    f'<input type="number" name="page_size" min="5" max="100" step="1" value="{size}" inputmode="numeric" aria-label="每页条数">条</form>')
         ingest_button = (
             f'<form method="post" action="{self.path_prefix}/trigger-ingest" class="ingest-trigger-form">'
             '<button type="submit">立即拉取最新源</button></form>'

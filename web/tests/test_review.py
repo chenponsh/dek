@@ -551,29 +551,47 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('<a href="/?page=2&amp;page_size=5">← 返回列表</a>', detail)
         self.assertIn('action="/decision?page=2&amp;page_size=5"', detail)
 
-    def test_users_can_pick_the_page_length_from_a_control_below_the_table(self):
+    def test_page_length_is_a_number_input_in_a_get_form_that_keeps_the_filter(self):
         self.make_pending_items(45)  # 47 items
-        page = self.service.render_list("opaque-session", status="pending", page=2, page_size=10).decode("utf-8")
-        nav = page.split('<nav class="page-size"', 1)[1].split("</nav>", 1)[0]
-        self.assertIn("每页", nav)
-        self.assertIn('<span class="current" aria-current="true">10</span>', nav)
-        # Changing the length keeps the filter and starts again from page 1.
-        self.assertIn('<a href="/?status=pending">15</a>', nav)
-        self.assertIn('<a href="/?status=pending&amp;page_size=20">20</a>', nav)
-        self.assertIn('<a href="/?status=pending&amp;page_size=50">50</a>', nav)
-        self.assertIn('<a href="/?status=pending&amp;page_size=100">100</a>', nav)
-        self.assertNotIn("page=2", nav)
+        page = self.service.render_list("opaque-session", status="pending", page=2, page_size=30).decode("utf-8")
+        form = page.split('<form method="get" action="/" class="page-size">', 1)[1].split("</form>", 1)[0]
+        self.assertIn("每页", form)
+        self.assertIn('<input type="number" name="page_size" min="5" max="100" step="1" value="30" inputmode="numeric" aria-label="每页条数">', form)
+        self.assertIn('<input type="hidden" name="status" value="pending">', form)
+        # Submitting starts again from page 1, so the page is never carried.
+        self.assertNotIn('name="page"', form)
+        self.assertNotIn("<a ", form)
+        self.assertTrue(form.rstrip().endswith("条"))
 
-    def test_paging_display_and_length_choice_are_shown_even_when_everything_fits_on_one_page(self):
-        # Two items, one page: the controls are still there, with both ends disabled.
+    def test_page_length_input_defaults_to_15_and_omits_an_empty_filter(self):
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        form = page.split('<form method="get" action="/" class="page-size">', 1)[1].split("</form>", 1)[0]
+        self.assertIn('value="15"', form)
+        self.assertNotIn('name="status"', form)
+
+    def test_page_length_input_stays_when_everything_fits_on_one_page(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertEqual(self.row_numbers(page), [1, 2])
-        pager = page.split('<nav class="pager"', 1)[1].split("</nav>", 1)[0]
-        self.assertIn('<span class="disabled">上一页</span>', pager)
-        self.assertIn('<span class="current" aria-current="page">1</span>', pager)
-        self.assertIn('<span class="disabled">下一页</span>', pager)
-        self.assertIn("第 1/1 页", pager)
-        self.assertIn('<span class="current" aria-current="true">15</span>', page.split('<nav class="page-size"', 1)[1])
+        self.assertIn('<form method="get" action="/" class="page-size">', page)
+        self.assertIn("第 1/1 页", page)
+
+    def test_status_tabs_carry_a_non_default_page_length_and_reset_the_page(self):
+        self.make_pending_items(45)
+        page = self.service.render_list("opaque-session", page=2, page_size=30).decode("utf-8")
+        tabs = page.split('<nav class="status-tabs"', 1)[1].split("</nav>", 1)[0]
+        self.assertIn('href="/?status=pending&amp;page_size=30">待审核', tabs)
+        self.assertIn('href="/?status=&amp;page_size=30">全部', tabs)
+        self.assertNotIn("page=2", tabs)
+        default_tabs = self.service.render_list("opaque-session", page=2).decode("utf-8").split('<nav class="status-tabs"', 1)[1].split("</nav>", 1)[0]
+        self.assertIn('href="/?status=pending">待审核', default_tabs)
+        self.assertNotIn("page_size", default_tabs)
+
+    def test_page_length_input_is_styled_and_wired_up(self):
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        self.assertIn(".page-size input[type=number]{width:4.5rem;box-sizing:border-box;padding:.3rem .5rem;text-align:center;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:inherit;line-height:inherit;appearance:textfield;-moz-appearance:textfield}", page)
+        self.assertIn(".page-size input[type=number]:focus{outline:none;border-color:var(--accent)}", page)
+        self.assertIn(".page-size input[type=number]::-webkit-inner-spin-button,.page-size input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}", page)
+        self.assertNotIn(".page-size a", page)
 
     def test_paging_display_is_shown_for_an_empty_result_too(self):
         page = self.service.render_list("opaque-session", status="published").decode("utf-8")

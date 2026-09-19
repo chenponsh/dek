@@ -61,6 +61,22 @@
     });
   });
 
+  // Rows-per-page box on the review list: clamp to 5-100 (empty means 15) and
+  // reload the list when the value changes.
+  document.querySelectorAll("form.page-size").forEach(form => {
+    const input = form.querySelector('input[name="page_size"]');
+    if (!input) return;
+    const normalise = () => {
+      const parsed = parseInt(input.value, 10);
+      input.value = Number.isFinite(parsed) ? Math.min(100, Math.max(5, parsed)) : 15;
+    };
+    form.addEventListener("submit", normalise);
+    input.addEventListener("change", () => {
+      normalise();
+      if (input.value !== input.defaultValue) form.requestSubmit();
+    });
+  });
+
   const SIDEBAR_KEY = "dek-sidebar-width";
   const DEFAULT_SIDEBAR_W = 280;
   const MIN_SIDEBAR_W = 200;

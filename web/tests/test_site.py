@@ -425,6 +425,14 @@ class SiteBuildTests(unittest.TestCase):
         self.assertNotIn("scrollbar-width", outside)
         self.assertNotIn("scrollbar-color", outside)
 
+    def test_page_length_input_submits_on_change_and_is_clamped(self):
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('document.querySelectorAll("form.page-size")', script)
+        self.assertIn('addEventListener("change"', script)
+        self.assertIn("Math.min(100, Math.max(5,", script)
+        self.assertIn("form.requestSubmit()", script)
+
     def test_sidebar_tree_has_a_home_entry(self):
         build_site(self.vault, self.out)
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")

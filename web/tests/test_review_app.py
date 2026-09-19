@@ -270,6 +270,16 @@ class ReviewAppTests(unittest.TestCase):
         _, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form, query="page_size=5&page=3")
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected&page=3&page_size=5")
 
+    def test_page_size_values_below_one_or_not_a_number_all_fall_back_to_the_default(self):
+        session = self.authenticate()
+        expected = {"": "15", "abc": "15", "0": "15", "-5": "15", "-0": "15", "1.5": "15", "99999999": "100",
+                    "1": "5", "4": "5", "5": "5", "37": "37", "100": "100", "101": "100", "5000": "100"}
+        for raw, want in expected.items():
+            with self.subTest(page_size=raw):
+                status, _, body = self.call("/", query="page_size=" + raw, cookie=session)
+                self.assertEqual(status, "200 OK")
+                self.assertIn(f'name="page_size" min="5" max="100" step="1" value="{want}"', body.decode("utf-8"))
+
     def test_decision_redirect_without_list_position_is_unchanged(self):
         session = self.authenticate()
         _, _, body = self.call("/", cookie=session)

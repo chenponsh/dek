@@ -69,7 +69,9 @@ def list_position(query: dict) -> tuple[str, int, int]:
     size = query.get("page_size", [""])[0]
     return ((status if status in STATUS_FILTERS else ""),
             (int(raw) if raw.isdigit() and len(raw) <= 6 else 1),
-            (int(size) if size.isdigit() and len(size) <= 6 else PAGE_SIZE))
+            # Any positive integer is clamped into range later; zero, negatives and
+            # anything that is not a whole number all mean "use the default".
+            (int(size) if re.fullmatch(r"[0-9]{1,12}", size) and int(size) > 0 else PAGE_SIZE))
 QUERY_LIMIT = 200
 ORIGIN_PATTERN = re.compile(r"(https?)://([A-Za-z0-9.\-]{1,253})(?::(\d{1,5}))?")
 
