@@ -142,6 +142,41 @@ def _short_source(source: str) -> str:
     return name.rsplit("/", 1)[-1] or source
 
 
+ROUGH_STATUS_LABELS = {"pending_review": "待审核", "promoted": "已上架", "rejected": "已拒绝"}
+
+
+def rough_info(content: str) -> tuple[str, str]:
+    """Split a rough draft into a human-readable "处理信息" block and its body.
+
+    The frontmatter keys stay English on disk (ingestion, audit and the publisher
+    read them by name); only the page translates them, and it leaves out the
+    machine-only ones (source_item_key, ingested_at duplicates, empty fields).
+    """
+    match = re.match(r"\A---\s*\n(.*?)\n---(?:[ \t]*\n|\Z)\n*", content, re.S)
+    if not match:
+        return "", content
+    try:
+        meta = _frontmatter(content)
+    except ReviewError:
+        return "", content
+    def text(value) -> str:
+        if isinstance(value, (list, tuple)):
+            return "、".join(str(item) for item in value if str(item).strip())
+        return "" if value is None else str(value).strip()
+    rows = []
+    for label, keys, always in (("发布日期", ("published_date",), False), ("入库日期", ("ingested_at", "date"), False),
+                                ("来源", ("source",), False), ("状态", ("status",), False),
+                                ("目标位置", ("wiki_target",), True), ("审核时间", ("reviewed_at",), False),
+                                ("推荐标签", ("recommended_tags",), False)):
+        value = next((text(meta.get(key)) for key in keys if text(meta.get(key))), "")
+        if label == "来源" and value: value = _short_source(value)
+        if label == "状态" and value: value = ROUGH_STATUS_LABELS.get(value, value)
+        if not value and always: value = "未指定"
+        if value: rows.append(f"<dt>{label}</dt><dd>{html.escape(value)}</dd>")
+    info = f'<details class="rough-info"><summary>处理信息</summary><dl>{"".join(rows)}</dl></details>' if rows else ""
+    return info, content[match.end():]
+
+
 def _content_meta(item) -> str:
     """One truncated line under the title; the full path and source stay in the tooltip."""
     full = [item.path]
@@ -660,6 +695,11 @@ th.index,td.index{width:60px;min-width:60px;text-align:center}
 .table-wrap td.content{max-width:0;min-width:240px}
 .content-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .list-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:18px}
+.rough-info{margin:.4rem 0 .8rem;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.rough-info summary{padding:.5rem .8rem;cursor:pointer;color:var(--muted);font-size:.9rem}
+.rough-info dl{margin:0;padding:.2rem .8rem .7rem;display:grid;grid-template-columns:6rem 1fr;gap:.3rem .8rem;font-size:.9rem}
+.rough-info dt{color:var(--muted)}
+.rough-info dd{margin:0;overflow-wrap:anywhere}
 .pager,.page-size{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:.9rem}
 .page-size{margin-left:auto;color:var(--muted)}
 .page-size input[type=number]{width:52px;box-sizing:border-box;padding:.3rem .5rem;text-align:center;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--muted);font:inherit;line-height:inherit;appearance:textfield;-moz-appearance:textfield}
@@ -825,7 +865,7 @@ class ReviewService:
     def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None, action_query: str = "", heading: str = "原文") -> str:
         candidates = wiki_folder_candidates(root) if root else []
         options_json = json.dumps([[label, path] for label, path in candidates], ensure_ascii=False)
-        return f"""<article><h2>{html.escape(heading)}</h2><pre>{html.escape(rough.content)}</pre>
+        return f"""<article><h2>{html.escape(heading)}</h2>{rough_info(rough.content)[0]}<pre>{html.escape(rough_info(rough.content)[1])}</pre>
 <form method="post" action="{self.path_prefix}/decision{html.escape(action_query)}"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
 <label>Wiki 路径（可搜索，按文件夹名过滤，选中后按需修改末尾编号）<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label><label>候选 Wiki Markdown（已预填草稿，可修改，批准发布时提交）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><div class="decision-actions"><button type="submit" name="action" value="approve">批准</button><button type="submit" name="action" value="reject" class="action-reject">拒绝</button></div></form></article>"""
 
@@ -949,13 +989,13 @@ class ReviewService:
             if decided:
                 form = (
                     '<div class="notice">注意：该条目已有处理决定，提交将新增一条决定并覆盖当前显示的状态，请谨慎确认后再提交。'
-                    '下方原始草稿预览里的 status 字段是创建时的初始值，不随审核结果更新，请以上方"状态"为准。</div>' + form
+                    '处理信息里的“状态”是创建时的初始值，不随审核结果更新，请以上方"状态"为准。</div>' + form
                 )
         else:
             form = '<p class="notice">该条目已不在待审核快照中，无法再提交决定。</p>'
         meta = " · ".join(part for part in (
             f"状态：{item.status_label}",
-            f"来源：{item.source}" if item.source else "",
+            f"来源：{_short_source(item.source)}" if item.source else "",
             f"发布日期：{item.published_date}" if item.published_date else "",
             f"目标：{item.wiki_target}" if item.wiki_target else "",
         ) if part)
