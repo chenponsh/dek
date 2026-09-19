@@ -141,6 +141,32 @@ class AppTests(unittest.TestCase):
         self.assertEqual((status,body),("200 OK",b"OK"))
         self.assertEqual(self.call("/../etc/passwd",cookie="dek_session="+self.token)[0],"404 Not Found")
 
+    def test_frontend_assets_come_from_installed_code_not_the_release(self):
+        # CSS/JS are code, not reviewed content: a deploy + restart must be
+        # enough to change them, without waiting on a content publish.
+        (self.app.root / "assets").mkdir()
+        for name in ("style.css", "app.js", "search.js"):
+            (self.app.root / "assets" / name).write_text("STALE RELEASE COPY", encoding="utf-8")
+        (self.app.root / "assets" / "search-index.json").write_text("{}", encoding="utf-8")
+        code_dir = Path(__file__).resolve().parents[1] / "assets"
+        cookie = "dek_session=" + self.token
+        for name, mime in (("style.css", "text/css"), ("app.js", "text/javascript"), ("search.js", "text/javascript")):
+            with self.subTest(asset=name):
+                status, headers, body = self.call("/assets/" + name, cookie=cookie)
+                self.assertEqual(status, "200 OK")
+                self.assertEqual(body, (code_dir / name).read_bytes())
+                self.assertEqual(headers["Cache-Control"], "no-store")
+                self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+                self.assertIn("script-src 'self'", headers["Content-Security-Policy"])
+        # Everything else under /assets/ is still release content.
+        status, _, body = self.call("/assets/search-index.json", cookie=cookie)
+        self.assertEqual((status, body), ("200 OK", b"{}"))
+
+    def test_frontend_assets_still_require_login(self):
+        status, headers, _ = self.call("/assets/style.css")
+        self.assertEqual(status, "302 Found")
+        self.assertNotIn("Content-Type", headers)
+
     def test_site_release_is_pinned_until_process_restart(self):
         base = Path(self.tmp.name)
         first = base / "release-first"; second = base / "release-second"

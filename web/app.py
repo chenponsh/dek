@@ -94,6 +94,10 @@ class _PinnedResponse(list):
     def __del__(self): self.close()
 
 
+FRONTEND_ASSET_DIR=Path(__file__).resolve().parent/"assets"
+FRONTEND_ASSETS=frozenset({"/assets/style.css","/assets/app.js","/assets/search.js"})
+
+
 class KnowledgeApp:
     def __init__(self, site_root: Path, gateway: DingTalkGateway, claim_secret: bytes, clock=time.time, generation_proof_secret: str = "", boot_nonce: str = "", release_sha256: str = ""):
         self.active_site = site_root if isinstance(site_root, ActiveSite) else None
@@ -178,6 +182,11 @@ class KnowledgeApp:
         relative="index.html" if path=="/" else path.lstrip("/")
         root=root.resolve()
         target=(root/relative).resolve()
+        if path in FRONTEND_ASSETS:
+            # CSS/JS are installed code, not reviewed content: serve them from
+            # the deployed package so a deploy + restart updates them without
+            # waiting for a content release to be built and activated.
+            root=FRONTEND_ASSET_DIR; target=FRONTEND_ASSET_DIR/path.rsplit("/",1)[1]
         if root not in target.parents or not target.is_file(): return self._response(start,"404 Not Found",b"Not found")
         body=target.read_bytes(); content=mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         cache_control="no-store" if target.suffix.lower() in {".html", ".js", ".css"} else "private, max-age=60"

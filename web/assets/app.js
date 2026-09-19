@@ -8,6 +8,8 @@
     localStorage.setItem("dek-theme", root.dataset.theme);
   });
 
+  if (document.querySelector(".recent-filters")) document.querySelector("main.document")?.classList.add("home-page");
+
   const sidebar = document.querySelector(".sidebar");
   document.querySelector("#menu-toggle")?.addEventListener("click", () => sidebar?.classList.toggle("open"));
 

@@ -371,6 +371,14 @@ class SiteBuildTests(unittest.TestCase):
         style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
         self.assertIn(".document.home-page{max-width:1440px;margin-right:0}", style)
 
+    def test_script_marks_the_home_page_so_widening_works_on_already_built_html(self):
+        # Frontend assets are served from installed code and update on deploy,
+        # but already-published HTML only changes with the next content release.
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('document.querySelector(".recent-filters")', script)
+        self.assertIn('classList.add("home-page")', script)
+
     def test_sidebar_tree_has_a_home_entry(self):
         build_site(self.vault, self.out)
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
