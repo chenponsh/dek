@@ -59,7 +59,7 @@ def parse_table(note: str) -> list[Row]:
             continue
         cells = re.split(r"(?<!\\)\|", line)[1:-1]
         cells = [c.strip().replace(r"\|", "|") for c in cells]
-        if len(cells) != 3 or cells[0] in {"问题", "---"}:
+        if len(cells) != 3 or cells[0] == "问题" or all(re.fullmatch(r":?-+:?", cell) for cell in cells):
             continue
         rows.append(Row(*cells))
     return rows
@@ -79,17 +79,24 @@ def last_updated(note: str) -> str:
     return match.group(1)
 
 
+# The separator row may be padded or aligned by an editor (e.g. Obsidian), so
+# match its shape rather than the literal "| --- | --- | --- |".
+CONTENT_TABLE_HEADER = re.compile(
+    r"^\| 问题 \| 解答 \| 发布日期 \|[ \t]*\n\|(?:[ \t]*:?-+:?[ \t]*\|){3}[ \t]*\n", re.MULTILINE)
+
+
 def insert_rows(note: str, rows: list[Row]) -> str:
     if not rows:
         return note
-    header = "| 问题 | 解答 | 发布日期 |\n| --- | --- | --- |\n"
-    if note.count(header) != 1:
+    headers = list(CONTENT_TABLE_HEADER.finditer(note))
+    if len(headers) != 1:
         raise SafetyStop("source note does not have one canonical content table")
     rendered = "".join(
         f"| {markdown_cell(r.question)} | {markdown_cell(r.answer)} | {r.date[:10]} |\n"
         for r in rows
     )
-    return note.replace(header, header + rendered, 1)
+    end = headers[0].end()
+    return note[:end] + rendered + note[end:]
 
 
 def compare_rows(local: list[Row], remote: list[Row]) -> tuple[list[Row], list[dict[str, str]]]:

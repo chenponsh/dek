@@ -285,6 +285,20 @@ class CoreTests(unittest.TestCase):
         self.assertIn("last_updated: 2026-03-04", changed)
         self.assertIn("---\n\n## 内容", changed)
 
+    def test_insert_rows_accepts_a_reformatted_separator_row(self):
+        # Obsidian pads the separator row out to the column width; the table is
+        # still the one canonical content table.
+        note = NOTE.replace("| --- | --- | --- |", "| " + "-" * 40 + " | " + "-" * 60 + " | :" + "-" * 8 + " |")
+        rendered = insert_rows(note, [Row("新问题", "新解答", "2026-02-03")])
+        lines = rendered.splitlines()
+        separator = next(i for i, line in enumerate(lines) if line.startswith("| ----"))
+        self.assertEqual(lines[separator + 1], "| 新问题 | 新解答 | 2026-02-03 |")
+        self.assertEqual(len(parse_table(rendered)), 2)
+
+    def test_insert_rows_still_stops_on_two_content_tables(self):
+        with self.assertRaises(SafetyStop):
+            insert_rows(NOTE + "\n" + NOTE.split("## 内容", 1)[1], [Row("q", "a", "2026-01-01")])
+
     def test_noncanonical_table_stops(self):
         with self.assertRaises(SafetyStop):
             insert_rows("## 内容\n", [Row("q", "a", "2026-01-01")])
