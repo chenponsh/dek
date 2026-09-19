@@ -15,7 +15,7 @@ from web.review import (
     ReviewError,
     ReviewService,
     candidate_draft,
-    rough_info,
+    rough_display,
     default_wiki_path,
     rough_binding,
     sanitize_nickname,
@@ -731,47 +731,43 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.decide(action="reject")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         page = self.service.render_item("opaque-session", item.identity, unlocked=True).decode("utf-8")
-        self.assertIn("<dt>状态</dt><dd>待审核</dd>", page)
-        self.assertIn("处理信息里的“状态”是创建时的初始值，不随审核结果更新", page)
+        self.assertIn("状态：待审核", page)
+        self.assertIn("原文里的“状态”是创建时的初始值，不随审核结果更新", page)
 
-    def test_raw_text_folds_the_draft_metadata_into_a_chinese_processing_info_block(self):
+    def test_raw_text_ends_with_the_draft_metadata_as_plain_chinese_lines(self):
         rough = ROUGH.replace("date: 2026-09-14\n", "date: 2026-09-19\npublished_date: 2026-03-16\ningested_at: 2026-09-19\n") \
                      .replace('source: "[[source/example]]"', 'source: "[[source/CDE/CDE_共性问题-受理共性问题]]"')
         (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
-        block = page.split('<details class="rough-info" open><summary>处理信息</summary><dl>', 1)[1].split("</dl></details>", 1)[0]
-        # The Q&A table already has its own 发布日期 column, so it is not repeated here.
-        self.assertEqual(re.findall(r"<dt>([^<]+)</dt>", block), ["入库日期", "来源", "状态", "目标位置"])
-        self.assertNotIn("发布日期", block)
-        self.assertIn("<dt>入库日期</dt><dd>2026-09-19</dd>", block)
-        self.assertIn("<dt>来源</dt><dd>CDE_共性问题-受理共性问题</dd>", block)
-        self.assertIn("<dt>状态</dt><dd>待审核</dd>", block)
-        self.assertIn("<dt>目标位置</dt><dd>未指定</dd>", block)
-        # Machine-only fields never reach the page, and the raw text starts at the Q&A.
+        pre = page.split("<article><h2>原文</h2><pre>", 1)[1].split("</pre>", 1)[0]
+        # The text first, then the fields as plain "字段：值" lines in the same box - no box of their own.
+        self.assertTrue(pre.startswith("## 新增问答"))
+        self.assertTrue(pre.endswith("| Q | A | 2026-09-14 |\n\n入库日期：2026-09-19\n来源：CDE_共性问题-受理共性问题\n状态：待审核\n目标位置：未指定"), pre)
+        # 发布日期 is not repeated: the Q&A table has its own column.
+        self.assertNotIn("发布日期：", pre)
         for hidden in ("source_item_key", "sha256:item-version", "recommended_tags", "reviewed_at", "ingested_at", "published_date", "status: pending_review"):
             self.assertNotIn(hidden, page.split("<form", 1)[0], hidden)
-        # The text comes first and the processing info follows it.
-        self.assertIn("<pre>## 新增问答", page)
-        self.assertLess(page.index("<pre>## 新增问答"), page.index('<details class="rough-info"'))
+        for box in ("<details", "rough-info", "<dl>", "处理信息"):
+            self.assertNotIn(box, page)
 
-    def test_processing_info_shows_a_chosen_target_and_review_time_and_skips_empty_fields(self):
+    def test_display_lists_a_chosen_target_and_review_time_and_skips_empty_fields(self):
         rough = ROUGH.replace("wiki_target:\n", "wiki_target: wiki/01_Test/01-0001.md\n").replace("reviewed_at:\n", "reviewed_at: 2026-09-20\n")
-        info, body = rough_info(rough)
-        self.assertIn("<dt>目标位置</dt><dd>wiki/01_Test/01-0001.md</dd>", info)
-        self.assertIn("<dt>审核时间</dt><dd>2026-09-20</dd>", info)
-        self.assertNotIn("<dt>推荐标签</dt>", info)
-        self.assertTrue(body.startswith("## 新增问答"))
+        shown = rough_display(rough)
+        self.assertIn("目标位置：wiki/01_Test/01-0001.md", shown)
+        self.assertIn("审核时间：2026-09-20", shown)
+        self.assertNotIn("推荐标签", shown)
+        self.assertTrue(shown.startswith("## 新增问答"))
 
-    def test_processing_info_translates_status_values_and_lists_tags(self):
-        info, _ = rough_info(ROUGH.replace("status: pending_review", "status: promoted").replace("recommended_tags:\n", "recommended_tags:\n  - 注册\n  - 变更\n"))
-        self.assertIn("<dt>状态</dt><dd>已上架</dd>", info)
-        self.assertIn("<dt>推荐标签</dt><dd>注册、变更</dd>", info)
+    def test_display_translates_status_values_and_lists_tags(self):
+        shown = rough_display(ROUGH.replace("status: pending_review", "status: promoted").replace("recommended_tags:\n", "recommended_tags:\n  - 注册\n  - 变更\n"))
+        self.assertIn("状态：已上架", shown)
+        self.assertIn("推荐标签：注册、变更", shown)
         # An unknown value is shown as it is rather than hidden.
-        self.assertIn("<dt>状态</dt><dd>weird</dd>", rough_info(ROUGH.replace("status: pending_review", "status: weird"))[0])
+        self.assertIn("状态：weird", rough_display(ROUGH.replace("status: pending_review", "status: weird")))
 
     def test_content_without_frontmatter_is_shown_as_is(self):
-        self.assertEqual(rough_info("just text\n"), ("", "just text\n"))
+        self.assertEqual(rough_display("just text\n"), "just text\n")
 
     def test_detail_of_a_pending_item_has_no_stale_status_notice(self):
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
