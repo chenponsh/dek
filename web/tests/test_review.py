@@ -461,8 +461,11 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn(".col-index{width:60px}", page)
         # Index, status, reviewer and time columns fit their content on one line;
         # the 内容 column takes whatever is left.
-        self.assertIn(".col-status,.col-reviewer,.col-time{width:1%}", page)
-        self.assertIn(".table-wrap th,.table-wrap td.status,.table-wrap td.reviewer,.table-wrap td.time{white-space:nowrap}", page)
+        # 状态 / 审核人 / 处理时间 have room for their usual text and wrap when squeezed, so nothing spills into the next column
+        self.assertIn(".col-status{width:7.5rem}.col-reviewer{width:6rem}.col-time{width:9.5rem}", page)
+        self.assertIn(".table-wrap th,.table-wrap td.status,.table-wrap td.reviewer,.table-wrap td.time{white-space:normal;overflow-wrap:anywhere}", page)
+        self.assertNotIn(".table-wrap td.time{white-space:nowrap}", page)
+        self.assertIn(".table-wrap table{display:table;width:100%;min-width:600px}", page)   # narrow screens scroll it sideways
         self.assertNotIn(".col-task{", page)
         # Below its minimum width the table scrolls instead of squeezing 内容 to nothing.
         self.assertIn(".table-wrap td.content{max-width:0;min-width:240px}", page)

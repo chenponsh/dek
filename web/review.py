@@ -731,10 +731,10 @@ STYLE = """<style>
 .status-tab.active{background:var(--accent);color:#fff}
 .filter-count{position:absolute;top:-.3rem;right:-.3rem;display:inline-block;min-width:1.3em;padding:0 .3rem;border-radius:999px;background:var(--bg);color:var(--text);font-size:.68em;line-height:1.4;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.18)}
 .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
-.table-wrap table{display:table;width:100%}
+.table-wrap table{display:table;width:100%;min-width:600px}   /* a narrow screen scrolls the table sideways instead of crushing its columns */
 .col-index{width:60px}
-.col-status,.col-reviewer,.col-time{width:1%}
-.table-wrap th,.table-wrap td.status,.table-wrap td.reviewer,.table-wrap td.time{white-space:nowrap}
+.col-status{width:7.5rem}.col-reviewer{width:6rem}.col-time{width:9.5rem}
+.table-wrap th,.table-wrap td.status,.table-wrap td.reviewer,.table-wrap td.time{white-space:normal;overflow-wrap:anywhere}
 th.index,td.index{width:60px;min-width:60px;text-align:center}
 .table-wrap td.content{max-width:0;min-width:240px}
 .content-meta,.content-title{white-space:normal;overflow-wrap:anywhere}.content-title{display:block}
