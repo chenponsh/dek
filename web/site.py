@@ -262,10 +262,6 @@ def _toc(rendered: str) -> str:
     return "".join(f'<a class="toc-{level}" href="#{anchor}">{re.sub("<.*?>", "", text)}</a>' for level, anchor, text in headings)
 
 
-SUBCATEGORY_SHARE = 0.25   # a Wiki category this large (of the Wiki) shows its biggest sub-folders on the home page
-SUBCATEGORY_LIMIT = 3
-
-
 def _first_document_href(node: dict) -> str:
     """The link a folder card points at: its first document."""
     target = node
@@ -442,16 +438,9 @@ def build_site(vault: Path, output: Path) -> dict:
     for root_node, label in zip(tree, ("Wiki · 正式知识", "Source · 来源材料")):
         cards = []
         for child in root_node["children"]:
-            subs = ""
-            # A category holding a large share of its section gets its biggest
-            # sub-folders on the card, so its inner structure is visible.
-            if root_node["name"] == "wiki" and child["type"] == "directory" and root_node["count"] and child["count"] / root_node["count"] >= SUBCATEGORY_SHARE:
-                biggest = sorted((c for c in child["children"] if c["type"] == "directory"), key=lambda c: (-c["count"], c["path"]))[:SUBCATEGORY_LIMIT]
-                subs = "".join(f'<a class="card-sub" href="{_first_document_href(c)}" title="{html.escape(c["name"], quote=True)}"><span class="card-sub-name">{html.escape(c["name"])}</span>{_count_html(c["path"], c["count"], "card-sub-count")}</a>' for c in biggest)
-                subs = f'<div class="card-subs">{subs}</div>' if subs else ""
             cards.append(
-                f'<div class="folder-card{" has-subs" if subs else ""}"><a class="folder-card-link" href="{_first_document_href(child)}" title="{html.escape(child["name"], quote=True)}">'
-                f'<strong>{html.escape(child["name"])}</strong>{_count_html(child["path"], child.get("count", 1), "card-count")}</a>{subs}</div>')
+                f'<div class="folder-card"><a class="folder-card-link" href="{_first_document_href(child)}" title="{html.escape(child["name"], quote=True)}">'
+                f'<strong>{html.escape(child["name"])}</strong>{_count_html(child["path"], child.get("count", 1), "card-count")}</a></div>')
         home_sections.append(f'<section class="home-section"><h2>{label}{_count_html(root_node["path"], root_node["count"], "section-count", section=True)}</h2><div class="folder-grid">{"".join(cards)}</div><p class="section-empty" hidden>该时段内暂无新增内容</p></section>')
     # The filter controls stay near the top (so reviewers don't have to scroll
     # past every folder card to find them again), but the actual result list

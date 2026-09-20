@@ -330,24 +330,18 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn("countInRange", script)
         self.assertIn('id="recent-summary"', homepage)
 
-    def test_a_category_holding_most_of_the_wiki_shows_its_three_biggest_sub_folders(self):
+    def test_a_large_category_is_still_a_single_plain_card(self):
         self.add_big_category()
         build_site(self.vault, self.out)
         homepage = (self.out / "index.html").read_text(encoding="utf-8")
-        card = homepage.split('<div class="folder-card has-subs">', 1)[1].split('<div class="folder-card', 1)[0]
-        names = re.findall(r'<span class="card-sub-name">([^<]+)</span>', card)
-        self.assertEqual(names, ["1619_生产场地变更", "1620_变更资料要求", "1621_过渡期"])
-        self.assertIn('data-count-path="wiki/16_注册变更/1619_生产场地变更" data-total="4"', card)
-        main_link = card.split('<a class="folder-card-link"', 1)[1].split("</a>", 1)[0]
-        self.assertNotIn("<a ", main_link)   # the sub-folder links sit beside the card link, not inside it
-        self.assertEqual(homepage.count("has-subs"), 1)   # small categories stay plain cards
-
-    def test_sub_folders_are_only_listed_on_wiki_cards(self):
-        for folder in ("甲", "乙", "丙"):
-            (self.vault / "source" / "大来源" / folder).mkdir(parents=True)
-            (self.vault / "source" / "大来源" / folder / "x.md").write_text("---\nsource_url: https://example.com\n---\n\n正文。", encoding="utf-8")
-        build_site(self.vault, self.out)
-        self.assertNotIn("has-subs", (self.out / "index.html").read_text(encoding="utf-8"))
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        for gone in ("has-subs", "card-sub", "card-subs"):
+            self.assertNotIn(gone, homepage)
+            self.assertNotIn(gone, script)
+        cards = re.findall(r'<div class="folder-card">(.*?)</div>', homepage, re.S)
+        big = next(card for card in cards if "16_注册变更" in card)
+        self.assertEqual(big.count("<a "), 1)              # one link, no nested sub-folder links
+        self.assertIn('data-total="11"', big)             # its count is the whole category
 
     def test_every_card_link_has_the_full_name_as_a_hover_title(self):
         build_site(self.vault, self.out)

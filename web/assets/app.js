@@ -375,10 +375,9 @@
         const shown = filtered ? DEKSearch.countInRange(recentDocs, element.dataset.countPath, start, end) : total;
         const isSection = element.classList.contains("section-count");
         element.textContent = isSection ? String(shown) : (filtered ? `${shown} 篇` : `共 ${total} 篇`);
-        const box = element.closest(".folder-card, .card-sub");
+        const box = element.closest(".folder-card");
         if (box) box.hidden = filtered && shown === 0;
       });
-      document.querySelectorAll(".card-subs").forEach(list => { list.hidden = !list.querySelector(".card-sub:not([hidden])"); });
       document.querySelectorAll(".home-section").forEach(section => {
         const anyCard = Boolean(section.querySelector(".folder-card:not([hidden])"));
         const grid = section.querySelector(".folder-grid");
