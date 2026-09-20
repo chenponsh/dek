@@ -81,6 +81,12 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn("培训材料", page)
         self.assertIn("2018-06-14", page)
         self.assertNotIn("没有编号不应出现", page)
+        # 项目 names the entry by its file, 问题 carries the question: the two columns never repeat each other
+        rows = re.findall(r"<tr><td><a href=\"[^\"]+\">([^<]*)</a></td><td>([^<]*)</td>", page)
+        self.assertIn(("条目2", "另一个问题"), rows)
+        self.assertTrue(rows)
+        for project, question in rows:
+            self.assertNotEqual(project, question)
 
     def test_dataview_block_with_a_different_query_shape_is_left_untouched(self):
         (self.vault / "source" / "Index.md").write_text(

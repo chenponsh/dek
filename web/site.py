@@ -234,7 +234,9 @@ def _dataview_overview_table(doc: dict, from_path: str, by_path: dict[str, dict]
         raw_date = item["meta"].get("date")
         date_cell = raw_date.strftime("%Y-%m-%d") if isinstance(raw_date, (date, datetime)) else html.escape(str(raw_date or ""))
         body_rows.append(
-            f'<tr><td><a href="{href}">{html.escape(item["title"])}</a></td>'
+            # 项目 is the entry's file name (0101-0001), as Obsidian's file.link shows it: the
+            # entry's title is its question, which the 问题 column already carries.
+            f'<tr><td><a href="{href}">{html.escape(PurePosixPath(item["path"]).stem)}</a></td>'
             f'<td>{question}</td><td>{source_cell}</td><td>{date_cell}</td></tr>'
         )
     return (
