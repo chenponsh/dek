@@ -36,10 +36,10 @@ USER_AGENT = (
 )
 
 
-def http_get(url: str, timeout: int = 45, verify: bool = True) -> str:
-    """GET a page as text. Government sites here are reachable directly and
-    some refuse the shared proxy, so go direct first and only then fall back
-    to the environment's proxy."""
+def _fetch(url: str, timeout: int, verify: bool, max_bytes: int) -> tuple[bytes, str | None]:
+    """GET a resource. Government sites here are reachable directly and some
+    refuse the shared proxy, so go direct first (one retry) and only then fall
+    back to the environment's proxy."""
     headers = {"User-Agent": USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9"}
     context = ssl.create_default_context()
     if not verify:
@@ -55,11 +55,22 @@ def http_get(url: str, timeout: int = 45, verify: bool = True) -> str:
             with opener.open(urllib.request.Request(url, headers=headers), timeout=timeout) as response:
                 if response.status != 200:
                     raise SafetyStop(f"HTTP {response.status} from {url}")
-                charset = response.headers.get_content_charset() or "utf-8"
-                return response.read().decode(charset, "replace")
+                data = response.read(max_bytes + 1)
+                if len(data) > max_bytes:
+                    raise SafetyStop(f"{url} is larger than {max_bytes} bytes")
+                return data, response.headers.get_content_charset()
         except Exception as exc:  # try the next route
             last = exc
     raise SafetyStop(f"cannot fetch {url}: {last}")
+
+
+def http_get_bytes(url: str, timeout: int = 45, verify: bool = True, max_bytes: int = 32 * 1024 * 1024) -> bytes:
+    return _fetch(url, timeout, verify, max_bytes)[0]
+
+
+def http_get(url: str, timeout: int = 45, verify: bool = True) -> str:
+    data, charset = _fetch(url, timeout, verify, 32 * 1024 * 1024)
+    return data.decode(charset or "utf-8", "replace")
 
 
 def get_json(url: str, timeout: int = 45) -> Any:

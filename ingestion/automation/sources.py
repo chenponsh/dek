@@ -13,6 +13,7 @@ note and `since` is the note's `last_updated` (YYYY-MM-DD).
 from __future__ import annotations
 
 import html
+import io
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -22,7 +23,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .core import Row, SafetyStop, markdown_cell, normalize
-from .fetchers import fetch_shanghai, get_json, http_get
+from .fetchers import fetch_shanghai, get_json, http_get, http_get_bytes
 
 def html_to_text(fragment: str) -> str:
     """Article HTML -> plain text with one line per paragraph."""
@@ -363,6 +364,70 @@ def fetch_beijing(
     return rows, meta
 
 
+# ------------------------------------------------------------------ PDF attachments
+
+# The journal PDFs the CPC posts encode "." "-" and footnote marks as private-use glyphs.
+_PDF_GLYPHS = {"\ue010": ".", "\ue011": "-", "\ue012": ""}
+# Full-width letters, digits and a few symbols become ASCII; Chinese punctuation stays full-width.
+_PDF_FOLD = {**{0xFF10 + i: 0x30 + i for i in range(10)}, **{0xFF21 + i: 0x41 + i for i in range(26)},
+             **{0xFF41 + i: 0x61 + i for i in range(26)},
+             0xFF20: "@", 0xFF0E: ".", 0xFF0D: "-", 0xFF0F: "/", 0xFF1C: "<", 0xFF1E: ">", 0xFF05: "%", 0xFF0B: "+", 0xFF1D: "=", 0x2212: "-"}
+_PDF_SENTENCE_END = "。！？；：”）)"
+_CJK = "\u4e00-\u9fff，。；：、（）《》“”"
+MAX_PDF_BYTES = 15 * 1024 * 1024
+MAX_PDF_PAGES = 60
+MAX_PDF_CHARS = 60000
+
+
+def clean_pdf_text(pages: list[str]) -> str:
+    """Page texts -> readable paragraphs: full-width forms folded, glyph
+    substitutes mapped, fragments re-joined into paragraphs, spacing inside
+    Chinese text removed, English-only paragraphs and the reference list dropped."""
+    text = "\n".join(pages)
+    text = "".join(_PDF_GLYPHS.get(c, c) for c in text)
+    text = re.sub("[\ue000-\uf8ff]", "", text)
+    text = text.translate(_PDF_FOLD).replace("\u3000", " ")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+    paragraphs: list[str] = []
+    for line in (line for line in lines if line):
+        if not paragraphs:
+            paragraphs.append(line)
+            continue
+        previous = paragraphs[-1]
+        starts_section = bool(re.fullmatch(r"\d{1,2}(?:\.\d{1,2})*", line) or re.match(r"(?:摘要|关键词|参考文献|引言)[：:]?", line))
+        if previous.endswith(tuple(_PDF_SENTENCE_END)) or starts_section:
+            paragraphs.append(line)
+        else:
+            separator = " " if re.search(r"[A-Za-z0-9,.]$", previous) and re.match(r"[A-Za-z0-9(]", line) else ""
+            paragraphs[-1] = previous + separator + line
+    kept: list[str] = []
+    for paragraph in paragraphs:
+        if re.match(r"参考文献[：:]?", paragraph):
+            break
+        paragraph = re.sub(rf"(?<=[{_CJK}]) (?=[{_CJK}])", "", paragraph)
+        cjk = sum("\u4e00" <= c <= "\u9fff" for c in paragraph)
+        if len(paragraph) > 80 and cjk / len(paragraph) < 0.05:
+            continue  # English abstract / reference text: no spaces survive in these PDFs
+        kept.append(paragraph)
+    return "\n".join(kept)
+
+
+def pdf_text(data: bytes) -> str:
+    """Text of a PDF, or "" when it cannot be read (no library, scanned images,
+    encrypted, damaged). Never raises."""
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(data))
+        if reader.is_encrypted or len(reader.pages) > MAX_PDF_PAGES:
+            return ""
+        text = clean_pdf_text([page.extract_text() or "" for page in reader.pages])
+    except Exception:
+        return ""
+    if sum("\u4e00" <= c <= "\u9fff" for c in text) < 50:
+        return ""  # scanned or unreadable: better no text than garbage
+    return text[:MAX_PDF_CHARS]
+
+
 # ------------------------------------------------------------ 国家药典委员会 (one note per article)
 
 @dataclass(frozen=True)
@@ -387,13 +452,56 @@ _CPC_SKIP = re.compile(r"培训|会议|预算|经销|出版|招标|采购")
 CPC_NO_BODY = "原文为外部链接，当前国家药典委员会接口未提供正文；NMPA 等外部页面请点击外部链接查看原文。"
 
 
+CPC_DOWNLOAD = "https://www.chp.org.cn/three/anon/user/download?id={id}&token="
+
+
+def _with_attachments(
+    body: str, data: dict[str, Any], fetch_bytes: Callable[[str], bytes],
+) -> tuple[str, list[dict[str, str]]]:
+    """Body + attachment list; the text of each PDF attachment follows its
+    name, as in the notes already in the library. Returns what could not be
+    read so the report can say so."""
+    listed: list[str] = []
+    texts: list[str] = []
+    problems: list[dict[str, str]] = []
+    for key in ("annexFileList", "annexPicList", "annexMediaList"):
+        for item in data.get(key) or []:
+            name = str(item.get("name") if isinstance(item, dict) else str(item).replace("\\", "/").rsplit("/", 1)[-1] or "")
+            if not name:
+                continue
+            attachment_id = str(item.get("id") or "") if isinstance(item, dict) else ""
+            if attachment_id:
+                url = CPC_DOWNLOAD.format(id=attachment_id)
+                listed.append(f"- [{name}]({url})")
+            else:
+                listed.append(f"- {name}")
+            if not (attachment_id and name.lower().endswith(".pdf")):
+                continue
+            try:
+                text = pdf_text(fetch_bytes(url))
+            except Exception as exc:
+                problems.append({"attachment": name, "reason": f"下载失败: {exc}"})
+                continue
+            if text:
+                texts.append(f"附件《{re.sub(r'[.]pdf$', '', name, flags=re.I)}》文本：\n{text}")
+            else:
+                problems.append({"attachment": name, "reason": "PDF 无法提取文字（扫描件、加密或读取库不可用），草稿只含附件名"})
+    parts = [body] if body else []
+    if listed:
+        parts.append("附件：\n" + "\n".join(listed))
+    parts.extend(texts)
+    return "\n".join(parts), problems
+
+
 def fetch_cpc_notes(
     cpc: dict[str, Any], articles: list[Any], fetch_json: Callable[[str], Any] = get_json,
+    fetch_bytes: Callable[[str], bytes] = http_get_bytes,
 ) -> tuple[list[NewNote], dict[str, Any]]:
     """Detail pages of the new CPC articles -> excerpt notes."""
     notes: list[NewNote] = []
     skipped: list[dict[str, str]] = []
     filtered: list[dict[str, str]] = []
+    unreadable: list[dict[str, str]] = []
     for article in articles:
         if _CPC_SKIP.search(article.title) or _NOT_DRUG.search(article.title):
             filtered.append({"title": article.title, "reason": "培训/会议/非药品主题"})
@@ -410,14 +518,9 @@ def fetch_cpc_notes(
         body = "" if body.strip() == "None" else body
         external = str(data.get("toLinkIp") or "") if str(data.get("toLink")) == "1" else ""
         external = "" if external == "None" else external
-        attachments = []
-        for key in ("annexFileList", "annexPicList", "annexMediaList"):
-            for item in data.get(key) or []:
-                name = item.get("name") if isinstance(item, dict) else str(item).replace("\\", "/").rsplit("/", 1)[-1]
-                if name:
-                    attachments.append(str(name))
-        if attachments:
-            body = (body + "\n" if body else "") + "附件：\n" + "\n".join(f"- {name}" for name in attachments)
+        body, attachment_meta = _with_attachments(body, data, fetch_bytes)
+        for entry in attachment_meta:
+            unreadable.append({"title": article.title, **entry})
         if not body:
             body = CPC_NO_BODY
         notes.append(NewNote(
@@ -429,6 +532,8 @@ def fetch_cpc_notes(
         meta["skipped_items"] = skipped
     if filtered:
         meta["filtered_out"] = filtered
+    if unreadable:
+        meta["attachments_without_text"] = unreadable
     return notes, meta
 
 

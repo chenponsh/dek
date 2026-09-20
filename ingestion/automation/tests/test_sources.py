@@ -199,8 +199,9 @@ class CpcNewNotesTests(unittest.TestCase):
     def test_attachment_only_article_lists_the_files(self):
         from ingestion.automation.fetchers import CPCArticle
         payload = {"result": {"news": {"newsContent": None, "toLink": None, "annexFileList": [{"id": "1", "name": "解读.pdf"}]}}}
-        notes, _ = sources.fetch_cpc_notes(self.CPC, [CPCArticle("n1", "药典执行解读", "2026-06-01", "2026-06-01_药典执行解读.md")], lambda url: payload)
-        self.assertEqual(notes[0].body, "附件：\n- 解读.pdf")
+        notes, meta = sources.fetch_cpc_notes(self.CPC, [CPCArticle("n1", "药典执行解读", "2026-06-01", "2026-06-01_药典执行解读.md")], lambda url: payload, fetch_bytes=lambda url: b"not a pdf")
+        self.assertEqual(notes[0].body, "附件：\n- [解读.pdf](https://www.chp.org.cn/three/anon/user/download?id=1&token=)")
+        self.assertEqual(meta["attachments_without_text"][0]["attachment"], "解读.pdf")
         self.assertEqual(notes[0].source_url, "https://www.chp.org.cn/#/newsDetail?id=n1")
 
     def test_external_link_without_body_gets_the_standard_placeholder(self):
@@ -450,6 +451,76 @@ class JiangsuArticlesTests(unittest.TestCase):
         result = insert_articles(note, [sources.ArticleRow("问", "答", "2026-09-01", "标题", "https://x/1.html")])
         self.assertNotIn("待整理", result)
         self.assertIn("### [标题](https://x/1.html)（2026-09-01）", result)
+
+
+class PdfTextTests(unittest.TestCase):
+    def pages(self):
+        return json.loads(fixture("cpc_pdf_pages.json"))
+
+    def test_glyph_substitutes_and_full_width_forms_are_fixed(self):
+        text = sources.clean_pdf_text(["２０２５\n年版《中国药典》\n９２１１\n中图分类号：Ｒ９２１\ue010２\nＥ\ue011ｍａｉｌ：ａ＠ｂ\ue010ｃｏｍ\ue012"])
+        self.assertIn("2025年版《中国药典》9211", text)
+        self.assertIn("R921.2", text)
+        self.assertIn("E-mail：a@b.com", text)
+        self.assertFalse(any(0xE000 <= ord(c) <= 0xF8FF for c in text))
+
+    def test_spaces_inside_chinese_text_are_removed_but_english_spacing_kept(self):
+        text = sources.clean_pdf_text(["在药品 质 量 控 制 领 域，微 生 物 污 染 是 风 险。\nUSP 922 and EP 2.9.39 apply。"])
+        self.assertIn("在药品质量控制领域，微生物污染是风险。", text)
+        self.assertIn("USP 922", text)
+
+    def test_reference_list_and_english_only_paragraphs_are_dropped(self):
+        english = "Interpretationofguidelines" * 6 + "。"
+        text = sources.clean_pdf_text(["摘要：这是正文。\n" + english + "\n结论：这是结论。\n参考文献：\n[1]某某.某文[J].2020。"])
+        self.assertIn("这是正文。", text)
+        self.assertIn("这是结论。", text)
+        self.assertNotIn("Interpretationofguidelines", text)
+        self.assertNotIn("某某", text)
+
+    def test_real_article_pages_read_as_chinese_paragraphs(self):
+        text = sources.clean_pdf_text(self.pages())
+        self.assertGreater(text.count("水分活度"), 20)
+        self.assertIn("2025年版《中国药典》四部新增", text)
+        self.assertNotIn("\ue010", text)
+        self.assertNotIn("参考文献", text.split("总结与展望")[-1])
+
+    def test_unreadable_bytes_give_empty_text_never_an_error(self):
+        self.assertEqual(sources.pdf_text(b"not a pdf at all"), "")
+        self.assertEqual(sources.pdf_text(b""), "")
+
+    def test_attachment_text_follows_the_name_like_existing_notes(self):
+        from ingestion.automation.fetchers import CPCArticle
+        payload = {"result": {"news": {"newsContent": None, "annexFileList": [{"id": "AB12", "name": "解读.pdf"}]}}}
+        with patch.object(sources, "pdf_text", return_value="第一段正文。\n第二段正文。"):
+            notes, meta = sources.fetch_cpc_notes(
+                {"detail_url": "https://x/detail?newsId={news_id}"},
+                [CPCArticle("n1", "药典执行解读", "2026-06-01", "f.md")], lambda url: payload, fetch_bytes=lambda url: b"%PDF-")
+        self.assertEqual(
+            notes[0].body,
+            "附件：\n- [解读.pdf](https://www.chp.org.cn/three/anon/user/download?id=AB12&token=)\n附件《解读》文本：\n第一段正文。\n第二段正文。")
+        self.assertNotIn("attachments_without_text", meta)
+
+    def test_failed_download_keeps_the_note_and_reports_it(self):
+        from ingestion.automation.fetchers import CPCArticle
+        payload = {"result": {"news": {"newsContent": None, "annexFileList": [{"id": "AB12", "name": "解读.pdf"}]}}}
+
+        def down(url):
+            raise SafetyStop("HTTP 500")
+        notes, meta = sources.fetch_cpc_notes(
+            {"detail_url": "https://x/detail?newsId={news_id}"},
+            [CPCArticle("n1", "药典执行解读", "2026-06-01", "f.md")], lambda url: payload, fetch_bytes=down)
+        self.assertIn("[解读.pdf]", notes[0].body)
+        self.assertIn("下载失败", meta["attachments_without_text"][0]["reason"])
+
+    @unittest.skipUnless(__import__("importlib").util.find_spec("pypdf"), "pypdf is not installed here")
+    def test_pypdf_is_used_when_installed(self):
+        # a one-page PDF with no text layer must come back empty, not raise
+        import pypdf
+        writer = pypdf.PdfWriter()
+        writer.add_blank_page(width=100, height=100)
+        buffer = __import__("io").BytesIO()
+        writer.write(buffer)
+        self.assertEqual(sources.pdf_text(buffer.getvalue()), "")
 
 
 class TableSourceStagingTests(unittest.TestCase):
