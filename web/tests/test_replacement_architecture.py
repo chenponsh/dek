@@ -463,7 +463,7 @@ class Round3SliceTests(unittest.TestCase):
             repo = root / "repo"; repo.mkdir()
             (repo / "web" / "assets").mkdir(parents=True)
             shutil.copy2("web/site.py", repo / "web" / "site.py")
-            for f in ("style.css", "app.js", "search.js"):
+            for f in ("style.css", "app.js", "search.js", "page.js"):
                 shutil.copy2(f"web/assets/{f}", repo / f"web/assets/{f}")
             (repo / "qa" / "dek_qa").mkdir(parents=True)
             for f in ("__init__.py", "index.py", "build_index.py"):
