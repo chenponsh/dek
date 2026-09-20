@@ -193,22 +193,18 @@ def rough_display(content: str, suggestion: str = "") -> str:
     return _qa_lines(content[match.end():]).rstrip("\n") + "\n\n建议路径：" + shown
 
 
-def _content_meta(item) -> str:
-    """One truncated line under the title: the publication date and the draft's question
-    (the tooltip carries the path and the full text)."""
-    full = [item.path]
-    short = []
-    if item.published_date:
-        full.append(f"发布日期：{item.published_date}"); short.append(f"发布日期：{item.published_date}")
+def _content_cell(item, href: str) -> str:
+    """The list's content cell, three lines: the question (the link into the item), the
+    publication date, and the draft's file name as a note. Each line is one truncated line;
+    the tooltips carry the full text."""
     question = re.sub(r"\s+", " ", rough_qa(getattr(item, "content", "") or "")[0]).strip()
-    if question:
-        # A question that already starts with its own 问：keeps it, otherwise it gets one.
-        line = question if QUESTION_LABELLED.match(question) else f"问：{question}"
-        full.append(line); short.append(line)
-    if not short:
-        return ""
-    return (f'<div class="meta content-meta" title="{html.escape(" · ".join(full), quote=True)}">'
-            f'{html.escape(" · ".join(short))}</div>')
+    # A question that already starts with its own 问：keeps it, otherwise it gets one.
+    first = (question if QUESTION_LABELLED.match(question) else f"问：{question}") if question else item.title
+    lines = [f'<a class="content-title" href="{href}" title="{html.escape(first, quote=True)}">{html.escape(first)}</a>']
+    if item.published_date:
+        lines.append(f'<div class="meta content-meta">发布日期：{html.escape(item.published_date)}</div>')
+    lines.append(f'<div class="meta content-meta content-note" title="{html.escape(item.path, quote=True)}">备注：{html.escape(PurePosixPath(item.path).name)}</div>')
+    return "".join(lines)
 
 
 def _page_window(page: int, pages: int) -> list[int | None]:
@@ -731,7 +727,7 @@ STYLE = """<style>
 .table-wrap th,.table-wrap td.status,.table-wrap td.reviewer,.table-wrap td.time{white-space:nowrap}
 th.index,td.index{width:60px;min-width:60px;text-align:center}
 .table-wrap td.content{max-width:0;min-width:240px}
-.content-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.content-meta,.content-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.content-title{display:block}
 .list-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:18px}
 .pager,.page-size{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:.9rem}
 .page-size{margin-left:auto;color:var(--muted)}
@@ -951,8 +947,8 @@ class ReviewService:
         rows = "".join(
             f'<tr data-href="{self.path_prefix}/item/{item.identity}{position}">'
             f'<td class="meta index">{number}</td>'
-            f'<td class="content"><a href="{self.path_prefix}/item/{item.identity}{position}">{html.escape(item.title)}</a>'
-            + _content_meta(item)
+            f'<td class="content">'
+            + _content_cell(item, f"{self.path_prefix}/item/{item.identity}{position}")
             + "</td>"
             f'<td class="status status-{item.status}">'
             + ('<span class="status-dot" aria-hidden="true"></span>' if item.status == "pending" else '')

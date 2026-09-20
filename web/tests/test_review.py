@@ -483,25 +483,36 @@ class ReviewWorkflowTests(unittest.TestCase):
             self.assertIn('<aside class="sidebar"><nav id="nav-tree"', page)
             self.assertNotIn("sidebar-resize-handle", page)
 
-    def list_cell(self, question, answer="A"):
-        rough = ROUGH.replace("| Q | A | 2026-09-14 |", f"| {question} | {answer} | 2026-09-14 |")
+    @staticmethod
+    def cell_of(page, name):
+        """The content cell of the list row for the draft file `name` (the fixture holds other drafts too)."""
+        return next(cell for cell in re.findall(r'<td class="content">(.*?)</td>', page, re.S) if f"备注：{name}<" in cell)
+
+    def list_cell(self, question, answer="A", date="2026-09-14"):
+        rough = ROUGH.replace("| Q | A | 2026-09-14 |", f"| {question} | {answer} | {date} |").replace("published_date: 2026-09-14", f"published_date: {date}")
         (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
         page = self.service.render_list("opaque-session").decode("utf-8")
-        return page, page[page.index("pending.md") - 300: page.index("pending.md") + 700]
+        return page, self.cell_of(page, "pending.md")
 
-    def test_content_cell_second_line_shows_the_date_and_the_question_not_the_source(self):
-        long_question = "已上市的化学药品创新药如何申请药品试验数据保护？"
-        page, cell = self.list_cell(long_question)
-        self.assertIn(f'title="ingestion/rough/pending.md · 发布日期：2026-09-14 · 问：{long_question}"', cell)
-        self.assertIn(f'>发布日期：2026-09-14 · 问：{long_question}</div>', cell)
+    def test_content_cell_is_three_lines_question_then_date_then_file_note(self):
+        question = "已上市的化学药品创新药如何申请药品试验数据保护？"
+        page, cell = self.list_cell(question)
+        link = re.match(r'<a class="content-title" href="([^"]+)" title="([^"]*)">([^<]*)</a>', cell)
+        self.assertIsNotNone(link, cell)                                      # line 1: the link into the item ...
+        self.assertIn("/item/", link.group(1))
+        self.assertEqual((link.group(2), link.group(3)), (f"问：{question}", f"问：{question}"))   # ... worded as the question
+        rest = cell[link.end():]
+        self.assertEqual(re.findall(r'<div class="meta content-meta[^"]*"[^>]*>([^<]*)</div>', rest),
+                         ["发布日期：2026-09-14", "备注：pending.md"])           # line 2: date, line 3: file name note
+        self.assertLess(rest.index("发布日期："), rest.index("备注："))
+        self.assertIn('title="ingestion/rough/pending.md">备注：pending.md</div>', rest)   # the tooltip holds the full path
+        self.assertNotIn(" · ", cell)                                          # no more run-on line
         self.assertNotIn("来源：", cell)
-        self.assertNotIn("[[", cell)
-        self.assertNotIn(">ingestion/rough/pending.md", cell)
-        self.assertIn(".content-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}", page)
+        self.assertIn(".content-meta,.content-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.content-title{display:block}", page)
 
     def test_a_question_that_already_starts_with_问_is_not_labelled_twice_in_the_list(self):
         _, cell = self.list_cell("问：如何开展粉液双室袋仿制药的药学研究？")
-        self.assertIn(">发布日期：2026-09-14 · 问：如何开展粉液双室袋仿制药的药学研究？</div>", cell)
+        self.assertIn(">问：如何开展粉液双室袋仿制药的药学研究？</a>", cell)
         self.assertNotIn("问：问", cell)
 
     def test_a_multi_line_question_stays_on_one_line_and_html_is_escaped(self):
@@ -509,6 +520,16 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("<b>x</b>".replace("<", "&lt;").replace(">", "&gt;"), cell)
         self.assertNotIn("<b>x</b>", cell)
         self.assertNotIn("\n第二行", cell)
+        self.assertIn(">问：第一行 第二行 &lt;b&gt;x&lt;/b&gt;</a>", cell)
+
+    def test_the_date_line_is_left_out_when_there_is_no_date_and_the_link_falls_back_to_the_title(self):
+        rough = ROUGH.replace("| Q | A | 2026-09-14 |", "| | | |").replace("date: 2026-09-14", "date:")   # published_date and date both blank
+        (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        cell = self.cell_of(page, "pending.md")
+        self.assertNotIn("发布日期：", cell)
+        self.assertIn("备注：pending.md", cell)
+        self.assertRegex(cell, r'^<a class="content-title"[^>]*>pending\.md</a>')
 
     def test_item_header_shows_the_source_the_way_the_list_does(self):
         rough = ROUGH.replace('source: "[[source/example]]"', 'source: "[[source/CDE/CDE_共性问题-受理共性问题]]"')
