@@ -152,7 +152,7 @@ ANSWER_LABELLED = re.compile(r"\s*(?:答案?|解答|回答|A)\s*[:：]", re.I)
 
 
 def _qa_lines(body: str) -> str:
-    """Turn the draft's | 问题 | 解答 | 发布日期 | table into 问：/答：/发布日期： lines (a text that already carries its own label keeps just that)."""
+    """Turn the draft's | 问题 | 解答 | 发布日期 | table into 问：/答：/日期： lines (a text that already carries its own label keeps just that)."""
     table = QA_TABLE.search(body)
     if not table:
         return body
@@ -165,7 +165,7 @@ def _qa_lines(body: str) -> str:
             # 问：/答：, the way the source words them; text that already starts with its own label keeps it.
             question_line = question if QUESTION_LABELLED.match(question) else f"问：{question}"
             answer_line = answer if ANSWER_LABELLED.match(answer) else f"答：{answer}"
-            blocks.append(f"{question_line}\n{answer_line}\n发布日期：{date}")
+            blocks.append(f"{question_line}\n{answer_line}\n日期：{date}")
     if not blocks:
         return body
     before = re.sub(r"(?m)^##[ \t]*新增问答[ \t]*\n*\Z", "", body[:table.start()])
@@ -1041,7 +1041,7 @@ class ReviewService:
         meta = " · ".join(part for part in (
             f"状态：{item.status_label}",
             f"来源：{_short_source(item.source)}" if item.source else "",
-            f"发布日期：{item.published_date}" if item.published_date else "",
+            f"日期：{item.published_date}" if item.published_date else "",
             f"目标：{item.wiki_target}" if item.wiki_target else "",
         ) if part)
         links = source_urls(item.content, root) if item.content else []

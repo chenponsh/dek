@@ -531,6 +531,16 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("备注：pending.md", cell)
         self.assertRegex(cell, r'^<a class="content-title"[^>]*>pending\.md</a>')
 
+    def test_the_item_header_and_原文_box_say_日期_not_发布日期(self):
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        header = re.search(r'<h1>[^<]*</h1><div class="meta">([^<]*)</div>', page).group(1)
+        self.assertIn("日期：2026-09-14", header)
+        self.assertNotIn("发布日期", header)
+        pre = re.search(r"<pre>(.*?)</pre>", page, re.S).group(1)
+        self.assertIn("\n日期：2026-09-14", pre)
+        self.assertNotIn("发布日期", pre)
+
     def test_item_header_shows_the_source_the_way_the_list_does(self):
         rough = ROUGH.replace('source: "[[source/example]]"', 'source: "[[source/CDE/CDE_共性问题-受理共性问题]]"')
         (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
@@ -754,7 +764,7 @@ class ReviewWorkflowTests(unittest.TestCase):
                     self.assertNotIn("<article><h2>pending.md", page)
                     if state == "pending" or unlocked:
                         self.assertIn("<article><h2>原文</h2>", page)
-                        self.assertIn("<pre>问：Q\n答：A\n发布日期：2026-09-14", page)
+                        self.assertIn("<pre>问：Q\n答：A\n日期：2026-09-14", page)
                     self.assertIn("← 返回列表</a>", page)
                     self.assertNotIn("返回待办列表", page)
 
@@ -801,11 +811,11 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         pre = page.split("<article><h2>原文</h2><pre>", 1)[1].split("</pre>", 1)[0]
         self.assertTrue(pre.startswith("问：Q\n"), pre)
-        self.assertTrue(pre.endswith("问：Q\n答：A\n发布日期：2026-09-14\n\n建议路径：暂无"), pre)
+        self.assertTrue(pre.endswith("问：Q\n答：A\n日期：2026-09-14\n\n建议路径：暂无"), pre)
         self.assertNotIn("|", pre)
         self.assertNotIn("## 新增问答", pre)
         # 发布日期 appears once per Q&A block, from the table; the frontmatter fields do not.
-        self.assertEqual(pre.count("发布日期："), 1)
+        self.assertEqual(pre.count("日期："), 1)
         for gone in ("入库日期", "来源", "状态", "目标位置", "source_item_key", "ingested_at", "published_date"):
             self.assertNotIn(gone, pre, gone)
         for box in ("<details", "rough-info", "<dl>", "处理信息"):
@@ -824,8 +834,8 @@ class ReviewWorkflowTests(unittest.TestCase):
                 "| 第一问？ | 第一段。<br>第二段，含 \\| 竖线。 | 2026-03-16 |\n"
                 "| 第二问？ | 答二 | 2026-03-17 |\n")
         shown = rough_display(ROUGH.split("## 新增问答", 1)[0] + body)
-        self.assertEqual(shown, "问：第一问？\n答：第一段。\n第二段，含 | 竖线。\n发布日期：2026-03-16\n\n"
-                                "问：第二问？\n答：答二\n发布日期：2026-03-17\n\n建议路径：暂无")
+        self.assertEqual(shown, "问：第一问？\n答：第一段。\n第二段，含 | 竖线。\n日期：2026-03-16\n\n"
+                                "问：第二问？\n答：答二\n日期：2026-03-17\n\n建议路径：暂无")
 
     def test_text_that_is_not_a_qa_table_is_left_alone(self):
         shown = rough_display(ROUGH.split("## 新增问答", 1)[0] + "自由说明文字\n\n| a | b |\n| - | - |\n| 1 | 2 |\n")
@@ -924,7 +934,7 @@ class ReviewWorkflowTests(unittest.TestCase):
     def test_text_that_already_says_问_and_答_gets_no_second_label(self):
         rough = ROUGH.replace("| Q | A | 2026-09-14 |", "| 问：如何开展粉液双室袋仿制药的药学研究？ | 答：本问题解答是对《粉液双室袋产品技术审评要点（试行）》的补充。<br>第二段。 | 2026-09-14 |")
         shown = rough_display(rough)
-        self.assertIn("问：如何开展粉液双室袋仿制药的药学研究？\n答：本问题解答是对《粉液双室袋产品技术审评要点（试行）》的补充。\n第二段。\n发布日期：2026-09-14", shown)
+        self.assertIn("问：如何开展粉液双室袋仿制药的药学研究？\n答：本问题解答是对《粉液双室袋产品技术审评要点（试行）》的补充。\n第二段。\n日期：2026-09-14", shown)
         self.assertNotIn("问：问：", shown)
         self.assertNotIn("答：答：", shown)
         self.assertNotIn("问题：", shown)
@@ -941,7 +951,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         for (question, answer), expected in cases.items():
             with self.subTest(question=question, answer=answer):
                 shown = rough_display(ROUGH.replace("| Q | A | 2026-09-14 |", f"| {question} | {answer} | 2026-09-14 |"))
-                self.assertIn(expected + "\n发布日期：2026-09-14", shown)
+                self.assertIn(expected + "\n日期：2026-09-14", shown)
 
     def test_content_without_frontmatter_is_shown_as_is(self):
         self.assertEqual(rough_display("just text\n"), "just text\n")
