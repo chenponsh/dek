@@ -1,0 +1,95 @@
+(function (root, factory) {
+  const api = factory(root);
+  if (typeof module === "object" && module.exports) module.exports = api;
+  else {
+    root.DEKPage = api;
+    api.mount(root.document);
+  }
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  // A published page is only its content (the <template id="page-body">) and a
+  // JSON description of it (<script id="page-data">): title, tags, properties,
+  // breadcrumbs, links, contents list. Everything around the content - header,
+  // sidebar, headings, panels - is drawn here, from installed code, so changing
+  // how pages look is a deploy, not a content release.
+
+  function escapeText(value) {
+    return String(value).replace(/[&<>"']/g, character => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[character]);
+  }
+
+  const e = escapeText;
+
+  // Links in the data are relative paths written by the build; anything that is
+  // not a plain relative path or an http(s) address is dropped.
+  function safeHref(value) {
+    const text = String(value || "");
+    if (/^https?:\/\//i.test(text)) return text;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(text) || text.startsWith("//")) return "";
+    return text;
+  }
+
+  function linkList(items) {
+    return items.map(item => `<a href="${e(safeHref(item.href))}">${e(item.title)}</a>`).join("");
+  }
+
+  function valueHtml(value) {
+    if (value && Array.isArray(value.list)) {
+      return '<span class="property-list">' + value.list.map(item => `<span>${valueHtml(item)}</span>`).join("") + "</span>";
+    }
+    return ((value && value.parts) || []).map(part => {
+      if (part.href) return `<a class="wikilink" href="${e(safeHref(part.href))}">${e(part.t)}</a>`;
+      if (part.broken) return `<span class="broken-link">${e(part.t)}</span>`;
+      return e(part.t).replace(/\n/g, "<br>");
+    }).join("");
+  }
+
+  function propertiesHtml(props) {
+    if (!props || !props.length) return "";
+    const rows = props.map(row => {
+      const cell = row.code !== undefined ? `<code>${e(row.code)}</code>` : valueHtml(row.value);
+      return `<div class="property-row"><dt>${e(row.label)}</dt><dd>${cell}</dd></div>`;
+    }).join("");
+    return `<details class="note-properties" open><summary>笔记信息</summary><dl>${rows}</dl></details>`;
+  }
+
+  function asideHtml(data) {
+    const toc = (data.toc || []).map(item => `<a class="toc-${e(item.level)}" href="#${e(item.anchor)}">${e(item.text)}</a>`).join("");
+    let card = "";
+    if ((data.sourceNotes || []).length) card += `<section><h3>来源笔记</h3>${linkList(data.sourceNotes)}</section>`;
+    const external = (data.externalLinks || []).map(safeHref).filter(url => /^https?:\/\//i.test(url));
+    if (external.length) {
+      card += `<section><h3>来源链接</h3>${external.map(url => `<a class="external" href="${e(url)}" rel="noreferrer" target="_blank">打开来源链接 ↗</a>`).join("")}</section>`;
+    }
+    if (data.kind === "source" && (data.sourceWiki || []).length) card += `<section><h3>引用此来源的 Wiki</h3>${linkList(data.sourceWiki)}</section>`;
+    const section = toc ? `<h3>本页目录</h3>${toc}` : "";
+    return (section || card) ? `<aside class="toc">${section}${card}</aside>` : "";
+  }
+
+  // The whole page around `bodyHtml` (already-sanitised content from the build).
+  function pageHtml(data, bodyHtml) {
+    const root = data.root || "";
+    const crumbs = (data.crumbs || []).map(item => item.href ? `<a href="${e(safeHref(item.href))}">${e(item.text)}</a>` : e(item.text)).join(" / ");
+    const badges = (data.tags || []).map(tag => `<span class="badge">#${e(tag)}</span>`).join("");
+    const backlinks = (data.backlinks || []).length ? linkList(data.backlinks) : '<p class="muted">暂无反向链接</p>';
+    const home = data.kind === "home" ? " home-page" : "";
+    return `<header><button id="menu-toggle" aria-label="打开目录">☰</button><strong>DEK 知识库</strong>`
+      + `<div class="search-wrap"><div class="search-box"><input type="search" id="global-search" data-index="${e(root)}assets/search-index.json" placeholder="输入关键词…" autocomplete="off"><button type="button" id="search-button" disabled>加载中…</button></div><span id="search-status" aria-live="polite"></span><div id="search-results"></div></div>`
+      + `<div class="user-menu" data-auth-me="${e(root)}auth/me"><a class="review-entry" href="/review/">知识审核</a><span id="user-name">正在读取…</span><a href="${e(root)}auth/logout">退出</a></div>`
+      + `<button id="theme-toggle" aria-label="切换主题">◐</button></header>`
+      + `<aside class="sidebar"><nav id="nav-tree" data-manifest="${e(root)}manifest.json" data-current="${e(data.path)}"></nav></aside>`
+      + `<main class="document${home}"><div class="breadcrumbs">${crumbs}</div><span class="kind">${e(String(data.kind).toUpperCase())}</span><h1>${e(data.title)}</h1><div class="badges">${badges}</div>${propertiesHtml(data.props)}<article>${bodyHtml || ""}</article><section class="backlinks"><h2>反向链接</h2>${backlinks}</section></main>${asideHtml(data)}`;
+  }
+
+  function mount(document) {
+    const dataElement = document && document.getElementById("page-data");
+    const body = document && document.getElementById("page-body");
+    if (!dataElement || !body) return;
+    let data;
+    try { data = JSON.parse(dataElement.textContent); } catch (error) { return; }
+    document.body.insertAdjacentHTML("afterbegin", pageHtml(data, body.innerHTML));
+    document.getElementById("page-loading")?.remove();
+  }
+
+  return { pageHtml, mount, escapeText };
+});

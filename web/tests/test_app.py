@@ -145,12 +145,12 @@ class AppTests(unittest.TestCase):
         # CSS/JS are code, not reviewed content: a deploy + restart must be
         # enough to change them, without waiting on a content publish.
         (self.app.root / "assets").mkdir()
-        for name in ("style.css", "app.js", "search.js"):
+        for name in ("style.css", "app.js", "search.js", "page.js"):
             (self.app.root / "assets" / name).write_text("STALE RELEASE COPY", encoding="utf-8")
         (self.app.root / "assets" / "search-index.json").write_text("{}", encoding="utf-8")
         code_dir = Path(__file__).resolve().parents[1] / "assets"
         cookie = "dek_session=" + self.token
-        for name, mime in (("style.css", "text/css"), ("app.js", "text/javascript"), ("search.js", "text/javascript")):
+        for name, mime in (("style.css", "text/css"), ("app.js", "text/javascript"), ("search.js", "text/javascript"), ("page.js", "text/javascript")):
             with self.subTest(asset=name):
                 status, headers, body = self.call("/assets/" + name, cookie=cookie)
                 self.assertEqual(status, "200 OK")

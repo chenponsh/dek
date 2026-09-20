@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from web.site import build_site, is_publishable_path
+from web.tests.pagehelper import rendered_page
 
 
 class SiteBuildTests(unittest.TestCase):
@@ -40,8 +41,8 @@ class SiteBuildTests(unittest.TestCase):
 
     def test_wikilinks_and_backlinks_are_rendered(self):
         build_site(self.vault, self.out)
-        wiki = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
-        source = (self.out / "source" / "CDE" / "来源.html").read_text(encoding="utf-8")
+        wiki = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
+        source = rendered_page((self.out / "source" / "CDE" / "来源.html"))
         self.assertIn('../../source/CDE/' + quote('来源.html'), wiki)
         self.assertIn('来源资料', wiki)
         self.assertIn('反向链接', source)
@@ -98,7 +99,7 @@ class SiteBuildTests(unittest.TestCase):
 
     def test_layout_has_tree_content_toc_theme_and_search(self):
         build_site(self.vault, self.out)
-        page = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        page = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
         for marker in ('class="sidebar"', 'class="document"', 'class="toc"', 'id="theme-toggle"', 'id="global-search"'):
             self.assertIn(marker, page)
         self.assertTrue((self.out / "assets" / "style.css").is_file())
@@ -114,7 +115,7 @@ class SiteBuildTests(unittest.TestCase):
         )
         for page in pages:
             with self.subTest(page=page):
-                rendered = page.read_text(encoding="utf-8")
+                rendered = rendered_page(page)
                 self.assertIn('href="/review/"', rendered)
                 self.assertIn("知识审核", rendered)
 
@@ -127,7 +128,7 @@ class SiteBuildTests(unittest.TestCase):
     def test_search_has_submit_button_enter_support_and_result_summaries(self):
         build_site(self.vault, self.out)
 
-        page = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        page = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
 
         self.assertIn('id="search-button"', page)
@@ -139,7 +140,7 @@ class SiteBuildTests(unittest.TestCase):
     def test_search_reports_index_loading_failure_and_retry_states(self):
         build_site(self.vault, self.out)
 
-        page = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        page = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
 
         self.assertIn('id="search-status"', page)
@@ -154,6 +155,35 @@ class SiteBuildTests(unittest.TestCase):
         script = (f"const s=require({json.dumps(str(self.out / 'assets' / 'search.js'))});"
                   f"process.stdout.write(s.homeHtml({json.dumps(manifest['tree'], ensure_ascii=False)}, {{}}));")
         return subprocess.run(["node", "-e", script], check=True, text=True, capture_output=True).stdout
+
+    def test_a_published_page_is_only_content_plus_data_the_scripts_draw_around(self):
+        build_site(self.vault, self.out)
+        raw = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        for drawn_by_script in ("<header>", 'class="sidebar"', 'class="breadcrumbs"', 'class="backlinks"', 'id="theme-toggle"'):
+            self.assertNotIn(drawn_by_script, raw)
+        self.assertIn('id="page-data"', raw)
+        self.assertIn('<template id="page-body">', raw)
+        head = raw.split("</head>", 1)[0]
+        self.assertLess(head.index("assets/search.js"), head.index("assets/page.js"))   # page.js draws the frame ...
+        self.assertLess(head.index("assets/page.js"), head.index("assets/app.js"))      # ... before app.js wires it up
+        seen = rendered_page(self.out / "wiki" / "01_注册" / "条目.html")
+        for drawn in ("<header>", 'class="sidebar"', 'class="breadcrumbs"', 'class="backlinks"', 'id="theme-toggle"'):
+            self.assertIn(drawn, seen)
+        self.assertTrue((self.out / "assets" / "page.js").is_file())
+
+    def test_metadata_cannot_break_out_of_the_page_data_block(self):
+        (self.vault / "wiki" / "01_注册" / "恶意.md").write_text(
+            '---\nno: 9\ndate: 2026-01-01\nquestion: "</script><script>alert(1)</script>"\n'
+            'source: "<img src=x onerror=alert(2)>"\ntags:\n  - "</script><b>x"\n---\n\n正文。', encoding="utf-8")
+        build_site(self.vault, self.out)
+        raw = (self.out / "wiki" / "01_注册" / "恶意.html").read_text(encoding="utf-8")
+        data_block = raw.split('id="page-data">', 1)[1].split("</script>", 1)[0]
+        self.assertNotIn("<", data_block)                       # only one </script> in the whole page, the block's own
+        self.assertEqual(raw.count("</script>"), 4)             # three scripts in <head> + the data block
+        seen = rendered_page(self.out / "wiki" / "01_注册" / "恶意.html")
+        self.assertNotIn("<script>alert", seen)
+        self.assertNotIn("<img src=x", seen)
+        self.assertIn("&lt;img src=x onerror=alert(2)&gt;", seen)
 
     def test_homepage_is_a_stable_library_landing_page_not_a_document_redirect(self):
         build_site(self.vault, self.out)
@@ -227,7 +257,7 @@ class SiteBuildTests(unittest.TestCase):
     def test_wiki_page_renders_obsidian_note_properties(self):
         build_site(self.vault, self.out)
 
-        wiki = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        wiki = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
 
         self.assertIn("笔记信息", wiki)
         self.assertIn("编号", wiki)
@@ -246,7 +276,7 @@ class SiteBuildTests(unittest.TestCase):
             "---\nsource_name: 分类总览\n---\n\n# 01_注册", encoding="utf-8",
         )
         build_site(self.vault, self.out)
-        wiki = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        wiki = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
         self.assertIn('<div class="breadcrumbs">', wiki)
         self.assertIn('<a href="../../index.html">wiki</a>', wiki)
         self.assertIn('<a href="01_%E6%B3%A8%E5%86%8C.html">01_注册</a>', wiki)
@@ -255,7 +285,7 @@ class SiteBuildTests(unittest.TestCase):
 
     def test_breadcrumb_segment_without_an_overview_note_stays_plain_text(self):
         build_site(self.vault, self.out)
-        wiki = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        wiki = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
         self.assertIn('<div class="breadcrumbs">', wiki)
         self.assertIn("01_注册", wiki)
         self.assertNotIn('<a href="01_注册.html">01_注册</a>', wiki)
@@ -277,8 +307,8 @@ class SiteBuildTests(unittest.TestCase):
     def test_explicit_source_wikilink_is_clickable_and_source_lists_referring_wiki(self):
         build_site(self.vault, self.out)
 
-        wiki = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
-        source = (self.out / "source" / "CDE" / "来源.html").read_text(encoding="utf-8")
+        wiki = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
+        source = rendered_page((self.out / "source" / "CDE" / "来源.html"))
 
         self.assertIn("来源笔记", wiki)
         self.assertIn('../../source/CDE/' + quote('来源.html'), wiki)
@@ -288,7 +318,7 @@ class SiteBuildTests(unittest.TestCase):
     def test_page_includes_authenticated_name_and_logout_controls(self):
         build_site(self.vault, self.out)
 
-        wiki = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        wiki = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
 
         self.assertIn('id="user-name"', wiki)
@@ -427,7 +457,7 @@ class SiteBuildTests(unittest.TestCase):
     def test_wiki_page_still_has_note_properties(self):
         # Only the homepage drops the properties panel; regular notes keep it.
         build_site(self.vault, self.out)
-        wiki = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        wiki = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
         self.assertIn("笔记信息", wiki)
 
     def test_page_without_headings_omits_the_empty_table_of_contents(self):
@@ -445,7 +475,7 @@ class SiteBuildTests(unittest.TestCase):
             "---\nno: 4\nquestion: 带小节问答\n---\n\n## 第一节\n\n正文。", encoding="utf-8",
         )
         build_site(self.vault, self.out)
-        page = (self.out / "wiki" / "01_注册" / "带小节.html").read_text(encoding="utf-8")
+        page = rendered_page((self.out / "wiki" / "01_注册" / "带小节.html"))
         self.assertIn('class="toc"', page)
         self.assertIn("本页目录", page)
         self.assertIn("第一节", page)
@@ -472,8 +502,8 @@ class SiteBuildTests(unittest.TestCase):
 
     def test_home_page_main_area_is_widened_but_articles_keep_a_readable_measure(self):
         build_site(self.vault, self.out)
-        home = (self.out / "index.html").read_text(encoding="utf-8")
-        article = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        home = rendered_page((self.out / "index.html"))
+        article = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
         self.assertIn('<main class="document home-page">', home)
         self.assertNotIn("home-page", article)
         style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
@@ -491,7 +521,7 @@ class SiteBuildTests(unittest.TestCase):
         build_site(self.vault, self.out)
         for page_path in (self.out / "index.html", self.out / "wiki" / "01_注册" / "条目.html"):
             with self.subTest(page=page_path):
-                page = page_path.read_text(encoding="utf-8")
+                page = rendered_page(page_path)
                 self.assertNotIn("side-title", page)
                 self.assertIn('<aside class="sidebar"><nav id="nav-tree"', page)
         # Pages published before this change still carry the element until the

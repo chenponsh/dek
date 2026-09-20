@@ -5,6 +5,7 @@ from pathlib import Path
 
 
 SEARCH_JS = Path(__file__).parents[1] / "assets" / "search.js"
+PAGE_JS = Path(__file__).parents[1] / "assets" / "page.js"
 
 
 class FuzzySearchTests(unittest.TestCase):
@@ -152,3 +153,41 @@ class FuzzySearchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PageScriptTests(unittest.TestCase):
+    def render(self, data, body=""):
+        script = f"const p=require({json.dumps(str(PAGE_JS))}); process.stdout.write(p.pageHtml({json.dumps(data, ensure_ascii=False)}, {json.dumps(body, ensure_ascii=False)}));"
+        return subprocess.run(["node", "-e", script], check=True, text=True, capture_output=True).stdout
+
+    BASE = {"kind": "wiki", "title": "标题", "path": "wiki/a.md", "root": "../", "tags": [], "crumbs": [], "props": [], "backlinks": [], "toc": [], "sourceNotes": [], "externalLinks": [], "sourceWiki": []}
+
+    def test_unsafe_links_in_the_data_are_dropped(self):
+        html = self.render({**self.BASE,
+                            "crumbs": [{"text": "坏", "href": "javascript:alert(1)"}, {"text": "好", "href": "../index.html"}],
+                            "externalLinks": ["javascript:alert(2)", "data:text/html,x", "https://example.com/a"],
+                            "backlinks": [{"title": "x", "href": "//evil.example/"}]})
+        self.assertNotIn("javascript:", html)
+        self.assertNotIn("data:text", html)
+        self.assertNotIn("//evil.example", html)
+        self.assertIn('href="../index.html"', html)
+        self.assertEqual(html.count("打开来源链接"), 1)
+        self.assertIn('href="https://example.com/a" rel="noreferrer" target="_blank"', html)
+
+    def test_page_urls_are_built_from_the_relative_root(self):
+        html = self.render(self.BASE)
+        self.assertIn('data-index="../assets/search-index.json"', html)
+        self.assertIn('data-manifest="../manifest.json"', html)
+        self.assertIn('data-auth-me="../auth/me"', html)
+        self.assertIn('data-current="wiki/a.md"', html)
+
+    def test_contents_list_and_source_panel_appear_only_when_there_is_something_in_them(self):
+        self.assertNotIn('class="toc"', self.render(self.BASE))
+        html = self.render({**self.BASE, "toc": [{"level": "2", "anchor": "s", "text": "小节"}]})
+        self.assertIn('<aside class="toc"><h3>本页目录</h3><a class="toc-2" href="#s">小节</a></aside>', html)
+
+    def test_the_home_kind_gets_the_wide_layout_and_no_properties(self):
+        html = self.render({**self.BASE, "kind": "home", "title": "DEK 知识库"}, '<div id="home-app"></div>')
+        self.assertIn('<main class="document home-page">', html)
+        self.assertIn('<article><div id="home-app"></div></article>', html)
+        self.assertNotIn("note-properties", html)

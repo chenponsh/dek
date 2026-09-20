@@ -257,9 +257,9 @@ def _render_body(doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[di
     return sanitize_html(rendered)
 
 
-def _toc(rendered: str) -> str:
-    headings = re.findall(r'<h([2-4]) id="([^"]+)">(.*?)</h\1>', rendered)
-    return "".join(f'<a class="toc-{level}" href="#{anchor}">{re.sub("<.*?>", "", text)}</a>' for level, anchor, text in headings)
+def _toc_data(rendered: str) -> list[dict]:
+    return [{"level": level, "anchor": anchor, "text": re.sub("<.*?>", "", text)}
+            for level, anchor, text in re.findall(r'<h([2-4]) id="([^"]+)">(.*?)</h\1>', rendered)]
 
 
 def _manifest_tree(documents: list[dict]) -> list[dict]:
@@ -287,47 +287,42 @@ def _manifest_tree(documents: list[dict]) -> list[dict]:
     return [freeze(roots["wiki"]), freeze(roots["source"])]
 
 
-def _property_value(value: object, doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[dict]]) -> str:
+def _property_data(value: object, doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[dict]]) -> dict:
+    """A frontmatter value as data: {"list": [...]} or {"parts": [text | wikilink | broken link, ...]}."""
     if isinstance(value, list):
-        return '<span class="property-list">' + "".join(f"<span>{_property_value(item, doc, by_path, by_stem)}</span>" for item in value) + "</span>"
+        return {"list": [_property_data(item, doc, by_path, by_stem) for item in value]}
     text = str(value)
-    chunks, cursor = [], 0
+    parts, cursor = [], 0
     for match in WIKILINK.finditer(text):
-        chunks.append(html.escape(text[cursor:match.start()]).replace("\n", "<br>"))
+        if match.start() > cursor: parts.append({"t": text[cursor:match.start()]})
         target = _resolve(match.group(2), by_path, by_stem)
         label = match.group(3) or PurePosixPath(match.group(2)).name
-        if target:
-            chunks.append(f'<a class="wikilink" href="{_relative_href(doc["output"], target["output"])}">{html.escape(label)}</a>')
-        else:
-            chunks.append(f'<span class="broken-link">{html.escape(label)}</span>')
+        parts.append({"t": label, "href": _relative_href(doc["output"], target["output"])} if target else {"t": label, "broken": True})
         cursor = match.end()
-    chunks.append(html.escape(text[cursor:]).replace("\n", "<br>"))
-    return "".join(chunks)
+    if cursor < len(text) or not parts: parts.append({"t": text[cursor:]})
+    return {"parts": parts}
 
 
-def _note_properties(doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[dict]]) -> str:
-    # "question" duplicates the <h1> title directly above this table, and "tags"
-    # duplicates "tag_pages" (and the badge chips under the title); both are
-    # dropped here so the table doesn't push the article below the fold.
+def _properties_data(doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[dict]]) -> list[dict]:
+    # "question" duplicates the title and "tags" duplicates "tag_pages" (and the
+    # tag chips under the title); both are left out so the panel stays short.
     labels = (("no", "编号"), ("date", "发布日期"), ("source", "来源"), ("tag_pages", "标签页面"))
     rows = []
     for key, label in labels:
         value = doc["meta"].get(key)
         if value is None or value == "" or value == []:
             continue
-        rows.append(f'<div class="property-row"><dt>{label}</dt><dd>{_property_value(value, doc, by_path, by_stem)}</dd></div>')
-    rows.append(f'<div class="property-row"><dt>笔记路径</dt><dd><code>{html.escape(doc["path"])}</code></dd></div>')
-    return f'<details class="note-properties" open><summary>笔记信息</summary><dl>{"".join(rows)}</dl></details>'
+        rows.append({"label": label, "value": _property_data(value, doc, by_path, by_stem)})
+    rows.append({"label": "笔记路径", "code": doc["path"]})
+    return rows
 
 
-def _breadcrumb_html(doc: dict, by_path: dict[str, dict]) -> str:
-    """Link every breadcrumb segment except the current (leaf) page: the first
-    segment ("wiki"/"source") goes home, and each folder segment goes to its
-    same-named overview note when one exists, else stays plain text."""
+def _breadcrumb_data(doc: dict, by_path: dict[str, dict]) -> list[dict]:
+    """Every segment except the current (leaf) page links: the first ("wiki"/"source")
+    goes home, and each folder goes to its same-named overview note when one exists."""
     parts = PurePosixPath(doc["path"]).with_suffix("").parts
     segments = []
     for index, part in enumerate(parts):
-        text = html.escape(part)
         href = None
         if index == len(parts) - 1:
             pass
@@ -336,45 +331,54 @@ def _breadcrumb_html(doc: dict, by_path: dict[str, dict]) -> str:
         else:
             target = by_path.get("/".join(parts[:index + 1] + (part,)))
             if target: href = _relative_href(doc["output"], target["output"])
-        segments.append(f'<a href="{href}">{text}</a>' if href else text)
-    return " / ".join(segments)
+        segments.append({"text": part, "href": href} if href else {"text": part})
+    return segments
+
+
+def _site_root(output: PurePosixPath) -> str:
+    """Relative prefix from a page to the site root ("" for a top-level page)."""
+    return _relative_href(output, PurePosixPath("index.html"))[:-len("index.html")]
+
+
+def _page_data(doc: dict, rendered: str, backlinks: list[dict], by_path: dict[str, dict], by_stem: dict[str, list[dict]], source_refs: list[dict] | None = None) -> dict:
+    tags = doc["meta"].get("tags") or []
+    if isinstance(tags, str): tags = [tags]
+    raw_urls = doc["meta"].get("source_urls") or doc["meta"].get("source_url") or doc["meta"].get("url") or []
+    if isinstance(raw_urls, str): raw_urls = [raw_urls]
+    link = lambda item: {"title": item["title"], "href": _relative_href(doc["output"], item["output"])}
+    return {
+        "v": 1, "kind": doc["kind"], "title": doc["title"], "path": doc["path"], "root": _site_root(doc["output"]),
+        "tags": [str(tag) for tag in tags],
+        "crumbs": _breadcrumb_data(doc, by_path),
+        # The home page has no meaningful frontmatter of its own, so no properties panel.
+        "props": [] if doc["kind"] == "home" else _properties_data(doc, by_path, by_stem),
+        "backlinks": [link(item) for item in backlinks],
+        "toc": _toc_data(rendered),
+        "sourceNotes": [link(item) for item in (source_refs or [])],
+        "externalLinks": [safe for url in raw_urls if (safe := _safe_url(str(url))) is not None],
+        "sourceWiki": [link(item) for item in backlinks if item["kind"] == "wiki"] if doc["kind"] == "source" else [],
+    }
+
+
+def _json_for_html(value: object) -> str:
+    """JSON safe to embed in a <script type="application/json"> element."""
+    return json.dumps(value, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
 
 
 def _page(doc: dict, docs: list[dict], rendered: str, backlinks: list[dict], by_path: dict[str, dict], by_stem: dict[str, list[dict]], source_refs: list[dict] | None = None) -> str:
-    assets = _relative_href(doc["output"], PurePosixPath("assets/style.css"))
-    script = _relative_href(doc["output"], PurePosixPath("assets/app.js"))
-    search = _relative_href(doc["output"], PurePosixPath("assets/search-index.json"))
-    manifest = _relative_href(doc["output"], PurePosixPath("manifest.json"))
-    crumbs = _breadcrumb_html(doc, by_path)
-    tags = doc["meta"].get("tags") or []
-    if isinstance(tags, str): tags = [tags]
-    badges = "".join(f'<span class="badge">#{html.escape(str(tag))}</span>' for tag in tags)
-    links = "".join(f'<a href="{_relative_href(doc["output"], x["output"])}">{html.escape(x["title"])}</a>' for x in backlinks) or '<p class="muted">暂无反向链接</p>'
-    raw_urls = doc["meta"].get("source_urls") or doc["meta"].get("source_url") or doc["meta"].get("url") or []
-    if isinstance(raw_urls, str): raw_urls = [raw_urls]
-    safe_urls = [safe for url in raw_urls if (safe := _safe_url(str(url))) is not None]
-    external_links = "".join(f'<a class="external" href="{html.escape(url)}" rel="noreferrer" target="_blank">打开来源链接 ↗</a>' for url in safe_urls)
-    source_refs = source_refs or []
-    source_note_links = "".join(f'<a href="{_relative_href(doc["output"], item["output"])}">{html.escape(item["title"])}</a>' for item in source_refs)
-    source_wiki_links = "".join(f'<a href="{_relative_href(doc["output"], item["output"])}">{html.escape(item["title"])}</a>' for item in backlinks if item["kind"] == "wiki")
-    source_card = ""
-    if source_note_links: source_card += f'<section><h3>来源笔记</h3>{source_note_links}</section>'
-    if external_links: source_card += f'<section><h3>来源链接</h3>{external_links}</section>'
-    if doc["kind"] == "source" and source_wiki_links: source_card += f'<section><h3>引用此来源的 Wiki</h3>{source_wiki_links}</section>'
-    # The home page has no meaningful frontmatter of its own ("笔记信息" would
-    # just show a synthetic "首页.md" path), so it skips the properties panel
-    # entirely rather than rendering an empty/misleading one.
-    properties = "" if doc["kind"] == "home" else _note_properties(doc, by_path, by_stem)
-    auth_me = _relative_href(doc["output"], PurePosixPath("auth/me"))
-    auth_logout = _relative_href(doc["output"], PurePosixPath("auth/logout"))
-    search_script = _relative_href(doc["output"], PurePosixPath("assets/search.js"))
-    toc = _toc(rendered)
-    # Real Q&A-style notes rarely have markdown headings, so "本页目录" was
-    # showing an always-empty "本页没有小节" placeholder on every such page;
-    # only render the aside (and its heading) when there is something in it.
-    toc_section = f'<h3>本页目录</h3>{toc}' if toc else ""
-    aside = f'<aside class="toc">{toc_section}{source_card}</aside>' if (toc_section or source_card) else ""
-    return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(doc['title'])} · DEK</title><link rel="stylesheet" href="{assets}"></head><body><header><button id="menu-toggle" aria-label="打开目录">☰</button><strong>DEK 知识库</strong><div class="search-wrap"><div class="search-box"><input type="search" id="global-search" data-index="{search}" placeholder="输入关键词…" autocomplete="off"><button type="button" id="search-button" disabled>加载中…</button></div><span id="search-status" aria-live="polite"></span><div id="search-results"></div></div><div class="user-menu" data-auth-me="{auth_me}"><a class="review-entry" href="/review/">知识审核</a><span id="user-name">正在读取…</span><a href="{auth_logout}">退出</a></div><button id="theme-toggle" aria-label="切换主题">◐</button></header><aside class="sidebar"><nav id="nav-tree" data-manifest="{manifest}" data-current="{html.escape(doc['path'])}"></nav></aside><main class="document{' home-page' if doc['kind']=='home' else ''}"><div class="breadcrumbs">{crumbs}</div><span class="kind">{doc['kind'].upper()}</span><h1>{html.escape(doc['title'])}</h1><div class="badges">{badges}</div>{properties}<article>{rendered}</article><section class="backlinks"><h2>反向链接</h2>{links}</section></main>{aside}<script src="{search_script}" defer></script><script src="{script}" defer></script></body></html>'''
+    """A published page: the reviewed content plus a description of it. The header,
+    sidebar, headings and panels are drawn in the browser by assets/page.js."""
+    root = _site_root(doc["output"])
+    data = _page_data(doc, rendered, backlinks, by_path, by_stem, source_refs)
+    return (
+        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta name="robots" content="noindex,nofollow">'
+        f'<title>{html.escape(doc["title"])} · DEK</title><link rel="stylesheet" href="{root}assets/style.css">'
+        f'<script src="{root}assets/search.js" defer></script><script src="{root}assets/page.js" defer></script><script src="{root}assets/app.js" defer></script></head>'
+        '<body><div id="page-loading" class="muted">正在加载页面…</div><noscript>此页面需要启用 JavaScript。</noscript>'
+        f'<script type="application/json" id="page-data">{_json_for_html(data)}</script>'
+        f'<template id="page-body">{rendered}</template></body></html>'
+    )
 
 
 def build_site(vault: Path, output: Path) -> dict:
@@ -402,6 +406,7 @@ def build_site(vault: Path, output: Path) -> dict:
     shutil.copy2(asset_dir / "style.css", output / "assets" / "style.css")
     shutil.copy2(asset_dir / "app.js", output / "assets" / "app.js")
     shutil.copy2(asset_dir / "search.js", output / "assets" / "search.js")
+    shutil.copy2(asset_dir / "page.js", output / "assets" / "page.js")
     for doc in docs:
         rendered = _render_body(doc, by_path, by_stem)
         refs = []

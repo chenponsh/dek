@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from web.tests.pagehelper import rendered_page
 from web.site import build_site, sanitize_html
 
 
@@ -119,7 +120,7 @@ class SanitizeSiteIntegrationTests(unittest.TestCase):
                 encoding="utf-8",
             )
             build_site(vault, out)
-            page = (out / "wiki" / "note.html").read_text(encoding="utf-8")
+            page = rendered_page(out / "wiki" / "note.html")
             self.assertNotIn("javascript:", page.lower())
             self.assertIn('href="https://example.com/source"', page)
 
@@ -138,7 +139,7 @@ class SanitizeSiteIntegrationTests(unittest.TestCase):
                 encoding="utf-8",
             )
             build_site(vault, out)
-            page = (out / "wiki" / "note.html").read_text(encoding="utf-8")
+            page = rendered_page(out / "wiki" / "note.html")
             article = page.split("<article>", 1)[1].split("</article>", 1)[0]
             self.assertNotIn("<script", article)
             self.assertNotIn("onerror", page)
