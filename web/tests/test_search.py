@@ -325,3 +325,15 @@ class PageScriptTests(unittest.TestCase):
         for kind in ("wiki", "source"):
             with self.subTest(kind=kind):
                 self.assertIn(f'<span class="kind">{kind.upper()}</span>', self.render({**self.BASE, "kind": kind}))
+
+    def test_the_overview_table_names_an_entry_by_its_file_from_the_link(self):
+        script = f"const p=require({json.dumps(str(PAGE_JS))}); process.stdout.write(JSON.stringify(%s));"
+        def project(href):
+            return json.loads(subprocess.run(["node", "-e", script % f"p.overviewProject({json.dumps(href)})"], check=True, text=True, capture_output=True).stdout)
+        self.assertEqual(project("0101-0001.html"), "0101-0001")
+        self.assertEqual(project("../0102_x/0102-0010.html"), "0102-0010")
+        self.assertEqual(project("%E6%9D%A1%E7%9B%AE2.html"), "条目2")            # a percent-encoded name reads as itself
+        self.assertEqual(project("0101-0001.html#top"), "0101-0001")
+        self.assertEqual(project("%E0%A4%A.html"), "%E0%A4%A")                    # a broken escape does not throw
+        self.assertEqual(project(""), "")
+

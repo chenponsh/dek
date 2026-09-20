@@ -80,6 +80,26 @@
       + `<main class="document${home}"><div class="breadcrumbs">${crumbs}</div>${kind}<h1>${e(data.title)}</h1><div class="badges">${badges}</div>${propertiesHtml(data)}<article>${bodyHtml || ""}</article><section class="backlinks"><h2>反向链接</h2>${backlinks}</section></main>`;
   }
 
+  // A folder's overview table lists its entries as 项目 | 问题 | ...; 项目 should be the entry's
+  // file name (0101-0001), not its question again. Pages built before the generator did this get
+  // it here; for pages that already say it, this changes nothing.
+  function overviewProject(href) {
+    const file = String(href || "").split("#")[0].split("?")[0].split("/").pop().replace(/\.html$/i, "");
+    try { return decodeURIComponent(file); } catch (error) { return file; }
+  }
+
+  function tidyOverviewTables(document) {
+    document.querySelectorAll("article table").forEach(table => {
+      const heads = [...table.querySelectorAll("thead th")].map(cell => cell.textContent.trim());
+      if (heads[0] !== "项目" || heads[1] !== "问题") return;
+      table.querySelectorAll("tbody tr").forEach(row => {
+        const link = row.children[0]?.querySelector("a");
+        const name = link && overviewProject(link.getAttribute("href"));
+        if (name && link.textContent !== name) link.textContent = name;
+      });
+    });
+  }
+
   function mount(document) {
     const dataElement = document && document.getElementById("page-data");
     const body = document && document.getElementById("page-body");
@@ -87,8 +107,9 @@
     let data;
     try { data = JSON.parse(dataElement.textContent); } catch (error) { return; }
     document.body.insertAdjacentHTML("afterbegin", pageHtml(data, body.innerHTML));
+    tidyOverviewTables(document);
     document.getElementById("page-loading")?.remove();
   }
 
-  return { pageHtml, mount, escapeText };
+  return { pageHtml, mount, escapeText, overviewProject };
 });

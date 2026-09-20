@@ -564,6 +564,13 @@ class SiteBuildTests(unittest.TestCase):
         self.assertNotIn(".toc{", style)                          # nothing left to style
         self.assertIn("article code{overflow-wrap:anywhere}", style)   # a long unbroken code span wraps instead of widening the page
 
+    def test_the_page_script_tidies_overview_tables_built_before_the_generator_did(self):
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "page.js").read_text(encoding="utf-8")
+        self.assertIn("tidyOverviewTables(document);", script)                       # runs right after the page is drawn, before app.js wires the tables
+        self.assertIn('if (heads[0] !== "项目" || heads[1] !== "问题") return;', script)   # only the overview table, nothing else
+        self.assertIn("if (name && link.textContent !== name) link.textContent = name;", script)   # nothing to do once the page already says it
+
     def test_the_link_back_to_the_original_page_sits_in_the_note_information(self):
         (self.vault / "source" / "CDE" / "带链接.md").write_text(
             "---\nsource_url: https://example.com/original\ndate: 2026-01-01\n---\n\n正文。", encoding="utf-8")
