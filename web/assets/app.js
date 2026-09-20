@@ -8,7 +8,7 @@
     localStorage.setItem("dek-theme", root.dataset.theme);
   });
 
-  if (document.querySelector(".recent-filters")) document.querySelector("main.document")?.classList.add("home-page");
+  if (document.querySelector(".recent-filters, #home-app")) document.querySelector("main.document")?.classList.add("home-page");
 
   const sidebar = document.querySelector(".sidebar");
   document.querySelector("#menu-toggle")?.addEventListener("click", () => sidebar?.classList.toggle("open"));
@@ -327,8 +327,8 @@
     });
   }
 
-  const recentList = document.querySelector("#recent-list");
-  if (recentList) {
+  const homeApp = document.querySelector("#home-app");
+  function initRecent(recentList) {
     const indexUrl = new URL(recentList.dataset.index, location.href);
     // Scripts are served from the installed code, but the page is only rebuilt by a
     // release: a page built before the nested sub-folder lists were dropped still
@@ -444,6 +444,32 @@
       setCustomOpen(true);
       renderRange();
     }));
+  }
+
+  if (homeApp) {
+    // The page comes from installed code; the release supplies only manifest.json.
+    const manifestUrl = new URL(homeApp.dataset.manifest, location.href);
+    const loadHome = () => {
+      homeApp.textContent = "正在加载首页…";
+      fetch(manifestUrl, { credentials: "same-origin", cache: "no-store" })
+        .then(response => response.ok ? response.json() : Promise.reject())
+        .then(({ tree }) => {
+          homeApp.innerHTML = DEKSearch.homeHtml(tree, {
+            resolve: url => new URL(url, manifestUrl).href,
+            indexPath: homeApp.dataset.index,
+          });
+          initRecent(document.querySelector("#recent-list"));
+        })
+        .catch(() => {
+          homeApp.innerHTML = '<div class="muted">首页加载失败，<button type="button" id="home-retry">点击重试</button></div>';
+          document.querySelector("#home-retry")?.addEventListener("click", loadHome);
+        });
+    };
+    loadHome();
+  } else {
+    // A page built by an older release still carries its own home markup.
+    const legacyRecent = document.querySelector("#recent-list");
+    if (legacyRecent) initRecent(legacyRecent);
   }
 
   document.addEventListener("click", event => {

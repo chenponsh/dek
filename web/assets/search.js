@@ -208,5 +208,51 @@
     return count;
   }
 
-  return { normalize, scoreDocument, searchDocuments, resultSnippet, highlight, resultUrl, recentDocuments, recentDocumentsInRange, countInRange };
+  // ---- Home page ----------------------------------------------------------
+  // The release only carries the directory data (manifest.json); the page itself
+  // is built here, from installed code, so changing it needs a deploy, not a release.
+  const HOME_SECTION_TITLES = { wiki: "Wiki · 正式知识", source: "Source · 来源材料" };
+
+  function firstDocumentUrl(node) {
+    let target = node;
+    while (target.type === "directory" && target.children && target.children.length) target = target.children[0];
+    return target.url || "#";
+  }
+
+  function countHtml(path, total, className, isSection) {
+    const text = isSection ? String(total) : `共 ${total} 篇`;
+    return `<span class="${className}" data-count-path="${escapeText(path)}" data-total="${total}">${text}</span>`;
+  }
+
+  function homeHtml(tree, options) {
+    const resolve = (options && options.resolve) || (url => url);
+    const indexPath = (options && options.indexPath) || "assets/search-index.json";
+    const sections = tree.map(root => {
+      const cards = root.children.map(child => {
+        const name = escapeText(child.name);
+        const total = child.type === "directory" ? child.count : 1;
+        return `<div class="folder-card"><a class="folder-card-link" href="${escapeText(resolve(firstDocumentUrl(child)))}" title="${name}"><strong>${name}</strong>${countHtml(child.path, total, "card-count", false)}</a></div>`;
+      }).join("");
+      const title = HOME_SECTION_TITLES[root.path] || escapeText(root.name);
+      return `<section class="home-section"><h2>${title}${countHtml(root.path, root.count, "section-count", true)}</h2><div class="folder-grid">${cards}</div><p class="section-empty" hidden>该时段内暂无新增内容</p></section>`;
+    }).join("");
+    const filters = '<section class="recent-filters"><h2>最近信息</h2>'
+      + '<div class="recent-tabs" role="group" aria-label="按天数快速筛选">'
+      + '<button type="button" class="recent-tab" data-days="7">7天</button>'
+      + '<button type="button" class="recent-tab" data-days="30">30天</button>'
+      + '<button type="button" class="recent-tab" data-days="90">90天</button>'
+      + '<button type="button" class="recent-tab active" data-days="0">全部</button>'
+      + '<button type="button" class="recent-tab" id="recent-custom" aria-controls="recent-range" aria-expanded="false">自定义</button>'
+      + '</div>'
+      + '<div class="recent-range" id="recent-range" hidden>'
+      + '<label>开始日期 <input type="date" id="recent-start"></label>'
+      + '<label>结束日期 <input type="date" id="recent-end"></label>'
+      + '</div>'
+      + '<p class="recent-summary" id="recent-summary" aria-live="polite"></p>'
+      + '</section>';
+    const recent = `<section class="recent-section"><div id="recent-list" class="recent-list" data-index="${escapeText(indexPath)}">正在加载最近信息…</div></section>`;
+    return filters + sections + recent;
+  }
+
+  return { normalize, scoreDocument, searchDocuments, resultSnippet, highlight, homeHtml, resultUrl, recentDocuments, recentDocumentsInRange, countInRange };
 });

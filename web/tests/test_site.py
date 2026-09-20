@@ -1,4 +1,5 @@
 import re
+import subprocess
 import json
 import tempfile
 import unittest
@@ -147,6 +148,13 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn("重试", script)
         self.assertIn("DEKSearch.resultUrl", script)
 
+    def home_markup(self):
+        """The home page body as the installed scripts build it from this release's manifest.json."""
+        manifest = json.loads((self.out / "manifest.json").read_text(encoding="utf-8"))
+        script = (f"const s=require({json.dumps(str(self.out / 'assets' / 'search.js'))});"
+                  f"process.stdout.write(s.homeHtml({json.dumps(manifest['tree'], ensure_ascii=False)}, {{}}));")
+        return subprocess.run(["node", "-e", script], check=True, text=True, capture_output=True).stdout
+
     def test_homepage_is_a_stable_library_landing_page_not_a_document_redirect(self):
         build_site(self.vault, self.out)
 
@@ -154,8 +162,21 @@ class SiteBuildTests(unittest.TestCase):
 
         self.assertNotIn("http-equiv=\"refresh\"", homepage)
         self.assertIn("DEK 知识库", homepage)
-        self.assertIn("Wiki · 正式知识", homepage)
-        self.assertIn("Source · 来源材料", homepage)
+        markup = self.home_markup()
+        self.assertIn("Wiki · 正式知识", markup)
+        self.assertIn("Source · 来源材料", markup)
+
+    def test_the_built_home_page_is_only_a_shell_the_scripts_fill_in(self):
+        # Filters and category cards come from installed scripts + manifest.json, so a
+        # change to them is a deploy, not a content release.
+        build_site(self.vault, self.out)
+        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('<div id="home-app" data-manifest="manifest.json" data-index="assets/search-index.json">', homepage)
+        for built_by_script in ("folder-card", "recent-tab", "recent-filters", "recent-list", "section-empty"):
+            self.assertNotIn(f'class="{built_by_script}', homepage)
+        self.assertIn("DEKSearch.homeHtml(tree", script)
+        self.assertIn("首页加载失败", script)   # a failed manifest fetch offers a retry, never a blank page
 
     def test_manifest_contains_nested_directory_tree(self):
         build_site(self.vault, self.out)
@@ -188,7 +209,7 @@ class SiteBuildTests(unittest.TestCase):
     def test_homepage_lists_top_level_directories(self):
         build_site(self.vault, self.out)
 
-        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        homepage = self.home_markup()
 
         self.assertIn("01_注册", homepage)
         self.assertIn("CDE", homepage)
@@ -297,7 +318,7 @@ class SiteBuildTests(unittest.TestCase):
 
     def test_homepage_has_recent_section_with_day_filters(self):
         build_site(self.vault, self.out)
-        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        homepage = self.home_markup()
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
         for marker in ("最近信息", "7天", "30天", "90天", "全部"):
             self.assertIn(marker, homepage)
@@ -305,7 +326,7 @@ class SiteBuildTests(unittest.TestCase):
 
     def test_homepage_recent_filters_offer_start_and_end_date_inputs(self):
         build_site(self.vault, self.out)
-        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        homepage = self.home_markup()
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
         self.assertIn('id="recent-start"', homepage)
         self.assertIn('id="recent-end"', homepage)
@@ -323,7 +344,7 @@ class SiteBuildTests(unittest.TestCase):
 
     def test_folder_cards_carry_totals_the_page_script_can_recompute_for_a_date_range(self):
         build_site(self.vault, self.out)
-        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        homepage = self.home_markup()
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
         self.assertRegex(homepage, r'<span class="card-count" data-count-path="wiki/01_注册" data-total="\d+">共 \d+ 篇</span>')
         self.assertRegex(homepage, r'<span class="section-count" data-count-path="wiki" data-total="\d+">\d+</span>')
@@ -333,7 +354,7 @@ class SiteBuildTests(unittest.TestCase):
     def test_a_large_category_is_still_a_single_plain_card(self):
         self.add_big_category()
         build_site(self.vault, self.out)
-        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        homepage = self.home_markup()
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
         for gone in ("has-subs", "card-sub", "card-subs"):
             self.assertNotIn(gone, homepage)
@@ -347,19 +368,19 @@ class SiteBuildTests(unittest.TestCase):
 
     def test_every_card_link_has_the_full_name_as_a_hover_title(self):
         build_site(self.vault, self.out)
-        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        homepage = self.home_markup()
         self.assertRegex(homepage, r'<a class="folder-card-link" href="[^"]+" title="01_注册">')
 
     def test_custom_dates_are_collapsed_behind_a_button_and_the_presets_stay(self):
         build_site(self.vault, self.out)
-        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        homepage = self.home_markup()
         self.assertRegex(homepage, r'<div class="recent-range" id="recent-range" hidden>')
         self.assertIn('id="recent-custom"', homepage)
         self.assertEqual(re.findall(r'data-days="(\d+)"', homepage), ["7", "30", "90", "0"])
 
     def test_the_home_page_lands_on_all_with_every_card_showing_its_total(self):
         build_site(self.vault, self.out)
-        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        homepage = self.home_markup()
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
         self.assertRegex(homepage, r'<button type="button" class="recent-tab active" data-days="0">全部</button>')
         self.assertEqual(homepage.count("recent-tab active"), 1)
@@ -369,7 +390,7 @@ class SiteBuildTests(unittest.TestCase):
 
     def test_a_period_hides_empty_categories_and_each_section_has_an_empty_message(self):
         build_site(self.vault, self.out)
-        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        homepage = self.home_markup()
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
         style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
         self.assertEqual(homepage.count('<p class="section-empty" hidden>该时段内暂无新增内容</p>'), 2)   # Wiki and Source
@@ -387,7 +408,7 @@ class SiteBuildTests(unittest.TestCase):
 
     def test_homepage_recent_results_are_the_last_section_but_filters_stay_up_top(self):
         build_site(self.vault, self.out)
-        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        homepage = self.home_markup()
         filters_at = homepage.index('id="recent-start"')
         first_folder_section_at = homepage.index('class="home-section"')
         results_list_at = homepage.index('id="recent-list"')
@@ -463,7 +484,7 @@ class SiteBuildTests(unittest.TestCase):
         # but already-published HTML only changes with the next content release.
         build_site(self.vault, self.out)
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
-        self.assertIn('document.querySelector(".recent-filters")', script)
+        self.assertIn('document.querySelector(".recent-filters, #home-app")', script)
         self.assertIn('classList.add("home-page")', script)
 
     def test_sidebar_has_no_browse_title(self):

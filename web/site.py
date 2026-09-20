@@ -262,21 +262,6 @@ def _toc(rendered: str) -> str:
     return "".join(f'<a class="toc-{level}" href="#{anchor}">{re.sub("<.*?>", "", text)}</a>' for level, anchor, text in headings)
 
 
-def _first_document_href(node: dict) -> str:
-    """The link a folder card points at: its first document."""
-    target = node
-    while target["type"] == "directory" and target["children"]:
-        target = target["children"][0]
-    return quote(str(target.get("url", "#")), safe="/.-_")
-
-
-def _count_html(path: str, total: int, css: str, section: bool = False) -> str:
-    """A count the home page script re-computes for the chosen date range; `total` is the unfiltered count.
-    The landing view is "全部", so the markup already shows the totals ("共 N 篇")."""
-    text = str(total) if section else f"共 {total} 篇"
-    return f'<span class="{css}" data-count-path="{html.escape(path, quote=True)}" data-total="{total}">{text}</span>'
-
-
 def _manifest_tree(documents: list[dict]) -> list[dict]:
     roots = {kind: {"type": "directory", "name": kind, "path": kind, "children": {}} for kind in ("wiki", "source")}
     for doc in documents:
@@ -434,35 +419,13 @@ def build_site(vault: Path, output: Path) -> dict:
         "path": "首页.md", "kind": "home", "meta": {}, "title": "DEK 知识库",
         "output": PurePosixPath("index.html"),
     }
-    home_sections = []
-    for root_node, label in zip(tree, ("Wiki · 正式知识", "Source · 来源材料")):
-        cards = []
-        for child in root_node["children"]:
-            cards.append(
-                f'<div class="folder-card"><a class="folder-card-link" href="{_first_document_href(child)}" title="{html.escape(child["name"], quote=True)}">'
-                f'<strong>{html.escape(child["name"])}</strong>{_count_html(child["path"], child.get("count", 1), "card-count")}</a></div>')
-        home_sections.append(f'<section class="home-section"><h2>{label}{_count_html(root_node["path"], root_node["count"], "section-count", section=True)}</h2><div class="folder-grid">{"".join(cards)}</div><p class="section-empty" hidden>该时段内暂无新增内容</p></section>')
-    # The filter controls stay near the top (so reviewers don't have to scroll
-    # past every folder card to find them again), but the actual result list
-    # moves below the Wiki/Source cards -- see recent_results_html below.
-    recent_filters_html = (
-        '<section class="recent-filters"><h2>最近信息</h2>'
-        '<div class="recent-tabs" role="group" aria-label="按天数快速筛选">'
-        '<button type="button" class="recent-tab" data-days="7">7天</button>'
-        '<button type="button" class="recent-tab" data-days="30">30天</button>'
-        '<button type="button" class="recent-tab" data-days="90">90天</button>'
-        '<button type="button" class="recent-tab active" data-days="0">全部</button>'
-        '<button type="button" class="recent-tab" id="recent-custom" aria-controls="recent-range" aria-expanded="false">自定义</button>'
-        '</div>'
-        '<div class="recent-range" id="recent-range" hidden>'
-        '<label>开始日期 <input type="date" id="recent-start"></label>'
-        '<label>结束日期 <input type="date" id="recent-end"></label>'
-        '</div>'
-        '<p class="recent-summary" id="recent-summary" aria-live="polite"></p>'
-        '</section>'
+    # The page itself (filters, category cards) is built in the browser by the
+    # installed scripts from manifest.json, so changing it takes a deploy, not a
+    # release; only the directory data below comes from reviewed content.
+    home_body = (
+        '<div id="home-app" data-manifest="manifest.json" data-index="assets/search-index.json">'
+        '<noscript>首页需要启用 JavaScript。</noscript>正在加载首页…</div>'
     )
-    recent_results_html = '<section class="recent-section"><div id="recent-list" class="recent-list" data-index="assets/search-index.json">正在加载最近信息…</div></section>'
-    home_body = recent_filters_html + "".join(home_sections) + recent_results_html
     (output / "index.html").write_text(_page(home_doc, docs, home_body, [], by_path, by_stem), encoding="utf-8")
     return {"documents": len(docs), "wiki": sum(d["kind"] == "wiki" for d in docs), "source": sum(d["kind"] == "source" for d in docs)}
 
