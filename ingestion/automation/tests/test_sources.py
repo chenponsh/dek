@@ -364,6 +364,94 @@ class NifdcTests(unittest.TestCase):
         self.assertEqual(seen, [False])
 
 
+class ShandongTests(unittest.TestCase):
+    SOURCE = {"url": "http://mpa.shandong.gov.cn/col/col101798/index.html",
+              "api_url": "http://mpa.shandong.gov.cn/api/unit", "api_params": {"pageId": "x"}}
+
+    @staticmethod
+    def payload(*items):
+        li = "".join(f'<li><a title="{t}" href="{u}" target="_blank">{t}</a><span>{d}</span></li>' for t, u, d in items)
+        return json.dumps({"success": True, "data": {"html": f'<div class="page-content">{li}</div>'}}, ensure_ascii=False)
+
+    def test_numbered_qa_is_split(self):
+        text = "标题\n发布日期：2025-08-20\n一\n问题一？\n答案一。\n补充。\n二\n问题二？\n答案二。"
+        self.assertEqual(sources.split_numbered(text), [("问题一？", "答案一。\n补充。"), ("问题二？", "答案二。")])
+
+    def test_real_page_is_read_and_cosmetics_and_wechat_items_are_not_drafted(self):
+        pages = iter([fixture("shandong_list_page2.json"), self.payload()])
+        rows, meta = sources.fetch_shandong(self.SOURCE, set(), "2000-01-01", get=lambda url: next(pages), max_pages=2)
+        self.assertEqual(rows, [])
+        self.assertTrue(any("化妆品" in f["title"] for f in meta["filtered_out"]))
+        self.assertTrue(meta["skipped_items"])
+
+    def test_on_site_article_becomes_one_row_per_numbered_question(self):
+        page_url = "/col/col101798/art/2025/art_x.html"
+        listing = self.payload(("“检”问百“答” | 药品检验问题解答", page_url, "2025-08-20"), ("对话某分局", "https://sdxw.iqilu.com/a.html", "2025-08-19"))
+        article = fixture("shandong_article.html")
+        calls = []
+
+        def get(url):
+            calls.append(url)
+            return article if url.endswith("art_x.html") else listing
+        rows, _ = sources.fetch_shandong(self.SOURCE, set(), "2025-01-01", get=get, max_pages=1)
+        self.assertEqual(len(rows), 5)
+        self.assertEqual(rows[0].date, "2025-08-20")
+        self.assertEqual(rows[0].article_url, "http://mpa.shandong.gov.cn/col/col101798/art/2025/art_x.html")
+        self.assertFalse(any("iqilu" in url for url in calls))
+
+    def test_wechat_articles_are_reported_not_drafted(self):
+        listing = self.payload(("“检”问百“答” | 药品微生物检验问题解答", "https://mp.weixin.qq.com/s/abc", "2025-12-24"))
+        rows, meta = sources.fetch_shandong(self.SOURCE, set(), "2025-01-01", get=lambda url: listing, max_pages=1)
+        self.assertEqual(rows, [])
+        self.assertIn("微信", meta["skipped_items"][0]["reason"])
+
+    def test_known_and_old_items_are_not_opened(self):
+        listing = self.payload(("“检”问百“答” | 药品检验问题解答", "/col/x/art_y.html", "2025-08-20"))
+        calls = []
+
+        def get(url):
+            calls.append(url)
+            return listing
+        sources.fetch_shandong(self.SOURCE, {"http://mpa.shandong.gov.cn/col/x/art_y.html"}, "2000-01-01", get=get, max_pages=1)
+        sources.fetch_shandong(self.SOURCE, set(), "2026-01-01", get=get, max_pages=1)
+        self.assertEqual(len(calls), 2)  # list pages only
+
+    def test_empty_interface_is_a_failure(self):
+        with self.assertRaises(SafetyStop):
+            sources.fetch_shandong(self.SOURCE, set(), "2000-01-01", get=lambda url: self.payload())
+
+
+class JiangsuArticlesTests(unittest.TestCase):
+    URL = "https://da.jiangsu.gov.cn/col/col84698/index.html"
+
+    def listing(self, *items):
+        rows = "".join(f'<tr><td><a class="bt_link" href="{u}"><b>·</b>{t}</a></td><td><font>{d}</font></td></tr>' for t, u, d in items)
+        return f"<table>{rows}</table>"
+
+    def test_only_drug_registration_and_change_titles_pass_and_the_rest_are_listed_as_dropped(self):
+        listing = self.listing(
+            ("《药品上市后变更管理办法》解读（一）", "/art/2026/9/1/art_84698_1.html", "2026-09-01"),
+            ("《医疗器械经营质量管理规范》系列解读（一）", "/art/2026/9/2/art_84698_2.html", "2026-09-02"),
+            ("药品经营和使用质量监督管理办法解读", "/art/2026/9/3/art_84698_3.html", "2026-09-03"),
+            ("【宪法宣传周】国家根本大法", "/art/2026/9/4/art_84698_4.html", "2026-09-04"))
+        article = fixture("jiangsu_article.html")
+        calls = []
+
+        def get(url):
+            calls.append(url)
+            return listing if url == self.URL else article
+        rows, meta = sources.fetch_jiangsu_articles({"url": self.URL}, set(), "2026-01-01", get=get)
+        self.assertEqual(len(calls), 2)  # list + the one on-topic article
+        self.assertEqual({r.article_title for r in rows}, {"《药品上市后变更管理办法》解读（一）"})
+        self.assertEqual(len(meta["filtered_out"]), 3)
+
+    def test_insert_articles_removes_the_placeholder_line(self):
+        note = "---\nlast_updated: 2026-01-01\n---\n\n## 内容\n\n_待整理。_\n"
+        result = insert_articles(note, [sources.ArticleRow("问", "答", "2026-09-01", "标题", "https://x/1.html")])
+        self.assertNotIn("待整理", result)
+        self.assertIn("### [标题](https://x/1.html)（2026-09-01）", result)
+
+
 class TableSourceStagingTests(unittest.TestCase):
     NOTE = (
         "---\nentity: x\nlast_updated: 2026-02-28\n---\n\n## 内容\n\n"

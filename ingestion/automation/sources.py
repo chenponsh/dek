@@ -623,6 +623,118 @@ def fetch_jspcc(
     return rows, meta
 
 
+# ------------------------------------------------ 山东省药监局 “检”问百“答” (in 在线访谈)
+
+_SD_ITEM = re.compile(r'<li><a title="(?P<title>[^"]*)" href="(?P<href>[^"]*)"[^>]*>.*?<span>(?P<date>\d{4}-\d{2}-\d{2})</span>', re.S)
+_NUMBERED = re.compile(r"^(?:[一二三四五六七八九十百]+|\d+)$")
+
+
+def split_numbered(text: str) -> list[tuple[str, str]]:
+    """`一 / 问题 / 答案… / 二 / 问题 / 答案…` (a numeral alone on a line starts
+    an item; its first line is the question)."""
+    items: list[list[str]] = []
+    for line in text.split("\n"):
+        if _NUMBERED.match(line.strip()):
+            items.append([])
+        elif items:
+            items[-1].append(line)
+    return [(block[0].strip(), "\n".join(block[1:]).strip()) for block in items if len(block) > 1 and "".join(block[1:]).strip()]
+
+
+def _shandong_page(source: dict[str, Any], page_no: int, get: Callable[[str], str]) -> list[ListItem]:
+    query = urllib.parse.urlencode({**source["api_params"], "paramJson": json.dumps({"pageNo": page_no, "pageSize": 15})})
+    payload = json.loads(get(f"{source['api_url']}?{query}"))
+    fragment = str(((payload.get("data") or {}).get("html")) or "")
+    return [ListItem(urllib.parse.urljoin(source["url"], m.group("href")), html.unescape(m.group("title")).strip(), m.group("date"))
+            for m in _SD_ITEM.finditer(fragment)]
+
+
+def fetch_shandong(
+    source: dict[str, Any], known: set[Any], since: str, get: Callable[[str], str] = http_get, max_pages: int = 10,
+) -> tuple[list[Row], dict[str, Any]]:
+    """Only the “检”问百“答” series of the 在线访谈 column. Articles on the
+    bureau's own site are read; WeChat links are behind a verification page and
+    are reported as skipped."""
+    rows: list[Row] = []
+    skipped: list[dict[str, str]] = []
+    filtered: list[dict[str, str]] = []
+    seen = 0
+    for page_no in range(1, max_pages + 1):
+        items = _shandong_page(source, page_no, get)
+        if not items:
+            if page_no == 1:
+                raise SafetyStop("Shandong column list is empty; interface may have changed")
+            break
+        seen += len(items)
+        for item in items:
+            if item.date <= since or item.url in known or "问百" not in item.title:
+                continue
+            if _NOT_DRUG.search(item.title):
+                filtered.append({"title": item.title, "reason": "不属于化学药品制剂主题"})
+                continue
+            if "mp.weixin.qq.com" in item.url:
+                skipped.append({"title": item.title, "url": item.url, "reason": "微信文章需要验证，无法自动提取，请人工查看"})
+                continue
+            try:
+                page = get(item.url)
+            except SafetyStop as exc:
+                skipped.append({"title": item.title, "url": item.url, "reason": str(exc)})
+                continue
+            body = html_to_text(extract_block(page, lambda tag, a: tag == "div" and _has_class(a, "wen")))
+            if not body:
+                skipped.append({"title": item.title, "url": item.url, "reason": "article body not found or empty"})
+                continue
+            if not on_topic(item.title, body):
+                filtered.append({"title": item.title, "reason": "不属于化学药品制剂主题"})
+                continue
+            for question, answer in split_numbered(body) or [(item.title, body)]:
+                rows.append(ArticleRow(question, answer, item.date, item.title, item.url))
+        if items[-1].date <= since:
+            break
+    meta: dict[str, Any] = {"remote_count": seen, "latest_date": max((r.date for r in rows), default=None)}
+    if skipped:
+        meta["skipped_items"] = skipped
+    if filtered:
+        meta["filtered_out"] = filtered
+    return rows, meta
+
+
+def fetch_jiangsu_articles(
+    source: dict[str, Any], known: set[Any], since: str, get: Callable[[str], str] = http_get,
+) -> tuple[list[Row], dict[str, Any]]:
+    """Jiangsu column of explanatory articles (药小问普法讲堂): not Q&A rows but
+    articles, so they go in as `### [标题](链接)（日期）` sections. Only articles
+    whose title is about drugs' registration/change/label matters are kept."""
+    listing = parse_jiangsu_list(get(source["url"]), source["url"])
+    if not listing:
+        raise SafetyStop("Jiangsu column page lists no articles; page structure may have changed")
+    rows: list[Row] = []
+    skipped: list[dict[str, str]] = []
+    filtered: list[dict[str, str]] = []
+    for item in listing:
+        if item.date <= since or item.url in known:
+            continue
+        if _NOT_DRUG.search(item.title) or _BJ_TRADE.search(item.title) or not _DRUG.search(item.title):
+            filtered.append({"title": item.title, "reason": "标题不属于化学药品制剂注册/生产/质量/变更主题"})
+            continue
+        try:
+            title, answer, _ = parse_jiangsu_article(get(item.url))
+        except SafetyStop as exc:
+            skipped.append({"url": item.url, "reason": str(exc)})
+            continue
+        if not answer or _NOT_DRUG.search(answer[:200]):
+            filtered.append({"title": item.title, "reason": "正文为空或不属于化学药品制剂主题"})
+            continue
+        for question, reply in split_qa(answer) or [(item.title, answer)]:
+            rows.append(ArticleRow(question, reply, item.date, item.title, item.url))
+    meta: dict[str, Any] = {"remote_count": len(listing), "latest_date": max((i.date for i in listing), default=None)}
+    if skipped:
+        meta["skipped_items"] = skipped
+    if filtered:
+        meta["filtered_out"] = filtered
+    return rows, meta
+
+
 def fetch_shanghai_all(source: dict[str, Any], known: set[tuple[str, str]], since: str) -> tuple[list[Row], dict[str, Any]]:
     """Shanghai serves the whole Q&A list as JSON in one request."""
     return fetch_shanghai(source["url"])
@@ -639,4 +751,6 @@ FETCHERS: dict[str, Callable[..., tuple[list[Row], dict[str, Any]]]] = {
     "articles": fetch_article_source,
     "beijing": fetch_beijing,
     "jspcc": fetch_jspcc,
+    "shandong": fetch_shandong,
+    "jiangsu_articles": fetch_jiangsu_articles,
 }

@@ -108,7 +108,8 @@ def insert_articles(note: str, rows: list[Row]) -> str:
         sections.append(
             f"### [{title}]({url})（{first.date[:10]}）\n\n| 问题 | 解答 | 发布日期 |\n| --- | --- | --- |\n{table}\n"
         )
-    return note[:marker.end()] + "\n" + "".join(sections) + note[marker.end():].lstrip("\n")
+    rest = note[marker.end():].replace("_待整理。_", "").lstrip("\n")
+    return note[:marker.end()] + "\n" + "".join(sections) + rest
 
 
 def insert_rows(note: str, rows: list[Row]) -> str:
