@@ -886,6 +886,26 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("建议路径：暂无", page)
         self.assertNotIn('<div class="path-suggestions">', page)
 
+    def test_text_that_already_says_问_and_答_gets_no_second_label(self):
+        rough = ROUGH.replace("| Q | A | 2026-09-14 |", "| 问：如何开展粉液双室袋仿制药的药学研究？ | 答：本问题解答是对《粉液双室袋产品技术审评要点（试行）》的补充。<br>第二段。 | 2026-09-14 |")
+        shown = rough_display(rough)
+        self.assertIn("问：如何开展粉液双室袋仿制药的药学研究？\n答：本问题解答是对《粉液双室袋产品技术审评要点（试行）》的补充。\n第二段。\n发布日期：2026-09-14", shown)
+        self.assertNotIn("问题：问", shown)
+        self.assertNotIn("解答：答", shown)
+
+    def test_each_side_is_labelled_only_when_it_lacks_its_own(self):
+        cases = {
+            ("问：怎么办", "直接处理"): "问：怎么办\n解答：直接处理",
+            ("怎么办", "答：直接处理"): "问题：怎么办\n答：直接处理",
+            ("问题1 ：怎么办", "答案：直接处理"): "问题1 ：怎么办\n答案：直接处理",
+            ("Q: how", "A: so"): "Q: how\nA: so",
+            ("问答方式有哪些", "答复期限为5日"): "问题：问答方式有哪些\n解答：答复期限为5日",   # 问/答 in the text but not a label
+        }
+        for (question, answer), expected in cases.items():
+            with self.subTest(question=question, answer=answer):
+                shown = rough_display(ROUGH.replace("| Q | A | 2026-09-14 |", f"| {question} | {answer} | 2026-09-14 |"))
+                self.assertIn(expected + "\n发布日期：2026-09-14", shown)
+
     def test_content_without_frontmatter_is_shown_as_is(self):
         self.assertEqual(rough_display("just text\n"), "just text\n")
 

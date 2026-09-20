@@ -147,8 +147,12 @@ def _short_source(source: str) -> str:
 QA_TABLE = re.compile(r"^\|[ \t]*问题[ \t]*\|[ \t]*解答[ \t]*\|[ \t]*发布日期[ \t]*\|[ \t]*\n\|[ \t:|-]+\|[ \t]*\n((?:\|[^\n]*(?:\n|\Z))*)", re.M)
 
 
+QUESTION_LABELLED = re.compile(r"\s*(?:问题?|Q)\s*[0-9一二三四五六七八九十]*\s*[:：]", re.I)
+ANSWER_LABELLED = re.compile(r"\s*(?:答案?|解答|回答|A)\s*[:：]", re.I)
+
+
 def _qa_lines(body: str) -> str:
-    """Turn the draft's | 问题 | 解答 | 发布日期 | table into 问题：/解答：/发布日期： lines."""
+    """Turn the draft's | 问题 | 解答 | 发布日期 | table into 问题：/解答：/发布日期： lines (a text that already carries its own 问：/答： keeps just that)."""
     table = QA_TABLE.search(body)
     if not table:
         return body
@@ -157,7 +161,11 @@ def _qa_lines(body: str) -> str:
         cells = [cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", line)[1:-1]]
         if len(cells) == 3:
             question, answer, date = cells
-            blocks.append(f"问题：{question}\n解答：{re.sub(r'<br\s*/?>', chr(10), answer)}\n发布日期：{date}")
+            answer = re.sub(r'<br\s*/?>', chr(10), answer)
+            # Text that already starts with its own 问：/答： needs no second label.
+            question_line = question if QUESTION_LABELLED.match(question) else f"问题：{question}"
+            answer_line = answer if ANSWER_LABELLED.match(answer) else f"解答：{answer}"
+            blocks.append(f"{question_line}\n{answer_line}\n发布日期：{date}")
     if not blocks:
         return body
     before = re.sub(r"(?m)^##[ \t]*新增问答[ \t]*\n*\Z", "", body[:table.start()])
