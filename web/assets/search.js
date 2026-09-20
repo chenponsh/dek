@@ -241,6 +241,7 @@
       + '<button type="button" class="recent-tab" data-days="7">7天</button>'
       + '<button type="button" class="recent-tab" data-days="30">30天</button>'
       + '<button type="button" class="recent-tab" data-days="90">90天</button>'
+      + '<button type="button" class="recent-tab" data-days="undated">无日期</button>'
       + '<button type="button" class="recent-tab active" data-days="0">全部</button>'
       + '<button type="button" class="recent-tab" id="recent-custom" aria-controls="recent-range" aria-expanded="false">自定义</button>'
       + '</div>'
@@ -254,5 +255,20 @@
     return filters + sections + recent;
   }
 
-  return { normalize, scoreDocument, searchDocuments, resultSnippet, highlight, homeHtml, resultUrl, recentDocuments, recentDocumentsInRange, countInRange };
+  // Documents with no date at all (directory pages, notes that carry no date), by path.
+  function undatedDocuments(documents) {
+    return documents.filter(document => !String(document.date || "").slice(0, 10))
+      .sort((left, right) => String(left.path).localeCompare(String(right.path)));
+  }
+
+  function countUndated(documents, prefix) {
+    const inside = prefix + "/";
+    let count = 0;
+    for (const document of undatedDocuments(documents)) {
+      if (document.path === prefix || String(document.path).startsWith(inside)) count += 1;
+    }
+    return count;
+  }
+
+  return { normalize, scoreDocument, searchDocuments, resultSnippet, highlight, homeHtml, undatedDocuments, countUndated, resultUrl, recentDocuments, recentDocumentsInRange, countInRange };
 });

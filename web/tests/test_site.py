@@ -406,7 +406,7 @@ class SiteBuildTests(unittest.TestCase):
         homepage = self.home_markup()
         self.assertRegex(homepage, r'<div class="recent-range" id="recent-range" hidden>')
         self.assertIn('id="recent-custom"', homepage)
-        self.assertEqual(re.findall(r'data-days="(\d+)"', homepage), ["7", "30", "90", "0"])
+        self.assertEqual(re.findall(r'data-days="(\w+)"', homepage), ["7", "30", "90", "undated", "0"])   # 无日期 sits with the periods
 
     def test_the_home_page_lands_on_all_with_every_card_showing_its_total(self):
         build_site(self.vault, self.out)
@@ -430,11 +430,21 @@ class SiteBuildTests(unittest.TestCase):
         self.assertNotIn("opacity:.45", style)                    # empty cards are hidden, not dimmed
         self.assertIn(".folder-card[hidden]", style)              # display:flex would otherwise defeat `hidden`
 
+    def test_全部_lists_everything_and_无日期_lists_only_what_has_no_date(self):
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('...DEKSearch.undatedDocuments(recentDocs)]', script)        # 全部 = dated newest first, then undated
+        self.assertIn("undatedOnly ? DEKSearch.undatedDocuments(recentDocs)", script)
+        self.assertIn('days === "undated"', script)
+        self.assertIn("countUndated", script)                                      # cards count only the undated ones there
+        self.assertIn("没有无日期的内容", script)
+
     def test_dates_are_labelled_as_publication_dates(self):
         build_site(self.vault, self.out)
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
         self.assertIn("发布于 ${doc.date}", script)
-        self.assertIn("日期待确认", script)
+        self.assertIn('"无日期"', script)
+        self.assertNotIn("日期待确认", script)
 
     def test_homepage_recent_results_are_the_last_section_but_filters_stay_up_top(self):
         build_site(self.vault, self.out)

@@ -346,14 +346,17 @@
       return `${year}-${month}-${day}`;
     }
 
+    // The 无日期 tab lists the documents that carry no date; every other choice is a date range.
+    let undatedOnly = false;
+
     function renderRecentList(docs) {
       if (!docs.length) {
-        recentList.innerHTML = '<div class="muted">该时间段内没有内容</div>';
+        recentList.innerHTML = `<div class="muted">${undatedOnly ? "没有无日期的内容" : "该时间段内没有内容"}</div>`;
         return;
       }
       recentList.innerHTML = docs.map(doc => {
         const href = DEKSearch.resultUrl(doc, indexUrl);
-        const dateLabel = doc.date ? `发布于 ${doc.date}` : "日期待确认";
+        const dateLabel = doc.date ? `发布于 ${doc.date}` : "无日期";
         return `<a class="recent-item" href="${href}"><span class="recent-date">${escapeHtml(dateLabel)}</span><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.kind.toUpperCase())} · ${escapeHtml(doc.path)}</small></a>`;
       }).join("");
     }
@@ -368,15 +371,16 @@
       customButton?.setAttribute("aria-expanded", String(open));
     }
 
-    // "全部" shows every card with its total. A chosen period shows only the
-    // categories that have something in it, with the period's count alone, and a
-    // section with nothing in the period says so. Documents without a date are
-    // outside any period.
+    // "全部" shows every card with its total. A chosen period, or 无日期, shows only
+    // the categories that have something in it, with that count alone, and a
+    // section with nothing says so. Documents without a date are outside any period.
     function updateCounts(start, end) {
-      const filtered = Boolean(start || end);
+      const filtered = Boolean(start || end || undatedOnly);
       document.querySelectorAll("[data-count-path]").forEach(element => {
         const total = Number(element.dataset.total);
-        const shown = filtered ? DEKSearch.countInRange(recentDocs, element.dataset.countPath, start, end) : total;
+        const path = element.dataset.countPath;
+        const shown = undatedOnly ? DEKSearch.countUndated(recentDocs, path)
+          : (filtered ? DEKSearch.countInRange(recentDocs, path, start, end) : total);
         const isSection = element.classList.contains("section-count");
         element.textContent = isSection ? String(shown) : (filtered ? `${shown} 篇` : `共 ${total} 篇`);
         const box = element.closest(".folder-card");
@@ -392,29 +396,36 @@
     }
 
     function renderRange() {
-      const start = startInput?.value || "";
-      const end = endInput?.value || "";
-      const docs = DEKSearch.recentDocumentsInRange(recentDocs, start, end);
+      const start = undatedOnly ? "" : (startInput?.value || "");
+      const end = undatedOnly ? "" : (endInput?.value || "");
+      // 全部 is everything: the dated ones newest first, then the ones with no date.
+      const docs = undatedOnly ? DEKSearch.undatedDocuments(recentDocs)
+        : (start || end) ? DEKSearch.recentDocumentsInRange(recentDocs, start, end)
+        : [...DEKSearch.recentDocumentsInRange(recentDocs, "", ""), ...DEKSearch.undatedDocuments(recentDocs)];
       renderRecentList(docs);
       updateCounts(start, end);
       if (summary) {
         const undated = recentDocs.filter(doc => !doc.date).length;
-        summary.textContent = (start || end)
-          ? `${start || "最早"} 至 ${end || "今天"}：共 ${docs.length} 篇。上方只显示该时段内有内容的分类，数字为该时段的篇数。`
-          : `全部 ${recentDocs.length} 篇` + (undated ? `，其中 ${undated} 篇没有日期（如目录页），不在下方列表中。` : "。");
+        summary.textContent = undatedOnly
+          ? `无日期的内容共 ${docs.length} 篇。上方只显示含有无日期内容的分类，数字为无日期的篇数。`
+          : (start || end)
+            ? `${start || "最早"} 至 ${end || "今天"}：共 ${docs.length} 篇。上方只显示该时段内有内容的分类，数字为该时段的篇数。`
+            : `全部 ${recentDocs.length} 篇` + (undated ? `，其中 ${undated} 篇无日期（如目录页），排在列表最后；也可点“无日期”单独查看。` : "。");
       }
     }
 
+    // `days` is a number of days, 0 for 全部, or "undated" for 无日期.
     function applyDays(days) {
       setCustomOpen(false);
+      undatedOnly = days === "undated";
       tabs.forEach(tab => tab.classList.toggle("active", tab.dataset.days === String(days)));
       if (!startInput || !endInput) return;
-      if (days === 0) {
+      if (undatedOnly || Number(days) === 0) {
         startInput.value = "";
         endInput.value = "";
       } else {
         const end = new Date();
-        const start = new Date(end.getTime() - (days - 1) * 86400000);
+        const start = new Date(end.getTime() - (Number(days) - 1) * 86400000);
         endInput.value = isoDay(end);
         startInput.value = isoDay(start);
       }
@@ -432,14 +443,16 @@
     }
     loadRecent();
 
-    tabs.forEach(tab => tab.addEventListener("click", () => applyDays(Number(tab.dataset.days))));
+    tabs.forEach(tab => tab.addEventListener("click", () => applyDays(tab.dataset.days === "undated" ? "undated" : Number(tab.dataset.days))));
     customButton?.addEventListener("click", () => {
       const open = rangeBox?.hidden !== false;
+      undatedOnly = false;
       tabs.forEach(tab => tab.classList.remove("active"));
       setCustomOpen(open);
       if (!open) applyDays(0);
     });
     [startInput, endInput].forEach(field => field?.addEventListener("change", () => {
+      undatedOnly = false;
       tabs.forEach(tab => tab.classList.remove("active"));
       setCustomOpen(true);
       renderRange();

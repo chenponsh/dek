@@ -48,6 +48,16 @@ class FuzzySearchTests(unittest.TestCase):
         self.assertEqual(self.run_javascript(f"s.countInRange({documents}, 'wiki/16_a', '2026-08-01', '')"), 1)  # a range: dated and inside
         self.assertEqual(self.run_javascript(f"s.countInRange({documents}, 'wiki', '2026-08-01', '2026-09-30')"), 2)
 
+    def test_undated_documents_are_listed_by_path_and_counted_per_folder(self):
+        documents = json.dumps([
+            {"path": "wiki/a/2.md", "date": None}, {"path": "wiki/a/1.md", "date": ""}, {"path": "wiki/a/3.md", "date": "2026-01-01"},
+            {"path": "wiki/ab/1.md"}, {"path": "source/x.md", "date": None}])
+        self.assertEqual([d["path"] for d in self.run_javascript(f"s.undatedDocuments({documents})")],
+                         ["source/x.md", "wiki/a/1.md", "wiki/a/2.md", "wiki/ab/1.md"])
+        self.assertEqual(self.run_javascript(f"s.countUndated({documents}, 'wiki/a')"), 2)     # not wiki/ab
+        self.assertEqual(self.run_javascript(f"s.countUndated({documents}, 'wiki')"), 3)
+        self.assertEqual(self.run_javascript(f"s.countUndated({documents}, 'source')"), 1)
+
     def test_result_url_resolves_from_site_root_not_assets_directory(self):
         url = self.run_javascript("s.resultUrl({url:'wiki/中文.html'}, 'https://regkb.chenponai.com/kb/assets/search-index.json')")
         self.assertEqual(url, "https://regkb.chenponai.com/kb/wiki/%E4%B8%AD%E6%96%87.html")
