@@ -325,7 +325,7 @@ class SiteBuildTests(unittest.TestCase):
         build_site(self.vault, self.out)
         homepage = (self.out / "index.html").read_text(encoding="utf-8")
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
-        self.assertRegex(homepage, r'<span class="card-count" data-count-path="wiki/01_注册" data-total="\d+">\d+ 篇</span>')
+        self.assertRegex(homepage, r'<span class="card-count" data-count-path="wiki/01_注册" data-total="\d+">共 \d+ 篇</span>')
         self.assertRegex(homepage, r'<span class="section-count" data-count-path="wiki" data-total="\d+">\d+</span>')
         self.assertIn("countInRange", script)
         self.assertIn('id="recent-summary"', homepage)
@@ -360,6 +360,28 @@ class SiteBuildTests(unittest.TestCase):
         self.assertRegex(homepage, r'<div class="recent-range" id="recent-range" hidden>')
         self.assertIn('id="recent-custom"', homepage)
         self.assertEqual(re.findall(r'data-days="(\d+)"', homepage), ["7", "30", "90", "0"])
+
+    def test_the_home_page_lands_on_all_with_every_card_showing_its_total(self):
+        build_site(self.vault, self.out)
+        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertRegex(homepage, r'<button type="button" class="recent-tab active" data-days="0">全部</button>')
+        self.assertEqual(homepage.count("recent-tab active"), 1)
+        self.assertIn("applyDays(0)", script)
+        self.assertNotIn("applyDays(7)", script)
+        self.assertNotIn("is-empty", script)
+
+    def test_a_period_hides_empty_categories_and_each_section_has_an_empty_message(self):
+        build_site(self.vault, self.out)
+        homepage = (self.out / "index.html").read_text(encoding="utf-8")
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        self.assertEqual(homepage.count('<p class="section-empty" hidden>该时段内暂无新增内容</p>'), 2)   # Wiki and Source
+        self.assertIn("box.hidden = filtered && shown === 0", script)
+        self.assertIn("`${shown} 篇`", script)                    # a period shows its own count only
+        self.assertNotIn("· 共", script)                          # ... never the total next to it
+        self.assertNotIn("opacity:.45", style)                    # empty cards are hidden, not dimmed
+        self.assertIn(".folder-card[hidden]", style)              # display:flex would otherwise defeat `hidden`
 
     def test_dates_are_labelled_as_publication_dates(self):
         build_site(self.vault, self.out)

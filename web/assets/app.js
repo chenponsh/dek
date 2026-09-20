@@ -364,16 +364,27 @@
       customButton?.setAttribute("aria-expanded", String(open));
     }
 
-    // The folder-card and section counts follow the chosen range; with no range
-    // they are the plain totals. Documents without a date are outside any range.
+    // "全部" shows every card with its total. A chosen period shows only the
+    // categories that have something in it, with the period's count alone, and a
+    // section with nothing in the period says so. Documents without a date are
+    // outside any period.
     function updateCounts(start, end) {
       const filtered = Boolean(start || end);
       document.querySelectorAll("[data-count-path]").forEach(element => {
         const total = Number(element.dataset.total);
         const shown = filtered ? DEKSearch.countInRange(recentDocs, element.dataset.countPath, start, end) : total;
-        const sub = element.classList.contains("section-count");
-        element.textContent = !filtered ? (sub ? String(total) : `${total} 篇`) : (sub ? `${shown} / ${total}` : `${shown} 篇 · 共 ${total}`);
-        element.closest(".folder-card-link, .card-sub")?.classList.toggle("is-empty", filtered && shown === 0);
+        const isSection = element.classList.contains("section-count");
+        element.textContent = isSection ? String(shown) : (filtered ? `${shown} 篇` : `共 ${total} 篇`);
+        const box = element.closest(".folder-card, .card-sub");
+        if (box) box.hidden = filtered && shown === 0;
+      });
+      document.querySelectorAll(".card-subs").forEach(list => { list.hidden = !list.querySelector(".card-sub:not([hidden])"); });
+      document.querySelectorAll(".home-section").forEach(section => {
+        const anyCard = Boolean(section.querySelector(".folder-card:not([hidden])"));
+        const grid = section.querySelector(".folder-grid");
+        const empty = section.querySelector(".section-empty");
+        if (grid) grid.hidden = !anyCard;
+        if (empty) empty.hidden = anyCard;
       });
     }
 
@@ -386,7 +397,7 @@
       if (summary) {
         const undated = recentDocs.filter(doc => !doc.date).length;
         summary.textContent = (start || end)
-          ? `${start || "最早"} 至 ${end || "今天"}：共 ${docs.length} 篇。上方分类卡片的数字也按这个范围统计（“共”为全部篇数）。`
+          ? `${start || "最早"} 至 ${end || "今天"}：共 ${docs.length} 篇。上方只显示该时段内有内容的分类，数字为该时段的篇数。`
           : `全部 ${recentDocs.length} 篇` + (undated ? `，其中 ${undated} 篇没有日期（如目录页），不在下方列表中。` : "。");
       }
     }
@@ -410,7 +421,7 @@
     function loadRecent() {
       recentList.innerHTML = '<div class="muted">正在加载最近信息…</div>';
       loadSharedIndex(indexUrl)
-        .then(data => { recentDocs = data; applyDays(7); })
+        .then(data => { recentDocs = data; applyDays(0); })
         .catch(() => {
           recentList.innerHTML = '<div class="muted">最近信息加载失败，<button type="button" id="recent-retry">点击重试</button></div>';
           document.querySelector("#recent-retry")?.addEventListener("click", loadRecent);
@@ -423,7 +434,7 @@
       const open = rangeBox?.hidden !== false;
       tabs.forEach(tab => tab.classList.remove("active"));
       setCustomOpen(open);
-      if (!open) applyDays(7);
+      if (!open) applyDays(0);
     });
     [startInput, endInput].forEach(field => field?.addEventListener("change", () => {
       tabs.forEach(tab => tab.classList.remove("active"));

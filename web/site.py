@@ -274,9 +274,11 @@ def _first_document_href(node: dict) -> str:
     return quote(str(target.get("url", "#")), safe="/.-_")
 
 
-def _count_html(path: str, total: int, css: str, suffix: str = " 篇") -> str:
-    """A count the home page script re-computes for the chosen date range; `total` is the unfiltered count."""
-    return f'<span class="{css}" data-count-path="{html.escape(path, quote=True)}" data-total="{total}">{total}{suffix}</span>'
+def _count_html(path: str, total: int, css: str, section: bool = False) -> str:
+    """A count the home page script re-computes for the chosen date range; `total` is the unfiltered count.
+    The landing view is "全部", so the markup already shows the totals ("共 N 篇")."""
+    text = str(total) if section else f"共 {total} 篇"
+    return f'<span class="{css}" data-count-path="{html.escape(path, quote=True)}" data-total="{total}">{text}</span>'
 
 
 def _manifest_tree(documents: list[dict]) -> list[dict]:
@@ -450,17 +452,17 @@ def build_site(vault: Path, output: Path) -> dict:
             cards.append(
                 f'<div class="folder-card{" has-subs" if subs else ""}"><a class="folder-card-link" href="{_first_document_href(child)}" title="{html.escape(child["name"], quote=True)}">'
                 f'<strong>{html.escape(child["name"])}</strong>{_count_html(child["path"], child.get("count", 1), "card-count")}</a>{subs}</div>')
-        home_sections.append(f'<section class="home-section"><h2>{label}{_count_html(root_node["path"], root_node["count"], "section-count", suffix="")}</h2><div class="folder-grid">{"".join(cards)}</div></section>')
+        home_sections.append(f'<section class="home-section"><h2>{label}{_count_html(root_node["path"], root_node["count"], "section-count", section=True)}</h2><div class="folder-grid">{"".join(cards)}</div><p class="section-empty" hidden>该时段内暂无新增内容</p></section>')
     # The filter controls stay near the top (so reviewers don't have to scroll
     # past every folder card to find them again), but the actual result list
     # moves below the Wiki/Source cards -- see recent_results_html below.
     recent_filters_html = (
         '<section class="recent-filters"><h2>最近信息</h2>'
         '<div class="recent-tabs" role="group" aria-label="按天数快速筛选">'
-        '<button type="button" class="recent-tab active" data-days="7">7天</button>'
+        '<button type="button" class="recent-tab" data-days="7">7天</button>'
         '<button type="button" class="recent-tab" data-days="30">30天</button>'
         '<button type="button" class="recent-tab" data-days="90">90天</button>'
-        '<button type="button" class="recent-tab" data-days="0">全部</button>'
+        '<button type="button" class="recent-tab active" data-days="0">全部</button>'
         '<button type="button" class="recent-tab" id="recent-custom" aria-controls="recent-range" aria-expanded="false">自定义</button>'
         '</div>'
         '<div class="recent-range" id="recent-range" hidden>'
