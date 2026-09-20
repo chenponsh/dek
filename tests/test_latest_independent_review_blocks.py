@@ -96,7 +96,7 @@ class CandidateIngestionIsolationTests(unittest.TestCase):
             automation.mkdir(parents=True)
             (package / "ingestion" / "__init__.py").write_text("", encoding="utf-8")
             (automation / "__init__.py").write_text("", encoding="utf-8")
-            for name in ("cli", "core", "fetchers", "audit"):
+            for name in ("cli", "core", "fetchers", "audit", "sources"):
                 (automation / f"{name}.py").write_text(
                     ("ROOT = None\nAPPROVAL_PATH = None\ndef main(argv): return 0\n"
                      if name == "cli" else "MARKER = 'candidate'\n"),

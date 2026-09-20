@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import ssl
 import subprocess
 import time
 import unicodedata
@@ -29,12 +30,35 @@ class CPCArticle:
     filename: str
 
 
+USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0 Safari/537.36"
+)
+
+
+def http_get(url: str, timeout: int = 45) -> str:
+    """GET a page as text. Government sites here are reachable directly and
+    some refuse the shared proxy, so go direct first and only then fall back
+    to the environment's proxy."""
+    headers = {"User-Agent": USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9"}
+    context = ssl.create_default_context()
+    direct = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
+    fallback = urllib.request.build_opener()
+    last: Exception | None = None
+    for opener in (direct, fallback):
+        try:
+            with opener.open(urllib.request.Request(url, headers=headers), timeout=timeout) as response:
+                if response.status != 200:
+                    raise SafetyStop(f"HTTP {response.status} from {url}")
+                charset = response.headers.get_content_charset() or "utf-8"
+                return response.read().decode(charset, "replace")
+        except Exception as exc:  # try the next route
+            last = exc
+    raise SafetyStop(f"cannot fetch {url}: {last}")
+
+
 def get_json(url: str, timeout: int = 45) -> Any:
-    request = urllib.request.Request(url, headers={"User-Agent": "dek-source-ingest/1.0"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        if response.status != 200:
-            raise SafetyStop(f"HTTP {response.status} from configured endpoint")
-        return json.load(response)
+    return json.loads(http_get(url, timeout))
 
 
 def fetch_shanghai(url: str) -> tuple[list[Row], dict[str, Any]]:

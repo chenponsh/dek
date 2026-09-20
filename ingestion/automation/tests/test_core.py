@@ -260,9 +260,9 @@ class CoreTests(unittest.TestCase):
         baseline = "sha256:" + "a" * 64
         if article_exists:
             (root / "included" / article.filename).write_text(f'---\nsource_content_hash: "{baseline}"\n---\n', encoding="utf-8")
-        config = {"no_fetch_rule": [], "known_unautomated": [], "shanghai": {"url": "x", "path": "shanghai.md"}, "cpc": {"list_url": "x", "detail_url": "x/{news_id}", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"url": "x", "sources": []}}
+        config = {"no_fetch_rule": [], "known_unautomated": [], "table_sources": [{"path": "shanghai.md", "fetcher": "shanghai", "url": "x", "auto_classified": True, "auto_ingest": True}], "cpc": {"list_url": "x", "detail_url": "x/{news_id}", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"url": "x", "sources": []}}
         detail_effect = SafetyStop("unavailable") if hash_error else None
-        with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.object(cli, "fetch_shanghai", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cpc", return_value=([article], {"remote_count": 1})), patch.object(cli, "fetch_cpc_content_hash", return_value=remote_hash or baseline, side_effect=detail_effect), patch.object(cli, "fetch_cde", return_value=({}, {})):
+        with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.dict(cli.FETCHERS, {"shanghai": lambda source, known, since: ([], {"remote_count": 0})}), patch.object(cli, "fetch_cpc", return_value=([article], {"remote_count": 1})), patch.object(cli, "fetch_cpc_content_hash", return_value=remote_hash or baseline, side_effect=detail_effect), patch.object(cli, "fetch_cde", return_value=({}, {})):
             return cli.inspect(config, datetime.now())[0]
 
     def test_parse_and_add(self):
@@ -346,13 +346,13 @@ class CoreTests(unittest.TestCase):
             shanghai = root / "shanghai.md"; shanghai.write_text(note, encoding="utf-8")
             cpc = root / "cpc.md"; cpc.write_text(note, encoding="utf-8")
             (root / "included").mkdir(); (root / "excluded").mkdir()
-            config = {"no_fetch_rule": [], "known_unautomated": [], "shanghai": {"url": "x", "path": "shanghai.md"}, "cpc": {"list_url": "x", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"url": "x", "sources": [{"type": 4, "path": "cde.md", "auto_classified": True}]}}
+            config = {"no_fetch_rule": [], "known_unautomated": [], "table_sources": [{"path": "shanghai.md", "fetcher": "shanghai", "url": "x", "auto_classified": True, "auto_ingest": True}], "cpc": {"list_url": "x", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"url": "x", "sources": [{"type": 4, "path": "cde.md", "auto_classified": True}]}}
             error = CDEBrowserUnavailable("unavailable", {"myAjax_is_function": False})
-            with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.object(cli, "fetch_shanghai", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cpc", return_value=(set(), {"remote_count": 0})), patch.object(cli, "fetch_cde", side_effect=error):
+            with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.dict(cli.FETCHERS, {"shanghai": lambda source, known, since: ([], {"remote_count": 0})}), patch.object(cli, "fetch_cpc", return_value=(set(), {"remote_count": 0})), patch.object(cli, "fetch_cde", side_effect=error):
                 report, _ = cli.inspect(config, datetime.now())
             self.assertFalse(report["blocking"])
             self.assertEqual(report["report"]["cde.md"]["status"], "skipped_browser_unavailable")
-            with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.object(cli, "fetch_shanghai", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cpc", return_value=(set(), {"remote_count": 0})), patch.object(cli, "fetch_cde", side_effect=RuntimeError("schema failure")):
+            with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.dict(cli.FETCHERS, {"shanghai": lambda source, known, since: ([], {"remote_count": 0})}), patch.object(cli, "fetch_cpc", return_value=(set(), {"remote_count": 0})), patch.object(cli, "fetch_cde", side_effect=RuntimeError("schema failure")):
                 failed_report, _ = cli.inspect(config, datetime.now())
             self.assertTrue(failed_report["blocking"])
             self.assertEqual(failed_report["report"]["cde.md"]["status"], "failed")
@@ -364,9 +364,9 @@ class CoreTests(unittest.TestCase):
             (root / "shanghai.md").write_text(note, encoding="utf-8")
             (root / "cde.md").write_text(note, encoding="utf-8")
             (root / "included").mkdir(); (root / "excluded").mkdir()
-            config = {"no_fetch_rule": [], "known_unautomated": [], "shanghai": {"url": "x", "path": "shanghai.md"}, "cpc": {"list_url": "x", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"enabled": True, "url": "x", "sources": [{"type": 1, "path": "cde.md", "auto_classified": False, "auto_ingest": False}]}}
+            config = {"no_fetch_rule": [], "known_unautomated": [], "table_sources": [{"path": "shanghai.md", "fetcher": "shanghai", "url": "x", "auto_classified": True, "auto_ingest": True}], "cpc": {"list_url": "x", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"enabled": True, "url": "x", "sources": [{"type": 1, "path": "cde.md", "auto_classified": False, "auto_ingest": False}]}}
             remote = {1: ([Row("新问题", "新解答", "2026-02-01")], {"remote_count": 1})}
-            with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.object(cli, "fetch_shanghai", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cpc", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cde", return_value=(remote, {})):
+            with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.dict(cli.FETCHERS, {"shanghai": lambda source, known, since: ([], {"remote_count": 0})}), patch.object(cli, "fetch_cpc", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cde", return_value=(remote, {})):
                 report, writes = cli.inspect(config, datetime.now())
             self.assertTrue(report["blocking"])
             self.assertEqual(report["report"]["cde.md"]["status"], "failed")
@@ -379,9 +379,9 @@ class CoreTests(unittest.TestCase):
         (root / "source" / "cde.md").write_text(note, encoding="utf-8")
         (root / "included").mkdir(exist_ok=True); (root / "excluded").mkdir(exist_ok=True)
         (root / "ingestion" / "rough").mkdir(parents=True, exist_ok=True)
-        config = {"no_fetch_rule": [], "known_unautomated": [], "shanghai": {"url": "x", "path": "shanghai.md"}, "cpc": {"list_url": "x", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"enabled": True, "url": "x", "sources": [{"type": 1, "path": "source/cde.md", "auto_classified": auto, "auto_ingest": auto}]}}
+        config = {"no_fetch_rule": [], "known_unautomated": [], "table_sources": [{"path": "shanghai.md", "fetcher": "shanghai", "url": "x", "auto_classified": True, "auto_ingest": True}], "cpc": {"list_url": "x", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"enabled": True, "url": "x", "sources": [{"type": 1, "path": "source/cde.md", "auto_classified": auto, "auto_ingest": auto}]}}
         remote = {1: (remote_rows, {"remote_count": len(remote_rows)})}
-        with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.object(cli, "fetch_shanghai", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cpc", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cde", return_value=(remote, {})):
+        with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.dict(cli.FETCHERS, {"shanghai": lambda source, known, since: ([], {"remote_count": 0})}), patch.object(cli, "fetch_cpc", return_value=([], {"remote_count": 0})), patch.object(cli, "fetch_cde", return_value=(remote, {})):
             return config, *cli.inspect(config, datetime(2026, 9, 19, 12, 0).astimezone())
 
     def test_cde_additions_get_one_rough_draft_per_question(self):

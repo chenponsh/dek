@@ -49,7 +49,7 @@ def load_ingestion_modules(package_root: Path):
     ingestion = package_root / "ingestion"
     automation = ingestion / "automation"
     required = [ingestion / "__init__.py", automation / "__init__.py"] + [
-        automation / f"{name}.py" for name in ("cli", "core", "fetchers", "audit")
+        automation / f"{name}.py" for name in ("cli", "core", "fetchers", "audit", "sources")
     ]
     if any(not path.is_file() or path.is_symlink() for path in required):
         raise SystemExit("candidate ingestion package is incomplete or unsafe")
@@ -66,7 +66,9 @@ def load_ingestion_modules(package_root: Path):
         spec.loader.exec_module(module)
     modules = tuple(importlib.import_module(namespace + ".automation." + name)
                     for name in ("cli", "core", "fetchers", "audit"))
-    if any(not Path(module.__file__).resolve(strict=True).is_relative_to(package_root) for module in modules):
+    # cli imports sources too; it is not returned, but must come from the package as well.
+    modules_checked = modules + (importlib.import_module(namespace + ".automation.sources"),)
+    if any(not Path(module.__file__).resolve(strict=True).is_relative_to(package_root) for module in modules_checked):
         raise SystemExit("security-critical import escaped candidate package")
     return modules
 

@@ -18,6 +18,9 @@ from .core import (
     workspace_snapshot, write_json,
 )
 from .fetchers import CDEBrowserUnavailable, fetch_cde, fetch_cpc, fetch_cpc_content_hash, fetch_shanghai
+from .sources import FETCHERS
+
+MAX_NEW_PER_SOURCE = 50
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = Path(__file__).with_name("config.json")
@@ -80,39 +83,82 @@ def rough_content(source_path: str, rows: list[Any], day: str) -> str:
     )
 
 
+def stage_source_rows(
+    result: dict[str, Any], writes: dict[Path, str], source: dict[str, Any],
+    rows: list[Any], meta: dict[str, Any], now: datetime, *, revisions_block: bool,
+) -> None:
+    """Compare fetched rows with a source note; plan the note update and one
+    rough draft per new row. Nothing is written here, only planned."""
+    day = now.strftime("%Y-%m-%d")
+    path = ROOT / source["path"]
+    note = path.read_text(encoding="utf-8")
+    additions, revisions = compare_rows(parse_table(note), rows)
+    additions = [row for row in additions if row.date[:10] > last_updated(note)]
+    entry = {**meta, "new_count": len(additions), "revision_count": len(revisions)}
+    result["report"][source["path"]] = entry
+    if revisions:
+        entry.update(status="failed", reason="检测到远端正文修订，禁止自动覆盖", revisions=revisions[:20])
+        if revisions_block:
+            result["blocking"] = True
+        result["alerts"].append(f"remote revision detected: {source['path']}")
+        return
+    if additions and not source["auto_classified"]:
+        entry.update(status="failed", reason="新增条目需要人工主题分类", candidates=[{"question": r.question, "date": r.date} for r in additions[:20]])
+        result["blocking"] = True
+        result["alerts"].append(f"manual classification required: {source['path']}")
+        return
+    if len(additions) > MAX_NEW_PER_SOURCE:
+        entry.update(status="failed", reason=f"一次新增 {len(additions)} 条，超过 {MAX_NEW_PER_SOURCE} 条上限，疑似页面结构变化", candidates=[{"question": r.question, "date": r.date} for r in additions[:20]])
+        result["alerts"].append(f"too many new rows, not ingested: {source['path']}")
+        return
+    entry["status"] = "updated_with_new" if additions else "no_change"
+    if not additions:
+        return
+    writes[path] = replace_last_updated(insert_rows(note, additions), day)
+    # One draft per question: the review page turns one rough into one wiki
+    # page, so a batched table could never be approved as-is.
+    prefix = f"{now:%Y%m%d}_{path.stem}_增量_"
+    taken = [int(m.group(1)) for existing in (ROOT / "ingestion" / "rough").glob(prefix + "*.md")
+             if (m := re.fullmatch(re.escape(prefix) + r"(\d+)\.md", existing.name))]
+    auto = source.get("auto_classified") is True and source.get("auto_ingest") is True
+    if auto:
+        result["auto_write_paths"].append(source["path"])
+    for number, row in enumerate(additions, start=max(taken, default=0) + 1):
+        rough_path = ROOT / "ingestion" / "rough" / f"{prefix}{number}.md"
+        if rough_path.exists():
+            raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
+        writes[rough_path] = rough_content(source["path"], [row], day)
+        rough_relative = str(rough_path.relative_to(ROOT))
+        result["rough_created"].append(rough_relative)
+        result["rough_sources"][rough_relative] = source["path"]
+        if auto:
+            result["auto_write_paths"].append(rough_relative)
+
+
+def stage_table_sources(config: dict[str, Any], result: dict[str, Any], writes: dict[Path, str], now: datetime) -> None:
+    """Sources fetched over plain HTTP into a `| 问题 | 解答 | 发布日期 |` note. A
+    failure of one source is reported and leaves every other source alone."""
+    for source in config.get("table_sources", []):
+        try:
+            note = (ROOT / source["path"]).read_text(encoding="utf-8")
+            known = {row.key for row in parse_table(note)}
+            rows, meta = FETCHERS[source["fetcher"]](source, known, last_updated(note))
+            stage_source_rows(result, writes, source, rows, meta, now, revisions_block=False)
+        except Exception as exc:
+            result["report"][source["path"]] = {"status": "failed", "reason": str(exc)}
+            result["alerts"].append(f"source failure: {source['path']}: {exc}")
+
+
 def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict[Path, str]]:
     result = base_report(now, "dry-run")
     writes: dict[Path, str] = {}
-    day = now.strftime("%Y-%m-%d")
 
     for path in config["no_fetch_rule"]:
         result["report"][path] = {"status": "skipped_no_fetch_rule", "reason": "抓取规则尚未固化"}
     for path in config["known_unautomated"]:
         result["report"][path] = {"status": "skipped_adapter_pending", "reason": "已固化来源尚未接入首批自动适配器"}
 
-    try:
-        rows, meta = fetch_shanghai(config["shanghai"]["url"])
-        path = ROOT / config["shanghai"]["path"]
-        note = path.read_text(encoding="utf-8")
-        additions, revisions = compare_rows(parse_table(note), rows)
-        additions = [row for row in additions if row.date[:10] > last_updated(note)]
-        entry = {**meta, "new_count": len(additions), "revision_count": len(revisions)}
-        if revisions:
-            entry.update(status="failed", reason="检测到远端正文修订，禁止自动覆盖", revisions=revisions[:20])
-            result["blocking"] = True
-            result["alerts"].append(f"remote revision detected: {config['shanghai']['path']}")
-        elif additions:
-            entry.update(status="failed", reason="新增条目需要人工主题分类", candidates=[{"question": r.question, "date": r.date} for r in additions[:20]])
-            result["blocking"] = True
-            result["alerts"].append(f"manual classification required: {config['shanghai']['path']}")
-        else:
-            entry["status"] = "no_change"
-        result["report"][config["shanghai"]["path"]] = entry
-    except Exception as exc:
-        path = config["shanghai"]["path"]
-        result["report"][path] = {"status": "failed", "reason": str(exc)}
-        result["blocking"] = True
-        result["alerts"].append(f"source failure: {path}: {exc}")
+    stage_table_sources(config, result, writes, now)
 
     try:
         articles, meta = fetch_cpc(config["cpc"]["list_url"])
@@ -179,44 +225,8 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
             remote, diagnostics = fetch_cde(config["cde"]["url"], [x["type"] for x in cde_config], ROOT / "_" / "browser" / "cde-profile")
             result["cde_diagnostics"] = diagnostics
             for source in cde_config:
-                path = ROOT / source["path"]
-                note = path.read_text(encoding="utf-8")
                 rows, meta = remote[source["type"]]
-                additions, revisions = compare_rows(parse_table(note), rows)
-                additions = [row for row in additions if row.date[:10] > last_updated(note)]
-                entry = {**meta, "new_count": len(additions), "revision_count": len(revisions)}
-                if revisions:
-                    entry.update(status="failed", reason="检测到远端正文修订，禁止自动覆盖", revisions=revisions[:20])
-                    result["blocking"] = True
-                    result["alerts"].append(f"remote revision detected: {source['path']}")
-                elif additions and not source["auto_classified"]:
-                    entry.update(status="failed", reason="新增条目需要人工主题分类", candidates=[{"question": r.question, "date": r.date} for r in additions[:20]])
-                    result["blocking"] = True
-                    result["alerts"].append(f"manual classification required: {source['path']}")
-                else:
-                    entry["status"] = "updated_with_new" if additions else "no_change"
-                    if additions:
-                        writes[path] = replace_last_updated(insert_rows(note, additions), day)
-                        # One draft per question: the review page turns one
-                        # rough into one wiki page, so a batched table could
-                        # never be approved as-is.
-                        prefix = f"{now:%Y%m%d}_{path.stem}_增量_"
-                        taken = [int(m.group(1)) for existing in (ROOT / "ingestion" / "rough").glob(prefix + "*.md")
-                                 if (m := re.fullmatch(re.escape(prefix) + r"(\d+)\.md", existing.name))]
-                        auto = source.get("auto_classified") is True and source.get("auto_ingest") is True
-                        if auto:
-                            result["auto_write_paths"].append(source["path"])
-                        for number, row in enumerate(additions, start=max(taken, default=0) + 1):
-                            rough_path = ROOT / "ingestion" / "rough" / f"{prefix}{number}.md"
-                            if rough_path.exists():
-                                raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
-                            writes[rough_path] = rough_content(source["path"], [row], day)
-                            rough_relative = str(rough_path.relative_to(ROOT))
-                            result["rough_created"].append(rough_relative)
-                            result["rough_sources"][rough_relative] = source["path"]
-                            if auto:
-                                result["auto_write_paths"].append(rough_relative)
-                result["report"][source["path"]] = entry
+                stage_source_rows(result, writes, source, rows, meta, now, revisions_block=True)
         except CDEBrowserUnavailable as exc:
             diagnostics = exc.diagnostics
             result["cde_diagnostics"] = diagnostics
@@ -273,7 +283,7 @@ def add_pipeline_health(report: dict[str, Any]) -> None:
 
 def automatic_write_allowlist(config: dict[str, Any]) -> set[str]:
     return {
-        source["path"] for source in config["cde"]["sources"]
+        source["path"] for source in [*config["cde"]["sources"], *config.get("table_sources", [])]
         if source.get("auto_classified") is True and source.get("auto_ingest") is True
     }
 
