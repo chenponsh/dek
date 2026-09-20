@@ -571,6 +571,33 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn('if (heads[0] !== "项目" || heads[1] !== "问题") return;', script)   # only the overview table, nothing else
         self.assertIn("if (name && link.textContent !== name) link.textContent = name;", script)   # nothing to do once the page already says it
 
+    def test_a_link_to_a_note_moved_to_an_排除_folder_reads_as_excluded_not_as_an_error(self):
+        (self.vault / "source" / "CDE" / "来源_排除").mkdir(parents=True)
+        (self.vault / "source" / "CDE" / "来源_排除" / "被排除的笔记.md").write_text("---\nsource_note: x\n---\n\n不公开。", encoding="utf-8")
+        (self.vault / "source" / "CDE" / "复核.md").write_text(
+            "---\nreview_date: 2026-01-01\n---\n\n已移出：[[被排除的笔记]]；不存在：[[根本没有这篇]]；别名：[[被排除的笔记|显示名]]。", encoding="utf-8")
+        build_site(self.vault, self.out)
+        page = rendered_page(self.out / "source" / "CDE" / "复核.html")
+        self.assertIn('<span class="excluded-link">被排除的笔记</span>', page)
+        self.assertIn('<span class="excluded-link">显示名</span>', page)                                                     # an alias keeps its own text
+        self.assertIn('<span class="broken-link">根本没有这篇</span>', page)                                                   # a real miss is still an error
+        self.assertFalse((self.out / "source" / "CDE" / "来源_排除").exists())                                                # and the note itself stays unpublished
+        style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        self.assertIn(".excluded-link{color:var(--muted)", style)
+        self.assertIn('.excluded-link::after{content:" 已排除，不公开"', style)          # the reader is told why, by style, so the sanitiser's whitelist stays as it is
+
+    def test_a_wikilink_written_inside_code_stays_as_written(self):
+        (self.vault / "source" / "CDE" / "说明.md").write_text(
+            "---\nreview_date: 2026-01-01\n---\n\n缓存保存到 `[[_/tmp_cache/]]`，链接 [[条目]] 照常。\n\n```\n[[代码块里的]]\n```\n\n~~~\n[[另一种围栏]]\n~~~\n", encoding="utf-8")
+        build_site(self.vault, self.out)
+        page = rendered_page(self.out / "source" / "CDE" / "说明.html")
+        self.assertIn("<code>[[_/tmp_cache/]]</code>", page)                     # shown as typed, not as a link and not as a pile of markup
+        self.assertIn("[[代码块里的]]", page)
+        self.assertIn("[[另一种围栏]]", page)
+        self.assertNotIn("broken-link", page)
+        self.assertNotIn("&lt;span", page)                                        # no escaped markup leaking into the text
+        self.assertIn('<a class="wikilink" href="', page)                         # a real link outside the code still resolves
+
     def test_the_link_back_to_the_original_page_sits_in_the_note_information(self):
         (self.vault / "source" / "CDE" / "带链接.md").write_text(
             "---\nsource_url: https://example.com/original\ndate: 2026-01-01\n---\n\n正文。", encoding="utf-8")

@@ -245,16 +245,28 @@ def _dataview_overview_table(doc: dict, from_path: str, by_path: dict[str, dict]
     )
 
 
-def _render_body(doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[dict]]) -> str:
+_CODE_SPAN = re.compile(r"(```.*?```|~~~.*?~~~|`[^`\n]+`)", re.S)
+
+
+def _outside_code(text: str, transform) -> str:
+    """`transform` applied to the text outside fenced blocks and inline code, which stay exactly as written."""
+    parts = _CODE_SPAN.split(text)
+    return "".join(part if index % 2 else transform(part) for index, part in enumerate(parts))
+
+
+def _render_body(doc: dict, by_path: dict[str, dict], by_stem: dict[str, list[dict]], excluded_stems: frozenset[str] = frozenset()) -> str:
     def repl(match: re.Match) -> str:
         target, label = match.group(2), match.group(3) or PurePosixPath(match.group(2)).name
         resolved = _resolve(target, by_path, by_stem)
+        if not resolved and PurePosixPath(_target_key(target)).name in excluded_stems:
+            # A note that exists but was moved to an 排除 folder on purpose is not published: say so, it is not an error.
+            return f'<span class="excluded-link">{html.escape(label)}</span>'
         if not resolved:
             return f'<span class="broken-link" title="未找到：{html.escape(target)}">{html.escape(label)}</span>'
         href = _relative_href(doc["output"], resolved["output"])
         return f'<a class="wikilink" href="{href}">{html.escape(label)}</a>'
     source = DATAVIEW_OVERVIEW.sub(lambda match: _dataview_overview_table(doc, match.group(1), by_path, by_stem, repl), doc["body"])
-    source = WIKILINK.sub(repl, source)
+    source = _outside_code(source, lambda text: WIKILINK.sub(repl, text))
     rendered = markdown.markdown(source, extensions=["tables", "fenced_code", "toc", "sane_lists"], output_format="html")
     return sanitize_html(rendered)
 
@@ -394,6 +406,9 @@ def build_site(vault: Path, output: Path) -> dict:
             meta, body = _split_note(path.read_text(encoding="utf-8"))
             key = rel.with_suffix("").as_posix()
             docs.append({"path": rel.as_posix(), "key": key, "kind": rel.parts[0], "meta": meta, "body": body, "title": _title(meta, path, body), "output": PurePosixPath(rel.with_suffix(".html").as_posix())})
+    excluded_stems = frozenset(
+        path.stem for area in (vault / "wiki", vault / "source") if area.exists() for path in area.rglob("*.md")
+        if any("排除" in part for part in path.relative_to(vault).parts))
     by_path = {d["key"]: d for d in docs}
     by_stem: dict[str, list[dict]] = {}
     for d in docs: by_stem.setdefault(PurePosixPath(d["key"]).name, []).append(d)
@@ -410,7 +425,7 @@ def build_site(vault: Path, output: Path) -> dict:
     shutil.copy2(asset_dir / "search.js", output / "assets" / "search.js")
     shutil.copy2(asset_dir / "page.js", output / "assets" / "page.js")
     for doc in docs:
-        rendered = _render_body(doc, by_path, by_stem)
+        rendered = _render_body(doc, by_path, by_stem, excluded_stems)
         refs = []
         for match in WIKILINK.finditer(str(doc["meta"].get("source") or "") + "\n" + doc["body"]):
             target = _resolve(match.group(2), by_path, by_stem)
