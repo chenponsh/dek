@@ -503,8 +503,8 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual((link.group(2), link.group(3)), (f"问：{question}", f"问：{question}"))   # ... worded as the question
         rest = cell[link.end():]
         self.assertEqual(re.findall(r'<div class="meta content-meta[^"]*"[^>]*>([^<]*)</div>', rest),
-                         ["发布日期：2026-09-14", "备注：pending.md"])           # line 2: date, line 3: file name note
-        self.assertLess(rest.index("发布日期："), rest.index("备注："))
+                         ["日期：2026-09-14", "备注：pending.md"])           # line 2: date, line 3: file name note
+        self.assertLess(rest.index("日期："), rest.index("备注："))
         self.assertIn('title="ingestion/rough/pending.md">备注：pending.md</div>', rest)   # the tooltip holds the full path
         self.assertNotIn(" · ", cell)                                          # no more run-on line
         self.assertNotIn("来源：", cell)
@@ -527,7 +527,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
         page = self.service.render_list("opaque-session").decode("utf-8")
         cell = self.cell_of(page, "pending.md")
-        self.assertNotIn("发布日期：", cell)
+        self.assertNotIn("日期：", cell)
         self.assertIn("备注：pending.md", cell)
         self.assertRegex(cell, r'^<a class="content-title"[^>]*>pending\.md</a>')
 

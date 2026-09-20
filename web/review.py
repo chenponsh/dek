@@ -202,7 +202,7 @@ def _content_cell(item, href: str) -> str:
     first = (question if QUESTION_LABELLED.match(question) else f"问：{question}") if question else item.title
     lines = [f'<a class="content-title" href="{href}" title="{html.escape(first, quote=True)}">{html.escape(first)}</a>']
     if item.published_date:
-        lines.append(f'<div class="meta content-meta">发布日期：{html.escape(item.published_date)}</div>')
+        lines.append(f'<div class="meta content-meta">日期：{html.escape(item.published_date)}</div>')
     lines.append(f'<div class="meta content-meta content-note" title="{html.escape(item.path, quote=True)}">备注：{html.escape(PurePosixPath(item.path).name)}</div>')
     return "".join(lines)
 
