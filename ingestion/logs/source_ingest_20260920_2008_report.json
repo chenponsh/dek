@@ -1,0 +1,315 @@
+{
+  "date": "2026-09-20",
+  "mode": "scheduled-run",
+  "generated_at": "2026-09-20T12:08:17.184305Z",
+  "baseline": "0764e4bd32f5dfc73059f134b492a67d9c484984f2f2350a3fc3bf538dc49626",
+  "report": {
+    "source/上海/上海局_信息公开.md": {
+      "remote_count": 204,
+      "latest_date": "2026-05-07",
+      "new_count": 0,
+      "revision_count": 0,
+      "status": "no_change"
+    },
+    "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md": {
+      "remote_count": 45,
+      "latest_date": "2026-07-19",
+      "new_count": 2,
+      "revision_count": 0,
+      "status": "updated_with_new"
+    },
+    "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md": {
+      "remote_count": 18,
+      "latest_date": "2025-12-30",
+      "new_count": 0,
+      "revision_count": 0,
+      "status": "no_change"
+    },
+    "source/海南/海南局CDE_服务事项.md": {
+      "remote_count": 15,
+      "latest_date": "2025-09-10",
+      "new_count": 0,
+      "revision_count": 0,
+      "status": "no_change"
+    },
+    "source/陕西/陕西局CDE_药品上市后变更管理.md": {
+      "remote_count": 5,
+      "latest_date": "2025-10-30",
+      "new_count": 0,
+      "revision_count": 0,
+      "status": "no_change"
+    },
+    "source/北京/北京局_咨询建议.md": {
+      "remote_count": 220,
+      "latest_date": "2026-08-03",
+      "filtered_count": 209,
+      "new_count": 5,
+      "revision_count": 0,
+      "status": "updated_with_new"
+    },
+    "source/NIFDC/NIFDC_常见共性问题解答.md": {
+      "remote_count": 3,
+      "latest_date": "2026-02-25",
+      "new_count": 0,
+      "revision_count": 0,
+      "status": "no_change"
+    },
+    "source/江苏/江苏局CDE_你问我答.md": {
+      "remote_count": 10,
+      "latest_date": null,
+      "filtered_count": 0,
+      "new_count": 0,
+      "revision_count": 0,
+      "status": "no_change"
+    },
+    "source/山东/山东局_检问百答.md": {
+      "remote_count": 15,
+      "latest_date": null,
+      "new_count": 0,
+      "revision_count": 0,
+      "status": "no_change"
+    },
+    "source/江苏/江苏局_药小问普法讲堂.md": {
+      "remote_count": 45,
+      "latest_date": "2026-04-15",
+      "new_count": 0,
+      "revision_count": 0,
+      "status": "no_change"
+    },
+    "source/安徽/安徽局_许可注册惠企政策超市-药品.md": {
+      "remote_count": 15,
+      "latest_date": null,
+      "filtered_out": [
+        {
+          "title": "关于转发第十一批18个中药配方颗粒国家药品标准的通知",
+          "reason": "不属于化学药品制剂主题"
+        }
+      ],
+      "new_count": 0,
+      "status": "no_change"
+    },
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-17_2025年版《中国药典》新增9110微生物全基因组测序技术指导原则解读.md": {
+      "status": "updated_with_new",
+      "new_count": 1,
+      "latest_date": "2026-06-17"
+    },
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-17_2025年版《中国药典》与药品连续制造相关通用技术要求和指导原则浅析.md": {
+      "status": "updated_with_new",
+      "new_count": 1,
+      "latest_date": "2026-06-17"
+    },
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-02_对2025年版《中国药典》新增9213药品微生物分析方法验证、确认及转移指导原则的解读.md": {
+      "status": "updated_with_new",
+      "new_count": 1,
+      "latest_date": "2026-06-02"
+    },
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-02_对2025年版《中国药典》9211非无菌药品微生物控制中水分活度应用指导原则的解读.md": {
+      "status": "updated_with_new",
+      "new_count": 1,
+      "latest_date": "2026-06-02"
+    },
+    "source/CPC/CPC_《中国药典》执行专栏/2026-05-25_2025年版《中国药典》药用辅料盐酸组氨酸标准研究.md": {
+      "status": "updated_with_new",
+      "new_count": 1,
+      "latest_date": "2026-05-25"
+    },
+    "source/CPC/CPC_《中国药典》执行专栏.md": {
+      "remote_count": 74,
+      "latest_date": "2026-06-17",
+      "new_count": 5,
+      "verified_existing_count": 0,
+      "unverified_existing_count": 69,
+      "revision_count": 0,
+      "status": "new_articles_staged",
+      "staged_count": 5
+    },
+    "source/CDE/CDE_共性问题-常见一般性技术问题.md": {
+      "remote_count": 246,
+      "latest_date": "2026-09-09",
+      "new_count": 0,
+      "revision_count": 0,
+      "status": "no_change"
+    },
+    "source/CDE/CDE_共性问题-受理共性问题.md": {
+      "remote_count": 97,
+      "latest_date": "2026-07-17",
+      "new_count": 0,
+      "revision_count": 0,
+      "status": "no_change"
+    },
+    "source/CDE/CDE_共性问题-化学仿制药共性问题.md": {
+      "remote_count": 41,
+      "latest_date": "2026-09-09",
+      "new_count": 0,
+      "revision_count": 0,
+      "status": "no_change"
+    }
+  },
+  "rough_created": [
+    "ingestion/rough/20260920_江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例_增量_1.md",
+    "ingestion/rough/20260920_江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例_增量_2.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_1.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_2.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_3.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_4.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_5.md",
+    "ingestion/rough/20260920_2026-06-17_2025年版《中国药典》新增9110微生物全基因组测序技术指导原则解读_增量_1.md",
+    "ingestion/rough/20260920_2026-06-17_2025年版《中国药典》与药品连续制造相关通用技术要求和指导原则浅析_增量_1.md",
+    "ingestion/rough/20260920_2026-06-02_对2025年版《中国药典》新增9213药品微生物分析方法验证、确认及转移指导原则的解读_增量_1.md",
+    "ingestion/rough/20260920_2026-06-02_对2025年版《中国药典》9211非无菌药品微生物控制中水分活度应用指导原则的解读_增量_1.md",
+    "ingestion/rough/20260920_2026-05-25_2025年版《中国药典》药用辅料盐酸组氨酸标准研究_增量_1.md"
+  ],
+  "planned_writes": [
+    "ingestion/rough/20260920_2026-05-25_2025年版《中国药典》药用辅料盐酸组氨酸标准研究_增量_1.md",
+    "ingestion/rough/20260920_2026-06-02_对2025年版《中国药典》9211非无菌药品微生物控制中水分活度应用指导原则的解读_增量_1.md",
+    "ingestion/rough/20260920_2026-06-02_对2025年版《中国药典》新增9213药品微生物分析方法验证、确认及转移指导原则的解读_增量_1.md",
+    "ingestion/rough/20260920_2026-06-17_2025年版《中国药典》与药品连续制造相关通用技术要求和指导原则浅析_增量_1.md",
+    "ingestion/rough/20260920_2026-06-17_2025年版《中国药典》新增9110微生物全基因组测序技术指导原则解读_增量_1.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_1.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_2.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_3.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_4.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_5.md",
+    "ingestion/rough/20260920_江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例_增量_1.md",
+    "ingestion/rough/20260920_江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例_增量_2.md",
+    "source/CPC/CPC_《中国药典》执行专栏/2026-05-25_2025年版《中国药典》药用辅料盐酸组氨酸标准研究.md",
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-02_对2025年版《中国药典》9211非无菌药品微生物控制中水分活度应用指导原则的解读.md",
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-02_对2025年版《中国药典》新增9213药品微生物分析方法验证、确认及转移指导原则的解读.md",
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-17_2025年版《中国药典》与药品连续制造相关通用技术要求和指导原则浅析.md",
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-17_2025年版《中国药典》新增9110微生物全基因组测序技术指导原则解读.md",
+    "source/北京/北京局_咨询建议.md",
+    "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md"
+  ],
+  "blocking": false,
+  "alerts": [],
+  "auto_write_paths": [
+    "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md",
+    "ingestion/rough/20260920_江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例_增量_1.md",
+    "ingestion/rough/20260920_江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例_增量_2.md",
+    "source/北京/北京局_咨询建议.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_1.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_2.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_3.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_4.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_5.md",
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-17_2025年版《中国药典》新增9110微生物全基因组测序技术指导原则解读.md",
+    "ingestion/rough/20260920_2026-06-17_2025年版《中国药典》新增9110微生物全基因组测序技术指导原则解读_增量_1.md",
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-17_2025年版《中国药典》与药品连续制造相关通用技术要求和指导原则浅析.md",
+    "ingestion/rough/20260920_2026-06-17_2025年版《中国药典》与药品连续制造相关通用技术要求和指导原则浅析_增量_1.md",
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-02_对2025年版《中国药典》新增9213药品微生物分析方法验证、确认及转移指导原则的解读.md",
+    "ingestion/rough/20260920_2026-06-02_对2025年版《中国药典》新增9213药品微生物分析方法验证、确认及转移指导原则的解读_增量_1.md",
+    "source/CPC/CPC_《中国药典》执行专栏/2026-06-02_对2025年版《中国药典》9211非无菌药品微生物控制中水分活度应用指导原则的解读.md",
+    "ingestion/rough/20260920_2026-06-02_对2025年版《中国药典》9211非无菌药品微生物控制中水分活度应用指导原则的解读_增量_1.md",
+    "source/CPC/CPC_《中国药典》执行专栏/2026-05-25_2025年版《中国药典》药用辅料盐酸组氨酸标准研究.md",
+    "ingestion/rough/20260920_2026-05-25_2025年版《中国药典》药用辅料盐酸组氨酸标准研究_增量_1.md"
+  ],
+  "rough_sources": {
+    "ingestion/rough/20260920_江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例_增量_1.md": "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md",
+    "ingestion/rough/20260920_江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例_增量_2.md": "source/江苏/江苏局_药品变更与再注册专栏-中等变更备案问答及典型案例.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_1.md": "source/北京/北京局_咨询建议.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_2.md": "source/北京/北京局_咨询建议.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_3.md": "source/北京/北京局_咨询建议.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_4.md": "source/北京/北京局_咨询建议.md",
+    "ingestion/rough/20260920_北京局_咨询建议_增量_5.md": "source/北京/北京局_咨询建议.md",
+    "ingestion/rough/20260920_2026-06-17_2025年版《中国药典》新增9110微生物全基因组测序技术指导原则解读_增量_1.md": "source/CPC/CPC_《中国药典》执行专栏/2026-06-17_2025年版《中国药典》新增9110微生物全基因组测序技术指导原则解读.md",
+    "ingestion/rough/20260920_2026-06-17_2025年版《中国药典》与药品连续制造相关通用技术要求和指导原则浅析_增量_1.md": "source/CPC/CPC_《中国药典》执行专栏/2026-06-17_2025年版《中国药典》与药品连续制造相关通用技术要求和指导原则浅析.md",
+    "ingestion/rough/20260920_2026-06-02_对2025年版《中国药典》新增9213药品微生物分析方法验证、确认及转移指导原则的解读_增量_1.md": "source/CPC/CPC_《中国药典》执行专栏/2026-06-02_对2025年版《中国药典》新增9213药品微生物分析方法验证、确认及转移指导原则的解读.md",
+    "ingestion/rough/20260920_2026-06-02_对2025年版《中国药典》9211非无菌药品微生物控制中水分活度应用指导原则的解读_增量_1.md": "source/CPC/CPC_《中国药典》执行专栏/2026-06-02_对2025年版《中国药典》9211非无菌药品微生物控制中水分活度应用指导原则的解读.md",
+    "ingestion/rough/20260920_2026-05-25_2025年版《中国药典》药用辅料盐酸组氨酸标准研究_增量_1.md": "source/CPC/CPC_《中国药典》执行专栏/2026-05-25_2025年版《中国药典》药用辅料盐酸组氨酸标准研究.md"
+  },
+  "run_nonce": "srrpA4W7KvQl7U1vmv--4xL0yk-P7DBAAKDjGlT0dVs",
+  "cde_diagnostics": {
+    "navigation_statuses": [
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/main/xxgk/listpage/07edef25f1e7354bfd8490baa0ce056b",
+        "status": 202,
+        "resource_type": "document"
+      },
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/main/xxgk/listpage/07edef25f1e7354bfd8490baa0ce056b",
+        "status": 200,
+        "resource_type": "document"
+      }
+    ],
+    "challenge_resources": [
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/4QbVtADbnLVIc/c.FxJzG50F.6152bb9.js",
+        "status": 200,
+        "resource_type": "script"
+      },
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/4QbVtADbnLVIc/jW39ezbWPr",
+        "status": 200,
+        "resource_type": "script"
+      },
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/4QbVtADbnLVIc/d.FxJzG50F.6152bb9.js",
+        "status": 200,
+        "resource_type": "script"
+      },
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/main/js/template-web.js",
+        "status": 200,
+        "resource_type": "script"
+      },
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/main/js/jquery.min.js",
+        "status": 200,
+        "resource_type": "script"
+      },
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/main/js/setting.js",
+        "status": 200,
+        "resource_type": "script"
+      },
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/main/js/index.js",
+        "status": 200,
+        "resource_type": "script"
+      },
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/main/js/common.js",
+        "status": 200,
+        "resource_type": "script"
+      },
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/main/plugins/layui/layui.js",
+        "status": 200,
+        "resource_type": "script"
+      },
+      {
+        "method": "GET",
+        "url": "https://www.cde.org.cn/main/js/xxgk/list.js",
+        "status": 200,
+        "resource_type": "script"
+      }
+    ],
+    "final_url": "https://www.cde.org.cn/main/xxgk/listpage/07edef25f1e7354bfd8490baa0ce056b",
+    "myAjax_is_function": true
+  },
+  "pipeline_health": {
+    "missing_rough_events": 0,
+    "rough_total": 23,
+    "rough_statuses": {
+      "promoted": 1,
+      "rejected": 1,
+      "rough": 1,
+      "pending_review": 19,
+      "legacy_untracked": 1
+    },
+    "stale_pending_over_7_days": [],
+    "rough_lifecycle_errors": [],
+    "report_errors": []
+  }
+}
