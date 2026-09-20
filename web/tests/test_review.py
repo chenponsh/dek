@@ -541,6 +541,37 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("\n日期：2026-09-14", pre)
         self.assertNotIn("发布日期", pre)
 
+    def item_page(self, question, answer="A"):
+        rough = ROUGH.replace("| Q | A | 2026-09-14 |", f"| {question} | {answer} | 2026-09-14 |")
+        (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        return self.service.render_item("opaque-session", item.identity).decode("utf-8")
+
+    def test_the_item_page_is_headed_with_the_question_not_the_file_name(self):
+        question = "已上市的化学药品创新药如何申请药品试验数据保护？"
+        page = self.item_page(question)
+        self.assertIn(f"<h1>{question}</h1>", page)
+        self.assertIn(f"<title>{question} · DEK</title>", page)
+        self.assertNotIn("<h1>pending.md</h1>", page)
+
+    def test_a_question_that_carries_its_own_label_is_headed_without_it(self):
+        for written in ("问：如何开展粉液双室袋仿制药的药学研究？", "问题：如何开展粉液双室袋仿制药的药学研究？", "问题1 ：如何开展粉液双室袋仿制药的药学研究？"):
+            with self.subTest(written=written):
+                page = self.item_page(written)
+                self.assertIn("<h1>如何开展粉液双室袋仿制药的药学研究？</h1>", page)
+                self.assertNotIn("<h1>问", page)
+
+    def test_a_multi_line_question_is_one_escaped_heading(self):
+        page = self.item_page("第一行<br>第二行 <b>x</b>")
+        self.assertIn("<h1>第一行 第二行 &lt;b&gt;x&lt;/b&gt;</h1>", page)
+
+    def test_the_heading_falls_back_to_the_file_name_when_there_is_no_question(self):
+        rough = ROUGH.replace("| Q | A | 2026-09-14 |", "| | | |")
+        (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertIn("<h1>pending.md</h1>", page)
+
     def test_item_header_shows_the_source_the_way_the_list_does(self):
         rough = ROUGH.replace('source: "[[source/example]]"', 'source: "[[source/CDE/CDE_共性问题-受理共性问题]]"')
         (self.root / "repo/ingestion/rough/pending.md").write_text(rough, encoding="utf-8")
@@ -750,7 +781,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIsNone(self.service.render_item("opaque-session", "not-an-identity"))
 
     def test_detail_page_shows_the_file_name_once_and_labels_the_raw_text(self):
-        # The h1 already carries the name; the raw-text block used to repeat it.
+        # The h1 is the question; the file name sits once in the line under it as a note, and the raw-text block does not repeat it.
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         for state in ("pending", "approve", "reject"):
             if state != "pending":
@@ -759,7 +790,8 @@ class ReviewWorkflowTests(unittest.TestCase):
             for unlocked in (False, True):
                 with self.subTest(state=state, unlocked=unlocked):
                     page = self.service.render_item("opaque-session", item.identity, unlocked=unlocked).decode("utf-8")
-                    self.assertEqual(page.count("pending.md</h1>"), 1)
+                    self.assertEqual(page.count("备注：pending.md</div>"), 1)
+                    self.assertNotIn("pending.md</h1>", page)
                     self.assertNotIn("<h2>pending.md</h2>", page)
                     self.assertNotIn("<article><h2>pending.md", page)
                     if state == "pending" or unlocked:

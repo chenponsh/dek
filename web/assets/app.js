@@ -1,4 +1,20 @@
 (() => {
+  // Column widths a user drags to: 48px at least, and whatever was stored must still be sane.
+  const MIN_COLUMN_WIDTH = 48;
+  const MAX_COLUMN_WIDTH = 2000;
+  const clampColumnWidth = value => Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, Math.round(Number(value)) || MIN_COLUMN_WIDTH));
+  function readStoredWidths(text, count) {
+    try {
+      const widths = JSON.parse(text);
+      if (Array.isArray(widths) && widths.length === count && widths.every(n => Number.isFinite(n) && n >= MIN_COLUMN_WIDTH && n <= MAX_COLUMN_WIDTH)) return widths;
+    } catch (error) { /* nothing usable stored */ }
+    return null;
+  }
+  if (typeof document === "undefined") {
+    if (typeof module === "object") module.exports = { clampColumnWidth, readStoredWidths, MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH };
+    return;
+  }
+
   const root = document.documentElement;
   const savedTheme = localStorage.getItem("dek-theme");
   if (savedTheme) root.dataset.theme = savedTheme;
@@ -78,7 +94,10 @@
       setActive(-1);
     };
     input.addEventListener("focus", render);
-    input.addEventListener("input", render);
+    // Typing a full path (say, changing the number at its end) updates the candidate too;
+    // half-typed text that is not a wiki path leaves it alone.
+    input.addEventListener("input", () => { render(); syncCandidateToPath(candidateBox(), input.value.trim()); });
+    input.addEventListener("change", () => syncCandidateToPath(candidateBox(), input.value.trim()));
     input.addEventListener("blur", () => setTimeout(close, 150));
     input.addEventListener("keydown", event => {
       const open = list.classList.contains("open");
@@ -327,6 +346,132 @@
     });
   }
 
+  // ---- Resizable columns ----------------------------------------------------
+  // Every table with a header row gets a drag handle on each header cell's right edge;
+  // the home list (a grid, not a <table>) gets one on its 日期 and 内容 headers. Widths
+  // are remembered per page and table; double-click a handle to go back to automatic.
+  const storedWidths = key => { try { return localStorage.getItem(key); } catch (error) { return null; } };
+  const storeWidths = (key, widths) => { try { localStorage.setItem(key, JSON.stringify(widths)); } catch (error) { /* storage unavailable */ } };
+  const forgetWidths = key => { try { localStorage.removeItem(key); } catch (error) { /* storage unavailable */ } };
+
+  function addHandle(cell, label, onDrag, onKey, onReset, onEnd) {
+    const handle = document.createElement("span");
+    handle.className = "col-resizer";
+    handle.setAttribute("role", "separator");
+    handle.setAttribute("aria-orientation", "vertical");
+    handle.setAttribute("aria-label", label);
+    handle.tabIndex = 0;
+    handle.addEventListener("pointerdown", event => {
+      if (event.button !== undefined && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const startX = event.clientX;
+      const begin = onDrag();
+      handle.classList.add("dragging");
+      handle.setPointerCapture?.(event.pointerId);
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+      const move = moveEvent => begin(moveEvent.clientX - startX);
+      const up = () => {
+        handle.classList.remove("dragging");
+        document.body.style.userSelect = "";
+        document.body.style.cursor = "";
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        handle.removeEventListener("pointercancel", up);
+        onEnd();
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+      handle.addEventListener("pointercancel", up);
+    });
+    handle.addEventListener("click", event => event.stopPropagation());
+    handle.addEventListener("dblclick", event => { event.stopPropagation(); onReset(); });
+    handle.addEventListener("keydown", event => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      onKey((event.key === "ArrowRight" ? 1 : -1) * (event.shiftKey ? 48 : 16));
+    });
+    cell.appendChild(handle);
+  }
+
+  function makeTableResizable(table, index) {
+    const headRow = table.querySelector("thead tr");
+    const heads = headRow ? [...headRow.children].filter(cell => cell.tagName === "TH") : [];
+    if (heads.length < 2 || heads.some(cell => cell.colSpan > 1) || table.dataset.resizable) return;
+    table.dataset.resizable = "1";
+    if (!table.closest(".table-wrap, .table-scroll")) {
+      const wrap = document.createElement("div");
+      wrap.className = "table-scroll";
+      table.parentNode.insertBefore(wrap, table);
+      wrap.appendChild(table);
+    }
+    table.classList.add("resizable");
+    let group = table.querySelector("colgroup");
+    if (!group || group.children.length !== heads.length) {
+      group?.remove();
+      group = document.createElement("colgroup");
+      heads.forEach(() => group.appendChild(document.createElement("col")));
+      table.insertBefore(group, table.firstChild);
+    }
+    const cols = [...group.children];
+    const key = `dek-cols:${location.pathname}:${index}:${heads.map(cell => cell.textContent.trim()).join("|")}`;
+    let fixed = false;
+    const widths = () => cols.map(col => parseFloat(col.style.width));
+    const apply = list => {
+      cols.forEach((col, i) => { col.style.width = list[i] + "px"; });
+      table.style.tableLayout = "fixed";
+      table.style.width = list.reduce((sum, width) => sum + width, 0) + "px";
+      table.classList.add("fixed");
+      fixed = true;
+    };
+    const freeze = () => { if (!fixed) apply(heads.map(cell => clampColumnWidth(cell.getBoundingClientRect().width))); };
+    const setWidth = (i, width) => { const list = widths(); list[i] = clampColumnWidth(width); apply(list); };
+    const saved = readStoredWidths(storedWidths(key), heads.length);
+    if (saved) apply(saved);
+    heads.forEach((cell, i) => addHandle(
+      cell, "拖拽调整列宽（双击恢复自动）",
+      () => { freeze(); const start = widths()[i]; return dx => setWidth(i, start + dx); },
+      delta => { freeze(); setWidth(i, widths()[i] + delta); storeWidths(key, widths()); },
+      () => {
+        cols.forEach(col => { col.style.width = ""; });
+        table.style.tableLayout = "";
+        table.style.width = "";
+        table.classList.remove("fixed");
+        fixed = false;
+        forgetWidths(key);
+      },
+      () => storeWidths(key, widths())
+    ));
+  }
+
+  // The home list: 日期 and 路径 are fixed widths, 内容 takes the rest.
+  function makeGridResizable(box) {
+    const head = box?.querySelector(".recent-head");
+    if (!head || head.dataset.resizable) return;
+    head.dataset.resizable = "1";
+    const spans = [...head.children];
+    const key = "dek-cols:home-list";
+    const setColumns = (first, last) => box.style.setProperty("--recent-cols", `${first}px minmax(0,1fr) ${last}px`);
+    const current = () => [spans[0], spans[2]].map(cell => clampColumnWidth(cell.getBoundingClientRect().width));
+    const room = (first, last) => head.clientWidth - first - last >= 240;   // keep 内容 readable
+    const saved = readStoredWidths(storedWidths(key), 2);
+    if (saved && room(...saved)) setColumns(...saved);
+    const move = (i, start, dx) => {
+      const next = i === 0 ? [clampColumnWidth(start[0] + dx), start[1]] : [start[0], clampColumnWidth(start[1] - dx)];
+      if (room(...next)) setColumns(...next);
+    };
+    spans.slice(0, 2).forEach((span, i) => addHandle(
+      span, "拖拽调整列宽（双击恢复自动）",
+      () => { const start = current(); return dx => move(i, start, dx); },
+      delta => { move(i, current(), delta); storeWidths(key, current()); },
+      () => { box.style.removeProperty("--recent-cols"); forgetWidths(key); },
+      () => storeWidths(key, current())
+    ));
+  }
+
+  document.querySelectorAll("table").forEach((table, index) => makeTableResizable(table, index));
+
   const homeApp = document.querySelector("#home-app");
   function initRecent(recentList) {
     const indexUrl = new URL(recentList.dataset.index, location.href);
@@ -508,6 +653,7 @@
             indexPath: homeApp.dataset.index,
           });
           initRecent(document.querySelector("#recent-list"));
+          makeGridResizable(document.querySelector(".recent-table"));
         })
         .catch(() => {
           homeApp.innerHTML = '<div class="muted">首页加载失败，<button type="button" id="home-retry">点击重试</button></div>';

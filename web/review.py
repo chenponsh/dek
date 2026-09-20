@@ -193,6 +193,17 @@ def rough_display(content: str, suggestion: str = "") -> str:
     return _qa_lines(content[match.end():]).rstrip("\n") + "\n\n建议路径：" + shown
 
 
+def _question_text(item) -> str:
+    """The draft's question on one line, without its own 问：/问题： label ("" when it has none)."""
+    question = re.sub(r"\s+", " ", rough_qa(getattr(item, "content", "") or "")[0]).strip()
+    return QUESTION_LABELLED.sub("", question, count=1).strip()
+
+
+def _item_title(item) -> str:
+    """What the item page is headed with: the question itself, else the file name."""
+    return _question_text(item) or item.title
+
+
 def _content_cell(item, href: str) -> str:
     """The list's content cell, three lines: the question (the link into the item), the
     publication date, and the draft's file name as a note. Each line is one truncated line;
@@ -1043,6 +1054,7 @@ class ReviewService:
             f"来源：{_short_source(item.source)}" if item.source else "",
             f"日期：{item.published_date}" if item.published_date else "",
             f"目标：{item.wiki_target}" if item.wiki_target else "",
+            f"备注：{PurePosixPath(item.path).name}",
         ) if part)
         links = source_urls(item.content, root) if item.content else []
         links_block = ""
@@ -1056,12 +1068,12 @@ class ReviewService:
         body = (
             self._header() + self._sidebar()
             + '<div class="content">'
-            + f'<main class="review-shell"><p><a href="{self.path_prefix}/{html.escape(position)}">← 返回列表</a></p><h1>{html.escape(item.title)}</h1><div class="meta">{html.escape(meta)}</div>'
+            + f'<main class="review-shell"><p><a href="{self.path_prefix}/{html.escape(position)}">← 返回列表</a></p><h1>{html.escape(_item_title(item))}</h1><div class="meta">{html.escape(meta)}</div>'
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + links_block + form + history_block + '</main>'
             + '</div>'
         )
-        return self._page(item.title, body)
+        return self._page(_item_title(item), body)
 
     def submit_form(self, body: bytes, *, session_id: str, user_id: str, reviewer_label: str = "") -> str:
         if len(body) > MAX_DECISION_BYTES:

@@ -465,7 +465,7 @@ class SiteBuildTests(unittest.TestCase):
         self.assertLess(homepage.index('id="recent-list"'), homepage.index('id="recent-footer"'))
         style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
         # header and rows share one grid, so the three columns line up; the path column reads left to right
-        self.assertIn(".recent-head,.recent-item{display:grid;grid-template-columns:7.5rem minmax(0,1fr) minmax(10rem,32%)", style)
+        self.assertIn(".recent-head,.recent-item{display:grid;grid-template-columns:var(--recent-cols,7.5rem minmax(0,1fr) minmax(10rem,32%))", style)   # the columns a user drags to override the default
         self.assertIn("text-align:left;overflow:hidden;text-overflow:ellipsis", style)
         for shared in (".pager a,.pager .current,.pager .disabled{", ".page-size input[type=number]{", ".list-footer{"):
             self.assertIn(shared, style)
@@ -623,8 +623,10 @@ class SiteBuildTests(unittest.TestCase):
         css = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
         for token in ("syncCandidateToPath", '".suggestion-chip"', "dataset.path", "candidate_markdown"):
             self.assertIn(token, script)
-        # Both the dropdown and the suggestion buttons go through the same step.
-        self.assertEqual(script.count("syncCandidateToPath("), 3)
+        # The dropdown, the suggestion buttons and hand-typing all go through the same step.
+        self.assertEqual(script.count("syncCandidateToPath("), 5)   # its definition + choose + chip + input + change
+        self.assertIn('input.addEventListener("input", () => { render(); syncCandidateToPath(candidateBox(), input.value.trim()); });', script)
+        self.assertIn('input.addEventListener("change", () => syncCandidateToPath(candidateBox(), input.value.trim()));', script)
 
     def test_sidebar_tree_has_a_home_entry(self):
         build_site(self.vault, self.out)
