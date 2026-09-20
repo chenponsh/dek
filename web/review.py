@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlencode
 import yaml
 from deploy.release_bundle import APPROVAL_ID_PATTERN
 
-from .suggest import read_suggestion, suggest_folders
+from .suggest import read_suggestion, rough_qa, suggest_folders
 
 
 HASH_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -152,7 +152,7 @@ ANSWER_LABELLED = re.compile(r"\s*(?:答案?|解答|回答|A)\s*[:：]", re.I)
 
 
 def _qa_lines(body: str) -> str:
-    """Turn the draft's | 问题 | 解答 | 发布日期 | table into 问题：/解答：/发布日期： lines (a text that already carries its own 问：/答： keeps just that)."""
+    """Turn the draft's | 问题 | 解答 | 发布日期 | table into 问：/答：/发布日期： lines (a text that already carries its own label keeps just that)."""
     table = QA_TABLE.search(body)
     if not table:
         return body
@@ -162,9 +162,9 @@ def _qa_lines(body: str) -> str:
         if len(cells) == 3:
             question, answer, date = cells
             answer = re.sub(r'<br\s*/?>', chr(10), answer)
-            # Text that already starts with its own 问：/答： needs no second label.
-            question_line = question if QUESTION_LABELLED.match(question) else f"问题：{question}"
-            answer_line = answer if ANSWER_LABELLED.match(answer) else f"解答：{answer}"
+            # 问：/答：, the way the source words them; text that already starts with its own label keeps it.
+            question_line = question if QUESTION_LABELLED.match(question) else f"问：{question}"
+            answer_line = answer if ANSWER_LABELLED.match(answer) else f"答：{answer}"
             blocks.append(f"{question_line}\n{answer_line}\n发布日期：{date}")
     if not blocks:
         return body
@@ -194,13 +194,17 @@ def rough_display(content: str, suggestion: str = "") -> str:
 
 
 def _content_meta(item) -> str:
-    """One truncated line under the title (date, source); the tooltip carries the full path too."""
+    """One truncated line under the title: the publication date and the draft's question
+    (the tooltip carries the path and the full text)."""
     full = [item.path]
     short = []
     if item.published_date:
         full.append(f"发布日期：{item.published_date}"); short.append(f"发布日期：{item.published_date}")
-    if item.source:
-        full.append(f"来源：{item.source}"); short.append(f"来源：{_short_source(item.source)}")
+    question = re.sub(r"\s+", " ", rough_qa(getattr(item, "content", "") or "")[0]).strip()
+    if question:
+        # A question that already starts with its own 问：keeps it, otherwise it gets one.
+        line = question if QUESTION_LABELLED.match(question) else f"问：{question}"
+        full.append(line); short.append(line)
     if not short:
         return ""
     return (f'<div class="meta content-meta" title="{html.escape(" · ".join(full), quote=True)}">'
