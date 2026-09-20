@@ -206,8 +206,7 @@ def _item_title(item) -> str:
 
 def _content_cell(item, href: str) -> str:
     """The list's content cell, three lines: the question (the link into the item), the
-    publication date, and the draft's file name as a note. Each line is one truncated line;
-    the tooltips carry the full text."""
+    date, and the draft's file name as a note. Each line wraps when it is long, so nothing is cut off."""
     question = re.sub(r"\s+", " ", rough_qa(getattr(item, "content", "") or "")[0]).strip()
     # A question that already starts with its own 问：keeps it, otherwise it gets one.
     first = (question if QUESTION_LABELLED.match(question) else f"问：{question}") if question else item.title
@@ -738,7 +737,7 @@ STYLE = """<style>
 .table-wrap th,.table-wrap td.status,.table-wrap td.reviewer,.table-wrap td.time{white-space:nowrap}
 th.index,td.index{width:60px;min-width:60px;text-align:center}
 .table-wrap td.content{max-width:0;min-width:240px}
-.content-meta,.content-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.content-title{display:block}
+.content-meta,.content-title{white-space:normal;overflow-wrap:anywhere}.content-title{display:block}
 .list-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:18px}
 .pager,.page-size{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:.9rem}
 .page-size{margin-left:auto;color:var(--muted)}
@@ -775,7 +774,9 @@ button[type=submit]:hover{filter:brightness(.94)}
 .combo-option{padding:.5rem .7rem;cursor:pointer}
 .combo-option:hover,.combo-option.active{background:var(--hover)}
 .combo-path{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
-@media(max-width:760px){.content{margin-left:0}.review-shell{padding:82px 20px 70px}}
+/* The list is as wide as the knowledge base's home page: from the sidebar to the right edge, up to 1440px, 64px in from each side */
+.review-shell.review-list{max-width:1440px;margin:0;padding-left:64px;padding-right:64px}
+@media(max-width:760px){.content{margin-left:0}.review-shell{padding:82px 20px 70px}.review-shell.review-list{padding:82px 20px 70px}}
 </style>"""
 
 
@@ -1008,7 +1009,7 @@ class ReviewService:
         body = (
             self._header() + self._sidebar()
             + '<div class="content">'
-            + '<main class="review-shell">'
+            + '<main class="review-shell review-list">'
             + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions">{ingest_button}{publish_button}</div></div>'
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + f'<nav class="status-tabs" aria-label="审核状态筛选">{filters}</nav>'

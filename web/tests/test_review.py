@@ -508,7 +508,10 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('title="ingestion/rough/pending.md">备注：pending.md</div>', rest)   # the tooltip holds the full path
         self.assertNotIn(" · ", cell)                                          # no more run-on line
         self.assertNotIn("来源：", cell)
-        self.assertIn(".content-meta,.content-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.content-title{display:block}", page)
+        rule = ".content-meta,.content-title{white-space:normal;overflow-wrap:anywhere}.content-title{display:block}"
+        self.assertIn(rule, page)                               # long lines wrap ...
+        self.assertNotIn("text-overflow:ellipsis", rule)        # ... instead of being cut off with …
+        self.assertNotIn("nowrap", rule)
 
     def test_a_question_that_already_starts_with_问_is_not_labelled_twice_in_the_list(self):
         _, cell = self.list_cell("问：如何开展粉液双室袋仿制药的药学研究？")
@@ -571,6 +574,21 @@ class ReviewWorkflowTests(unittest.TestCase):
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         self.assertIn("<h1>pending.md</h1>", page)
+
+    def test_the_list_is_as_wide_as_the_knowledge_base_home_and_the_item_page_keeps_its_narrow_column(self):
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        self.assertIn('<main class="review-shell review-list">', page)
+        self.assertIn(".review-shell.review-list{max-width:1440px;margin:0;padding-left:64px;padding-right:64px}", page)
+        # the same numbers as the knowledge base's home page (.home-page in style.css)
+        style = (Path(__file__).parents[1] / "assets" / "style.css").read_text(encoding="utf-8")
+        self.assertIn(".home-page{max-width:1440px;margin-right:0}", style)
+        self.assertIn("padding:88px 64px 100px", style)
+        # narrow screens keep their compact padding
+        self.assertIn(".review-shell.review-list{padding:82px 20px 70px}}", page)
+        item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
+        detail = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertIn('<main class="review-shell">', detail)
+        self.assertNotIn("review-list", detail.split("</style>", 1)[1])   # the detail page markup is untouched
 
     def test_item_header_shows_the_source_the_way_the_list_does(self):
         rough = ROUGH.replace('source: "[[source/example]]"', 'source: "[[source/CDE/CDE_共性问题-受理共性问题]]"')
