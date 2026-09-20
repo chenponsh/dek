@@ -337,9 +337,11 @@ class SiteBuildTests(unittest.TestCase):
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
         for gone in ("has-subs", "card-sub", "card-subs"):
             self.assertNotIn(gone, homepage)
-            self.assertNotIn(gone, script)
+        self.assertNotIn("card-sub-", script)
         cards = re.findall(r'<div class="folder-card">(.*?)</div>', homepage, re.S)
         big = next(card for card in cards if "16_注册变更" in card)
+        # An older release's page still carries the nested lists while the scripts are already new.
+        self.assertIn('document.querySelectorAll(".card-subs").forEach(list => list.remove())', script)
         self.assertEqual(big.count("<a "), 1)              # one link, no nested sub-folder links
         self.assertIn('data-total="11"', big)             # its count is the whole category
 

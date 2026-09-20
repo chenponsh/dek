@@ -330,6 +330,10 @@
   const recentList = document.querySelector("#recent-list");
   if (recentList) {
     const indexUrl = new URL(recentList.dataset.index, location.href);
+    // Scripts are served from the installed code, but the page is only rebuilt by a
+    // release: a page built before the nested sub-folder lists were dropped still
+    // carries them, so drop them here rather than let them skew the counts.
+    document.querySelectorAll(".card-subs").forEach(list => list.remove());
     const tabs = [...document.querySelectorAll(".recent-tab[data-days]")];
     const startInput = document.querySelector("#recent-start");
     const endInput = document.querySelector("#recent-end");
