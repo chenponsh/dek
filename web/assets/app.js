@@ -360,6 +360,7 @@
     handle.setAttribute("role", "separator");
     handle.setAttribute("aria-orientation", "vertical");
     handle.setAttribute("aria-label", label);
+    handle.title = label;
     handle.tabIndex = 0;
     handle.addEventListener("pointerdown", event => {
       if (event.button !== undefined && event.button !== 0) return;

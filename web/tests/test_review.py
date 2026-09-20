@@ -800,6 +800,48 @@ class ReviewWorkflowTests(unittest.TestCase):
                     self.assertIn("← 返回列表</a>", page)
                     self.assertNotIn("返回待办列表", page)
 
+    def approved_count(self):
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        return int(re.search(r"发布已批准内容（(\d+)）", page).group(1)), page
+
+    def status_of(self, name="pending.md"):
+        return next(item.status for item in self.service.list_items() if item.path == f"ingestion/rough/{name}")
+
+    def test_an_approval_whose_draft_is_still_pending_waits_for_publishing_and_is_counted(self):
+        self.decide(action="approve")
+        self.assertEqual(self.status_of(), "approved")
+        count, page = self.approved_count()
+        self.assertEqual(count, 1)
+        self.assertIn("已批准待发布", page)
+
+    def test_an_approval_is_published_once_publishing_marked_its_draft_promoted(self):
+        # Publishing keeps the draft file and sets `status: promoted` (it does not delete it).
+        self.decide(action="approve")
+        rough = self.root / "repo/ingestion/rough/pending.md"
+        rough.write_text(rough.read_text(encoding="utf-8").replace("status: pending_review", "status: promoted"), encoding="utf-8")
+        self.assertEqual(self.status_of(), "published")
+        count, page = self.approved_count()
+        self.assertEqual(count, 0)                                     # no longer counted on the publish button
+        self.assertEqual(self.service.render_list("opaque-session", status="published").decode("utf-8").count("备注：pending.md"), 1)
+        self.assertNotIn("备注：pending.md", self.service.render_list("opaque-session", status="approved").decode("utf-8"))
+
+    def test_an_approval_is_still_published_when_its_draft_file_is_gone(self):
+        self.decide(action="approve")
+        (self.root / "repo/ingestion/rough/pending.md").unlink()
+        self.assertEqual(self.status_of(), "published")
+        self.assertEqual(self.approved_count()[0], 0)
+
+    def test_only_the_approvals_that_are_not_yet_published_are_counted(self):
+        second = self.root / "repo/ingestion/rough/second.md"
+        second.write_text(ROUGH.replace("| Q | A | 2026-09-14 |", "| 第二问 | 答 | 2026-09-15 |"), encoding="utf-8")
+        self.decide(action="approve")
+        self.decide(action="approve", path="ingestion/rough/second.md", wiki_path="wiki/01_Test/01-0002.md")
+        self.assertEqual(self.approved_count()[0], 2)
+        first = self.root / "repo/ingestion/rough/pending.md"
+        first.write_text(first.read_text(encoding="utf-8").replace("status: pending_review", "status: promoted"), encoding="utf-8")
+        self.assertEqual((self.status_of(), self.status_of("second.md")), ("published", "approved"))
+        self.assertEqual(self.approved_count()[0], 1)                  # only the one still waiting
+
     def test_detail_of_a_decided_item_is_locked_by_default(self):
         self.decide(action="reject")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")

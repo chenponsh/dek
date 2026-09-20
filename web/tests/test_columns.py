@@ -54,6 +54,14 @@ class ResizerWiringTests(unittest.TestCase):
                      ".recent-head .col-resizer{display:none}"):
             self.assertIn(rule, self.style)
 
+    def test_the_handles_are_visible_before_hovering_and_say_what_they_do(self):
+        # A divider that only appears on hover is easy to miss; it shows faintly all the time.
+        rule = self.style.split('.col-resizer::after{', 1)[1].split("}", 1)[0]
+        self.assertIn("background:color-mix(in srgb,var(--muted) 45%,transparent)", rule)
+        self.assertNotIn("background:transparent", rule)
+        self.assertIn("handle.title = label;", self.script)
+        self.assertIn("拖拽调整列宽（双击恢复自动）", self.script)
+
     def test_the_review_pages_load_the_shared_script_and_styles(self):
         review = (Path(__file__).parents[1] / "review.py").read_text(encoding="utf-8")
         self.assertIn('<link rel="stylesheet" href="/assets/style.css">', review)

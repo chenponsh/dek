@@ -855,6 +855,14 @@ class ReviewService:
             if record.get("rough_path") == relative
         ]
 
+    @staticmethod
+    def _rough_status(root: Path, relative: str) -> str:
+        """The `status` a draft carries in this snapshot; "" when it is not there (or not readable)."""
+        try:
+            return str(_frontmatter(rough_binding_at(root, validate_relative_path(relative, ROUGH_PREFIX)).content).get("status") or "")
+        except (ReviewError, OSError, ValueError, SystemExit):
+            return ""
+
     def list_items(self, *, query: str = "", status: str = "", root=None) -> list[ReviewItem]:
         root = self._snapshot_root(root)
         labels = self._labels()
@@ -869,9 +877,10 @@ class ReviewService:
             if not isinstance(path, str) or not path:
                 continue
             action = record.get("action", "")
-            exists = (root / path).is_file()
             derived = ACTION_STATUS.get(action, "pending")
-            if action == "approve" and not exists:
+            # An approval is published once its draft is gone from the snapshot or the draft
+            # itself says so (publishing keeps the file and marks it `promoted`).
+            if action == "approve" and self._rough_status(root, path) in ("", "promoted"):
                 derived = "published"
             existing = items.get(path)
             reviewer = labels.get(record.get("decision_id", ""), "")
