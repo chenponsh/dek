@@ -303,6 +303,67 @@ class FileSourceStagingTests(unittest.TestCase):
                 self.assertEqual(result["report"]["source/x/n.md"]["status"], "failed")
 
 
+class JspccTests(unittest.TestCase):
+    SOURCE = {"url": "https://www.jspcc.org.cn/spzx/web/column/nwwd/1.html",
+              "list_url": "https://www.jspcc.org.cn/spzx/web/column/nwwd/{page}.html"}
+
+    def test_list_decodes_every_object_despite_the_trailing_comma(self):
+        items = sources.parse_jspcc_list(fixture("jspcc_list.html"), self.SOURCE["url"])
+        self.assertEqual(len(items), 10)
+        self.assertEqual(items[0].date, "2026-02-03")
+        self.assertTrue(items[0].url.startswith("https://www.jspcc.org.cn/spzx/web/article/"))
+
+    def test_article_without_wen_da_markers_uses_the_title_as_question(self):
+        title, question, answer, date = sources.parse_jspcc_article(fixture("jspcc_article.html"))
+        self.assertEqual(title, question)
+        self.assertFalse(title[0].isdigit())
+        self.assertTrue(answer.startswith("在进行稳定性研究时"))
+        self.assertEqual(date, "2026-02-03")
+
+    def test_wen_da_body_is_split_into_question_and_answer(self):
+        article = {"title": "12、变更备案怎么办？", "releaseDate": 1770071160000, "content": "<p>问：药品变更备案怎么办？</p><p>答：按规定备案。</p>"}
+        page = "var article = " + json.dumps(article, ensure_ascii=False) + ";"
+        _, question, answer, _ = sources.parse_jspcc_article(page)
+        self.assertEqual((question, answer), ("药品变更备案怎么办？", "按规定备案。"))
+
+    def test_device_and_cosmetic_questions_are_left_out(self):
+        listing = fixture("jspcc_list.html")
+        article = fixture("jspcc_article.html")
+        rows, meta = sources.fetch_jspcc(self.SOURCE, set(), "2026-01-01", get=lambda url: listing if url.endswith("/1.html") else article)
+        self.assertEqual(rows, [])
+        self.assertGreaterEqual(meta["filtered_count"], 1)
+
+    def test_empty_list_page_is_a_failure(self):
+        with self.assertRaises(SafetyStop):
+            sources.fetch_jspcc(self.SOURCE, set(), "2026-01-01", get=lambda url: "var articleData = [];")
+
+
+class NifdcTests(unittest.TestCase):
+    URL = "https://www.nifdc.org.cn/nifdc/ywzx/jyywzx/cjgxwtjd/index.html"
+
+    def test_list_ignores_navigation_and_reads_bracketed_dates(self):
+        items = sources.parse_li_list(fixture("nifdc_list.html"), self.URL)
+        self.assertEqual([i.date for i in items], ["2026-02-25", "2025-08-04", "2024-09-18"])
+
+    def test_article_body_is_found_and_split_into_questions(self):
+        page = fixture("nifdc_article.html")
+        body = sources.html_to_text(sources.extract_block(page, sources.BODY_SELECTORS[-1]))
+        self.assertGreater(len(sources.split_qa(body)), 3)
+
+    def test_stem_cell_articles_are_off_topic(self):
+        self.assertFalse(sources.on_topic("中检院干细胞合同检验常见问题(专题第一期)", "药品"))
+
+    def test_insecure_tls_is_used_only_when_the_source_asks_for_it(self):
+        seen = []
+
+        def fake(url, timeout=45, verify=True):
+            seen.append(verify)
+            return fixture("nifdc_list.html")
+        with patch.object(sources, "http_get", fake):
+            sources.fetch_article_source({"url": self.URL, "insecure_tls": True}, {i.url for i in sources.parse_li_list(fixture("nifdc_list.html"), self.URL)}, "2000-01-01", get=sources.http_get)
+        self.assertEqual(seen, [False])
+
+
 class TableSourceStagingTests(unittest.TestCase):
     NOTE = (
         "---\nentity: x\nlast_updated: 2026-02-28\n---\n\n## 内容\n\n"

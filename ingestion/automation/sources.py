@@ -13,7 +13,9 @@ note and `since` is the note's `last_updated` (YYYY-MM-DD).
 from __future__ import annotations
 
 import html
+import json
 import re
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 import urllib.parse
 from dataclasses import dataclass
@@ -109,7 +111,7 @@ class ArticleRow(Row):
 
 
 _LI_ITEM = re.compile(
-    r'<li[^>]*>\s*<a\b[^>]*?href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>\s*<(?:em|span)[^>]*>\s*(?P<date>\d{4}-\d{2}-\d{2})',
+    r'<li[^>]*>\s*<a\b[^>]*?href="(?P<href>[^"]+)"[^>]*>(?P<title>(?:(?!<li\b|</li>).)*?)</a>\s*<(?:em|span)[^>]*>\s*[（(]?\s*(?P<date>\d{4}-\d{2}-\d{2})',
     re.S,
 )
 
@@ -186,6 +188,7 @@ BODY_SELECTORS: list[Callable[[str, dict[str, str]], bool]] = [
     lambda tag, a: tag == "div" and _has_class(a, "news-content"),
     lambda tag, a: tag == "div" and a.get("id", "").startswith("vsb_content"),
     lambda tag, a: tag == "div" and _has_class(a, "wzcon"),
+    lambda tag, a: tag == "div" and _has_class(a, "text"),  # nifdc.org.cn
 ]
 
 _QUESTION = re.compile(r"^\s*(?:问题\s*[0-9一二三四五六七八九十]*|问|\d+[.、．]|[一二三四五六七八九十]+[、.．])\s*[:：]?\s*(?P<q>.+)$")
@@ -221,7 +224,7 @@ def split_qa(text: str) -> list[tuple[str, str]]:
     return [("\n".join(q).strip(), "\n".join(a).strip()) for q, a in pairs if "".join(q).strip() and "".join(a).strip()]
 
 
-_NOT_DRUG = re.compile(r"化妆品|医疗器械|器械|数字疗法|体外诊断|保健食品|特殊食品|疫苗|生物制品|配方颗粒|饮片")
+_NOT_DRUG = re.compile(r"化妆品|医疗器械|器械|数字疗法|体外诊断|保健食品|特殊食品|疫苗|生物制品|配方颗粒|饮片|干细胞")
 _DRUG = re.compile(r"化学药|药品|制剂|药学|说明书|再注册|上市后|变更|仿制药")
 
 
@@ -240,6 +243,8 @@ def fetch_article_source(
 ) -> tuple[list[Row], dict[str, Any]]:
     """Article listing -> ArticleRows for articles that are new. `known` holds
     both row keys and the article URLs already in the note."""
+    if source.get("insecure_tls") and get is http_get:
+        get = lambda url: http_get(url, verify=False)  # noqa: E731
     listing = parse_li_list(get(source["url"]), source["url"])
     if not listing:
         raise SafetyStop("column page lists no articles; page structure may have changed")
@@ -525,6 +530,99 @@ def _anhui_body(url: str, get, fetch_json, source: dict[str, Any]) -> tuple[str,
     return "", url
 
 
+# ------------------------------------------------ 江苏省药品审评中心 你问我答 (jspcc.org.cn)
+
+_CST = timezone(timedelta(hours=8))
+
+
+def _js_json(page: str, name: str, opener: str) -> Any:
+    """The JSON literal assigned to `var <name> = ` in a page script."""
+    start = page.find(f"var {name} =")
+    if start < 0:
+        raise SafetyStop(f"page has no {name} data")
+    begin = page.index(opener, start)
+    value, _ = json.JSONDecoder().raw_decode(page[begin:])
+    return value
+
+
+def _ms_date(value: Any) -> str:
+    return datetime.fromtimestamp(int(value) / 1000, _CST).strftime("%Y-%m-%d")
+
+
+_JSPCC_DEVICE = re.compile(r"有源|无源|内窥镜|软件|检测样本|产品技术要求|型号规格|许可事项变更|临床试验中")
+
+
+def parse_jspcc_list(page: str, base: str) -> list[ListItem]:
+    """`var articleData = [ {...}, {...}, ]` (with a trailing comma, so the
+    objects are decoded one by one)."""
+    start = page.find("var articleData")
+    if start < 0:
+        raise SafetyStop("page has no articleData")
+    decoder = json.JSONDecoder()
+    items: list[ListItem] = []
+    position = page.index("[", start) + 1
+    while True:
+        begin = page.find("{", position)
+        if begin < 0 or page.find("]", position) not in (-1,) and page.find("]", position) < begin:
+            break
+        item, position = decoder.raw_decode(page, begin)
+        items.append(ListItem(urllib.parse.urljoin(base, f"/spzx/web/article/{item['id']}.html"), str(item["title"]), _ms_date(item["releaseDate"])))
+    return items
+
+
+def parse_jspcc_article(page: str) -> tuple[str, str, str, str]:
+    """(title, question, answer, date). The body reads `问：… 答：…`; when it
+    does not, the numbered title is the question and the whole text the answer."""
+    article = _js_json(page, "article", "{")
+    title = re.sub(r"^\s*\d+\s*[、.．]\s*", "", str(article["title"])).strip()
+    text = html_to_text(re.sub(r"(?is)<style\b.*?</style>", "", str(article.get("content") or "")))
+    match = re.search(r"问\s*[:：]\s*(?P<q>.*?)\n?\s*答\s*[:：]\s*(?P<a>.*)$", text, re.S)
+    if match and match.group("q").strip() and match.group("a").strip():
+        return title, match.group("q").strip(), match.group("a").strip(), _ms_date(article["releaseDate"])
+    return title, title, text, _ms_date(article["releaseDate"])
+
+
+def fetch_jspcc(
+    source: dict[str, Any], known: set[Any], since: str, get: Callable[[str], str] = http_get, max_pages: int = 40,
+) -> tuple[list[Row], dict[str, Any]]:
+    rows: list[Row] = []
+    skipped: list[dict[str, str]] = []
+    seen = filtered = 0
+    page_no = 1
+    while page_no <= max_pages:
+        try:
+            items = parse_jspcc_list(get(source["list_url"].format(page=page_no)), source["url"])
+        except SafetyStop:
+            if page_no == 1:
+                raise
+            break  # past the last page the site answers 404
+        if not items:
+            if page_no == 1:
+                raise SafetyStop("jspcc list is empty; page structure may have changed")
+            break
+        seen += len(items)
+        for item in items:
+            if item.date <= since:
+                continue
+            try:
+                title, question, answer, date = parse_jspcc_article(get(item.url))
+            except (SafetyStop, KeyError, ValueError) as exc:
+                skipped.append({"url": item.url, "reason": str(exc)})
+                continue
+            if not answer or not on_topic(title, question) or _NOT_DRUG.search(question) or _JSPCC_DEVICE.search(title + question):
+                filtered += 1
+                continue
+            if (normalize(question), date) not in known:
+                rows.append(Row(question, answer, date))
+        if items[-1].date <= since:
+            break
+        page_no += 1
+    meta: dict[str, Any] = {"remote_count": seen, "latest_date": max((r.date for r in rows), default=None), "filtered_count": filtered}
+    if skipped:
+        meta["skipped_items"] = skipped
+    return rows, meta
+
+
 def fetch_shanghai_all(source: dict[str, Any], known: set[tuple[str, str]], since: str) -> tuple[list[Row], dict[str, Any]]:
     """Shanghai serves the whole Q&A list as JSON in one request."""
     return fetch_shanghai(source["url"])
@@ -540,4 +638,5 @@ FETCHERS: dict[str, Callable[..., tuple[list[Row], dict[str, Any]]]] = {
     "shanghai": fetch_shanghai_all,
     "articles": fetch_article_source,
     "beijing": fetch_beijing,
+    "jspcc": fetch_jspcc,
 }

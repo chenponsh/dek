@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta name="format-detection" content="telephone=no,email=no"/>
+		<title>常见共性问题解答</title>
+		<meta name="SiteIDCode" content="">
+<meta name="SiteName" content="中国药品检定研究院">
+<meta name="SiteDomain" content="https://www.nidc.org.cn/">
+<meta name="ColumnName" content="常见共性问题解答">
+<meta name="ColumnType" content="常见共性问题解答">
+<meta name="ColumnDescription" content="中国药品检定研究院常见共性问题解答相关信息">
+<meta name="ColumnKeywords" content="常见共性问题解答">
+
+		<link rel="shortcut icon" href="../../../wbppimages/favicon.ico">
+		<link rel="bookmark" href="../../../wbppimages/favicon.ico">
+		<link rel="stylesheet" href="../../../css/base.css">
+		<link rel="stylesheet" href="../../../css/index.css">
+		<script src="../../../js/jquery.min.js"></script>
+		<script src="../../../js/jquery.SuperSlide.2.1.3.js"></script>
+	</head>
+	<body>
+		<!-- 头部 -->
+<div class="headerbg">
+            <div class="header">
+                <div class="w1100-auto clearfix">
+                    <div class="logo fl-l">
+                        <img src="../../../images/logo.png" alt="">
+                    </div>
+                    <div class="search fl-r clearfix">
+                        <div class="search-con">
+                            <i class="search-icon search-left"></i>
+                            <input class="search-text" type="text" value="请输入关键字" name="keywordsshow" id="showId" onfocus="this.value='';this.style.color='#999'">
+                            <i class="search-icon search-right"></i>
+                            <input id="sosbtn" value="" type="button" class="search-btn" name="button">					
+                        </div>
+                    </div>
+                </div>
+            </div>	
+        </div>
+        
+        <script>
+            
+            $(function(){
+                $("#sosbtn").click(function() {
+                    var keywords = $("#showId").val();
+                    
+                    if (keywords == "请输入关键字") {
+                        var searchword = "";
+                        alert("请输入关键字");
+                    } else if (keywords == "") {
+                        alert("请输入关键字");
+                    }else{
+                        var searchword = encodeURI(keywords);
+                        var searchurl = "https://www.nidc.org.cn/nifdc/search/index.html?keywords="+searchword;
+                        window.open(searchurl);
+                    }
+                })		
+            });
+            $('#showId').bind('keypress', function(event) {
+                    if (event.keyCode == "13") {
+                        $("#sosbtn").click();
+                    }
+                })
+        </script>		<!-- 导航 -->
+<div class="nav">
+	<div class="nav-con w1100-auto clearfix">
+		<ul>
+			<li onMouseOver="showHideLayer('layer1', 'block', 'show')" onMouseOut="showHideLayer('layer1', 'none', 'hide')" data-id="layer1" style="width:136px">
+				<a href="../../../index.html">网站首页</a>
+			</li>
+			<li onMouseOver="showHideLayer('layer2', 'block', 'show')" onMouseOut="showHideLayer('layer2', 'none', 'hide')" data-id="layer2">
+				<a href="../../../jgshzh/zjyjsh/index.html">机构概况</a>
+			</li>
+			<li onMouseOver="showHideLayer('layer3', 'block', 'show')" onMouseOut="showHideLayer('layer3', 'none', 'hide')" data-id="layer3">
+				<a href="../../../rcdw/yuanshi/index.html">人才队伍</a>
+			</li>
+			<li onMouseOver="showHideLayer('layer4', 'block', 'show')" onMouseOut="showHideLayer('layer4', 'none', 'hide')" data-id="layer4">
+				<a href="../../../gzdt/ywdt/index.html">院务动态</a>
+			</li>
+			<li onMouseOver="showHideLayer('layer5', 'block', 'show')" onMouseOut="showHideLayer('layer5', 'none', 'hide')" data-id="layer5">
+				<a href="../../../djgz/index.html">党建工作</a>
+			</li>
+			<li onMouseOver="showHideLayer('layer6', 'block', 'show')" onMouseOut="showHideLayer('layer6', 'none', 'hide')" data-id="layer6">
+				<a href="../../../xxgk/zcfg/index.html">信息公开</a>
+			</li>
+			<li onMouseOver="showHideLayer('layer7', 'block', 'show')" onMouseOut="showHideLayer('layer7', 'none', 'hide')" data-id="layer7">
+				<a href="../../../bshff/index.html">办事大厅</a>
+			</li>
+			<li onMouseOver="showHideLayer('layer8', 'block', 'show')" onMouseOut="showHideLayer('layer8', 'none', 'hide')" data-id="layer8">
+				<a href="../../../ywzx/jyywzx/ywzxxzh/index.html">业务咨询</a>
+			</li>
+			<li onMouseOver="showHideLayer('layer9', 'block', 'show')" onMouseOut="showHideLayer('layer9', 'none', 'hide')" data-id="layer9">
+				<a href="../../../bshff/hdjl/hdzxxz/index.html">建言献策</a>
+			</li>
+		</ul>
+		<div id="layer2" class="layer layer2 clearfix" onmouseover="showHideLayer('layer2', 'block', 'show')" onmouseout="showHideLayer('layer2', 'none', 'hide')">
+			<div class="layer-nav">
+				<a href="../../../jgshzh/zjyjsh/index.html">院介绍</a>
+				<a href="../../../jgshzh/zjyld/index.html">院领导</a>
+				<a href="../../../jgshzh/zjyzzhjg/index.html">组织机构</a>
+				<a href="../../../jgshzh/zjynlzzh/index.html">能力资质</a>
+				<a href="../../../jgshzh/zjylxfsh/index.html">联系方式</a>
+			</div>
+		</div>
+		<div id="layer3" class="layer layer3 clearfix" onmouseover="showHideLayer('layer3', 'block', 'show')" onmouseout="showHideLayer('layer3', 'none', 'hide')">
+			<div class="layer-nav">
+				<a href="../../../rcdw/yuanshi/index.html">院士</a>
+				<a href="../../../rcdw/shxzj/index.html">首席专家</a>
+				<a href="../../../rcdw/yjqy/index.html">药检耆英</a>
+			</div>
+		</div>
+		<div id="layer5" class="layer layer1 clearfix" onmouseover="showHideLayer('layer5', 'block', 'show')" onmouseout="showHideLayer('layer5', 'none', 'hide')">
+			<div class="layer-nav">
+				<a href="../../../djgz/dwdt/index.html">党建要闻</a>
+				<a href="../../../djgz/dflzh/index.html">党风廉政</a>
+				<a href="../../../djgz/qttzh/index.html">群团统战</a>
+				<a href="../../../djgz/jjjb/index.html">纪检举报</a>
+			</div>
+		</div>
+		
+		<div id="layer6" class="layer layer1 clearfix" onmouseover="showHideLayer('layer6', 'block', 'show')" onmouseout="showHideLayer('layer6', 'none', 'hide')">
+			<div class="layer-nav">
+				<a href="../../../xxgk/zcfg/index.html">法规政策</a>
+				<a href="../../../xxgk/ggtzh/index.html">公告通知</a>
+				<a href="../../../xxgk/sjcx/index.html">数据查询</a>
+			</div>
+		</div>
+
+		<div id="layer7" class="layer layer1 clearfix" style="height:150px" onmouseover="showHideLayer('layer7', 'block', 'show')" onmouseout="showHideLayer('layer7', 'none', 'hide')">
+			<div class="layer-nav" style="text-align:left;padding-left:30px">
+				<a href="../../../bshff/hzhpjssp/hzpsptzgg/index.html" target="_blank">化妆品审评</a>
+				<a href="../../../bshff/gjchj/index.html">国家抽检管理</a>
+				<a href="../../../bshff/ylqxbzhgl/index.html" target="_blank">医疗器械标准与分类管理</a>
+				<a href="https://bio.nidc.org.cn/pqf/search.do?formAction=pqfXxpt" target="_blank">生物制品批签发</a>
+				<a href="../../../bshff/bzhwzh/bzwztzgg/index.html">国家标准物质与菌毒种</a>
+				<a href="../../../bshff/jyyw/jyzzh/index.html">检验业务</a>
+				<a href="https://zgc.nidc.org.cn/" target="_blank">能力验证</a>
+				<a href="http://jkyp.nidc.org.cn/DocMgr_Report/qiyelogin.jsp" target="_blank"><span>进口药品注册检验</span></a>
+				<a href="../../../bshff/hzhpbzh/hzhpbzhtzgg/index.html" target="_blank">化妆品标准</a>
+				<a href="http://infoser.nidc.org.cn/gdzcww" target="_blank">中检院仪器设备管理系统</a>
+                <a href="../../../bshff/ywflcaypjn/apsjianjie/index.html">药物非临床安全评价</a>
+                <a href="http://app.nidc.org.cn/bcjyff" target="_blank">补充检验方法管理系统</a>
+				<a href="http://ycgys.nidc.org.cn" target="_blank">阳光采购平台</a>
+				<a href="../../../ywzx/jyywzx/ywzxxzh/index.html">业务咨询</a>
+				<a href="../../../bshff/xzq/index.html">下载区</a>
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+	// 二级导航切换
+	function showHideLayer(id, toggle, classStatu){
+		var oDom = $('#'+id+'');
+		oDom.css('display', toggle);
+
+		var oNav = $('li[data-id='+id+']');
+		if(classStatu == 'show'){
+			oNav.addClass('active');
+		}else if(classStatu == 'hide'){
+			oNav.removeClass('active');
+		}
+	}
+</script>		<!-- 当前位置-->
+		<div class="crumbs w1100-auto">
+			<a href="../../../index.html">网站首页</a>
+			<span class="icon">>></span>
+			<a href="../../../ywzx/jyywzx/ywzxxzh/index.html">业务咨询</a>
+			<span class="icon">>></span>
+			<a href="../../../ywzx/jyywzx/ywzxxzh/index.html">检验业务咨询</a>
+			<span class="icon">>></span>
+			<span>常见共性问题解答</span>
+        </div>
+			
+		<div class="w1100-auto15 yp-child-list clearfix bg-fff">	
+			<!-- 化妆品审评左边栏 -->
+<div class="fl-l yp-fxjc-l">
+	<dl>
+		<dt>
+			<a href="../../../ywzx/jyywzx/ywzxxzh/index.html">业务咨询</a>
+		</dt>
+		<dd>
+			<ul>
+				<li><a href="../../../ywzx/jyywzx/ywzxxzh/index.html">检验业务咨询</a></li>
+				<li><a href="../../../ywzx/qxhdjlptn/index.html">医疗器械标准与分类管理<br/>互动交流平台</a></li>
+				<li><a href="../../../ywzx/bzhwzhzxzxn/index.html">国家药品标准物质在线咨<br/>询系统</a></li>
+				<li><a href="../../../bshff/hzhpjssp/hzpsptzgg/index.html">化妆品审评专栏</a></li>
+				<li><a href="../../../ywzx/jyywzx/lxdh/index.html">检验业务咨询电话</a></li>
+			</ul>
+		</dd>
+	</dl>
+</div>			<div class="yp-fxjc-r fl-r">
+				<div class="title">
+					<h2>检验业务咨询</h2>
+					<i class="underline"></i>                    
+                    <div class="title-more">
+                        <a href="../../../ywzx/jyywzx/ywzxxzh/index.html">业务咨询须知</a>
+                        <span>丨</span>
+                        <span class="active">常见共性问题解答</span>
+                    </div>
+				</div>
+				<div class="list">
+                    <ul>
+                            <li>
+                                <a href="../../../ywzx/jyywzx/cjgxwtjd/202602251032001937239.html" target="_blank" title='药品注册检验常见共性问题解答'>
+                                    药品注册检验常见共性问题解答
+                                </a>
+                                <span>(2026-02-25)</span>
+                            </li>
+                            <li>
+                                <a href="../../../ywzx/jyywzx/cjgxwtjd/202508041026511668682.html" target="_blank" title='中检院干细胞合同检验常见问题(专题第一期)'>
+                                    中检院干细胞合同检验常见问题(专题第一期)
+                                </a>
+                                <span>(2025-08-04)</span>
+                            </li>
+                            <li>
+                                <a href="../../../ywzx/jyywzx/cjgxwtjd/20240914160458193.html" target="_blank" title='中检院检验业务常见问题解答（共性问题第一期）'>
+                                    中检院检验业务常见问题解答（共性问题第一期）
+                                </a>
+                                <span>(2024-09-18)</span>
+                            </li>
+                    </ul>
+                    <!-- 分页 -->
+	
+     
+     
+     
+     
+     
+     
+    <!-- 将分页HTML代码放置到页面 -->
+    <div class="gray">
+		<!--如果总页数为零，则不显示分页-->
+    </div>
+     
+    <!-- 分页插件CSS -->
+    <style type="text/css" mce_bogus="1">
+        div.gray {
+            font-size: 12px;
+            font-family: verdana, arial, helvetica, sans-serif;
+            padding: 3px; 
+            margin: 3px; 
+            text-align: center;
+            color:#999999;
+        }
+        div.gray a {
+            border: #E1E2E3 1px solid; 
+            padding: 7px 14px; 
+            margin: 2px; 
+            color: #0000CC; 
+            text-decoration: none;
+        }
+        div.gray a:hover {
+            border: #3388FF 1px solid; 
+            background: #F2F8FF;
+        }
+        div.gray a:active {
+            color: #FF0000; 
+        }
+        div.gray span.current {
+            border: transparent 1px solid; 
+            font-weight: bold; 
+            margin: 2px; 
+            padding: 7px 14px; 
+            color: #333333; 
+        }
+    </style>
+                </div>
+			</div>
+		</div>
+
+	<!-- 底部 -->
+<div class="footer mt26">
+	<div class="w1100-auto clearfix">
+		<div class="footer-menu w1100-auto fl-l">
+			<span>相关链接：</span>
+			<a href="http://www.samr.gov.cn/" target="_blank" class="link fl-l">国家市场监督管理总局</a>
+			<a href="http://www.nmpa.gov.cn" target="_blank" class="link fl-l">国家药品监督管理局</a>
+			<a href="https://zwfw.nmpa.gov.cn/web/index?sourceType=nmpa" target="_blank" class="link fl-l">国家药品监督管理局政务服务门户</a>
+			<script src="../../../wbppjs/footer.js"></script>
+			<script>
+			$('.footer-link').on('click', function(){
+				$(this).find('dt').addClass('active');
+				$(this).find('dd').show();
+			})
+			$('.footer-link').on('mouseleave', function(){
+				$(this).find('dt').removeClass('active');
+				$(this).find('dd').hide();
+			})
+			</script>
+		</div>
+	</div>
+	<div class="w1100-auto clearfix">
+		<div class="about fl-l">
+			<div>本站由中国药品检定研究院主办 版权所有 未经许可禁止转载或建立镜像</div>
+			<div>Copyright © nidc.org.cn. All Rights Reserved </div>
+			<div>
+				<a href="https://beian.miit.gov.cn/"><span class="p8" style="color:#FFFFFF">备案序号:京ICP备17052540号-7</span></a> <a target="_blank" href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=11011502006205" style="display:inline-block;text-decoration:none;height:20px;line-height:18px;top: 3px;left:10px;position:relative;"><img src="../../../wbppimages/nifdcbeian.png" style="float:left;"/><p style="float:left;height:20px;line-height:20px;margin: 2px 0px 0px 5px; color:#ffffff;">京公网安备 11011502006205号</p></a>
+			</div>
+			<div>
+				中国药品检定研究院信息中心建设和维护  <A href="mailto:information@nidc.org.cn"><FONT color=#ffffff>E-mail:information@nidc.org.cn</FONT></A>
+			</div>
+		</div>
+	</div>
+</div>
+<script type="text/javascript">
+document.write('<script src="/directory/web/nifdc/js/nifdctj.js"></scr'+'ipt>');
+</script>
+<script src="../../../wbppjs/main.js"></script><script>
+	// 处理列表分块
+	$('.yp-child-list .list li').each(function(index, item){
+		if((index+1)%5 == 0 || index == $('.yp-child-list .list li').length-1){
+			$(item).addClass('active');
+		}
+	})
+</script></body>
+</html>

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>江苏省药品监督管理局审评中心</title>
+    <link rel="stylesheet" href="/spzx/web/assets/css/css.reset.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/toubu2024.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/spzx_gt.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/index2024.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/csslbwz.css">
+    <style>
+        .doccontent a{color: #005aff}
+    </style>
+</head>
+<script language="javascript">
+function Turn(count,_sPageName, _sPageExt)
+{
+    var aa=_sPageName,bb=_sPageExt,page=parseInt(document.getElementById("page").value);
+    if(isNaN(page))page=1;
+    if(page<1)page=1;
+    if(page>count)page=count;
+    if(page==1)
+        window.location.href=aa+'.'+bb;
+    else
+        window.location.href=aa+'_'+(page-1)+'.'+bb;
+}
+
+function createPageHTML(_nPageCount, _nCurrIndex, _sPageName, _sPageExt){
+    if(_nPageCount == null || _nPageCount<=1){
+        return;
+    }
+    document.write("共有 "+_nPageCount+" 页，本页是第 "+(_nCurrIndex+1)+" 页    ");
+    var nCurrIndex = _nCurrIndex || 0;
+    if(nCurrIndex == 0)
+    {
+        document.write("首页&nbsp;");
+        document.write("上一页&nbsp;");
+        document.write("<a href=\""+_sPageName+"_" + (nCurrIndex+1) + "."+_sPageExt+"\">下一页</a>&nbsp;");
+        document.write("<a href=\""+_sPageName+"_" + (_nPageCount-1) + "."+_sPageExt+"\">末页</a>&nbsp;");
+    }
+    else
+    {
+        if(nCurrIndex == _nPageCount-1)
+        {
+        document.write("<a href=\""+_sPageName+ "."+_sPageExt+"\">首页</a>&nbsp;");
+        
+        if(nCurrIndex==1)document.write("<a href=\""+_sPageName+ "."+_sPageExt+"\">上一页</a>&nbsp;");else{document.write("<a href=\""+_sPageName+"_" + (nCurrIndex-1) + "."+_sPageExt+"\">上一页</a>&nbsp;");}
+        document.write("下一页&nbsp;");
+        document.write("末页&nbsp;");
+
+        }
+        else
+        {
+        document.write("<a href=\""+_sPageName + "."+_sPageExt+"\">首页</a>&nbsp;");
+        
+        if(nCurrIndex==1)document.write("<a href=\""+_sPageName+ "."+_sPageExt+"\">上一页</a>&nbsp;");else{document.write("<a href=\""+_sPageName+"_" + (nCurrIndex-1) + "."+_sPageExt+"\">上一页</a>&nbsp;");}       
+        document.write("<a href=\""+_sPageName+"_" + (nCurrIndex+1) + "."+_sPageExt+"\">下一页</a>&nbsp;");
+        document.write("<a href=\""+_sPageName+"_" + (_nPageCount-1) + "."+_sPageExt+"\">末页</a>&nbsp;");
+        }
+    }
+    
+    document.write("跳转到<input name='page' type='text' id='page' size='3' onkeyup=\"if(event.keyCode==13)Turn('"+_nPageCount+"','"+_sPageName+"','"+_sPageExt+"')\"\ /> 页"); 
+
+}
+</script>
+<body>
+<div class="new_body" style="padding-bottom:150px;height:auto !important;background-size:100%;background-repeat:no-repeat; background-position:bottom; ">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no">
+    <title>江苏省药品监督管理局审评中心</title>
+    <link rel="stylesheet" href="/spzx/web/assets/css/css.reset.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/toubu2024.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/spzx_gt.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/index2024.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/index_tplb.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/bootstrap.min.css">
+<script type="text/javascript" src="/spzx/web/assets/js/common/jquery-1.8.3.min.js"></script>
+<script type="text/javascript" src="/spzx/web/assets/js/common/main.js"></script>
+<script>
+    var themeUrl = '/spzx/web';
+    var site = {"deploymentPath":"/data/upload/spzx/web","pId":"0","parentName":"审评中心网站管理系统","domainName":"/spzx/web","name":"审评中心","theme":"theme-2","id":"af59cd763b6e724f44dd1164f962326a","status":"1"};
+    var currentPage = 'column-nwwd';
+    var baseUrl = '/dcms';
+    function goSearch() {
+        window.location.href = themeUrl+'/page/search.html?title='+$('#searchTitle').val();
+    }
+</script>
+</head>
+<body>
+<div class="spzx2024_pc">
+   <!--   <div class="spzx_top2024"><img src="/spzx/web/assets/images/top_xt2024.png" alt="" /></div>-->
+    <div class="spzx_head2024">
+        <div class="spzx_logo2024"><img src="/spzx/web/assets/images/spzx_logo2024.png" alt="" /></div>
+        <div class="spzx_ss2024">
+            <!-- <div class="spzx_ss2024_l">
+                <input type="text" placeholder="请输入关键字" id="searchText" class="search-input" />
+
+            </div> --><!-- 
+            <a class="spzx_ss2024_r">
+                <img src="/spzx/web/assets/images/ss2024.png" alt="" class="search-btn" onclick="search();" />
+            </a> -->
+                <form name="searchform" action="/spzx/web/page/search.html" method="get" target="_blank">
+                    <div class="spzx_ss2024_l">
+                            <input type="hidden" name="current" value="1" />
+                            <input type="hidden" name="eachPageSize" value="10" />
+                            <input type="hidden" name="siteId" value="af59cd763b6e724f44dd1164f962326a" />
+                            <input type="text" name="title" placeholder="请输入搜索关键字" />
+                    </div>
+                    <span class="spzx_ss2024_r">
+                        <label>
+                            <input style="background: url(../site33/ss2024.png) no-repeat center;cursor: pointer;" type="submit" value="" />
+                        </label>
+                    </span>
+                </form>
+
+        </div>
+    </div>
+    <div class="spzx_nav2024">
+        <ul>
+            <li><a href="/">中心首页</a></li>
+            <li><a href="/spzx/web/column/dqpy/1.html">党旗飘扬</a></li>
+            <li><a href="/spzx/web/column/fwzc/1.html">服务之窗</a></li>
+            <li><a href="/spzx/web/column/xxgk/1.html">信息公开</a></li>
+            <li><a href="/spzx/web/column/spkt/1.html">审评课堂</a></li>
+            <li><a href="/spzx/web/column/hdjl/1.html">互动交流</a></li>
+        </ul>
+        <div class="spzx_jqr2024"><a target="_blank" href="http://www.jspcc.org.cn/dataconsult/web.do"><img src="/spzx/web/assets/images/jqr2024.gif" alt="" /></a></div>
+        <div class="spzx_lxfs" style="    z-index: 999;">
+            <span style="top:250px;" class="wx2024_1"><img src="/spzx/web/assets/images/wx2024.png" alt="" /></span>
+            <span style="top:220px;right: 35px;" class="wx2024"><img src="/spzx/web/assets/images/weixin32024.jpg" alt="" width="150px" /></span>
+            <span style="top:330px;"><a href="/spzx/web/column/lxwm/1.html" target="_blank"><img src="/spzx/web/assets/images/lxwm2024.png" alt="" /></a></span>
+        </div>
+    </div>
+</div>
+<div class="spzx2024_sjd">
+    <div class="spzx_head2024_sjd"><img src="/spzx/web/assets/images/spzx_logo2024.png" alt="" /></div>
+    <div class="spzx_nav2024_sjd">
+        <ul>
+            <li><a href="/spzx/web/column/dqpy/1.html">党旗飘扬</a></li>
+            <li><a href="/spzx/web/column/fwzc/1.html">服务之窗</a></li>
+            <li><a href="/spzx/web/column/xxgk/1.html">信息公开</a></li>
+            <li><a href="/spzx/web/column/spkt/1.html">审评课堂</a></li>
+            <li><a href="/spzx/web/column/hdjl/1.html">互动交流</a></li>
+        </ul>
+    </div>
+    <div class="spzx_jqr2024_sjd"><a target="_blank" href="http://www.jspcc.org.cn/dataconsult/web.do"><img src="/spzx/web/assets/images/jqr2024_sjd.png" /></a></div>
+
+</div>
+<div style="display: none">
+    <img src="/spzx/web/assets/images/bj2024.png" alt="" />
+    <img src="/spzx/web/assets/images/dbjt2024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_hzp2024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_nwwd2024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_ylqx2024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_yp2024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_zxyy12024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_zxyy22024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_zxyy32024.png" alt="" />
+    <img src="/spzx/web/assets/images/hdhd2024.png" alt="" />
+    <img src="/spzx/web/assets/images/hdjl2024.png" alt="" />
+    <img src="/spzx/web/assets/images/jqr2024.gif" alt="" />
+    <img src="/spzx/web/assets/images/list_12024.png" alt="" />
+    <img src="/spzx/web/assets/images/list_22024.png" alt="" />
+    <img src="/spzx/web/assets/images/list_32024.png" alt="" />
+    <img src="/spzx/web/assets/images/list_42024.png" alt="" />
+    <img src="/spzx/web/assets/images/lxwm2024.png" alt="" />
+    <img src="/spzx/web/assets/images/nav2024_bj1.png" alt="" />
+    <img src="/spzx/web/assets/images/nav2024_bj2.png" alt="" />
+    <img src="/spzx/web/assets/images/nav2024_xt.png" alt="" />
+    <img src="/spzx/web/assets/images/nav2024_xt1.png" alt="" />
+    <img src="/spzx/web/assets/images/news_bj2024.png" alt="" />
+    <img src="/spzx/web/assets/images/news_bj12024.png" alt="" />
+    <img src="/spzx/web/assets/images/spjd_bj2024.png" alt="" />
+    <img src="/spzx/web/assets/images/spkt2024.png" alt="" />
+    <img src="/spzx/web/assets/images/spkt2024_1.png" alt="" />
+    <img src="/spzx/web/assets/images/spkt2024_2.png" alt="" />
+    <img src="/spzx/web/assets/images/spzx_db2024.png" alt="" />
+    <img src="/spzx/web/assets/images/spzx_logo2024.png" alt="" />
+    <img src="/spzx/web/assets/images/ss2024.png" alt="" />
+    <img src="/spzx/web/assets/images/top_xt2024.png" alt="" />
+    <img src="/spzx/web/assets/images/tpxw.png" alt="" />
+    <img src="/spzx/web/assets/images/tsjb2024.png" alt="" />
+    <img src="/spzx/web/assets/images/weixin32024.jpg" alt="" />
+    <img src="/spzx/web/assets/images/wlxq12024.png" alt="" />
+    <img src="/spzx/web/assets/images/wlxq22024.png" alt="" />
+    <img src="/spzx/web/assets/images/wx2024.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_banner2024.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_jgsz2024.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_zxzz2024.png" alt="" />
+    <img src="/spzx/web/assets/images/zlfz2024.gif" alt="" />
+    <img src="/spzx/web/assets/images/zrxx2024.png" alt="" />
+    <img src="/spzx/web/assets/images/zxzx2024.png" alt="" />
+    <img src="/spzx/web/assets/images/jqr2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/jqr2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/spzx_logo2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/bj2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/nav2024_xt_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/news_bj2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/bj2024_1_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/bj2024_1.png" alt="" />
+    <img src="/spzx/web/assets/images/lxwm2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/zfcg_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/bmyjs_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/spbg_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_zxzz2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_jgsz2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_banner2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/spkt2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/spkt2024_1_sjd.png" alt="" />
+</div>
+</body>
+</html>
+<script src="/spzx/web/assets/js/jquery-1.8.3.min.js"></script>
+<script>
+    function search() {
+        var searchText = trim($("#searchText").val());
+        if(searchText.length > 50){
+            alert("关键词过长，请删减后重新查询！");
+            return;
+        }
+        location="http://www.jspcc.org.cn/was5/web/search?searchscope=&timescope=&timescopecolumn=&orderby=-DocPubTime&channelid=253628&andsen=&total=&orsen=&exclude=&searchword=&perpage=&templet=&token=";
+    }
+    function trim(str)
+    {
+        return str.replace(/(^\s*)|(\s*$)/g, '');
+    }
+    function oldLogin(){
+        var strForward= "";
+        if(location.hostname.indexOf("192.168") == -1){
+            strForward = 'http://221.226.127.157:8086/jspcc/login_new.jsp';
+        }else{
+            strForward = 'http://192.168.2.95:8086/jspcc/login_new.jsp';
+        }
+        window.open(strForward,"Login");
+    }
+</script>
+<script src="/spzx/web/assets/js/index2024.js"></script>
+<script>
+    //文章对象
+    var article = {"releaseDate":1770071160000,"columnId":"1999019897080815618","px":328,"title":"172、用于开展稳定性研究的体外诊断试剂有哪些要求？","type":"1","content":"<style type=\"text/css\">.TRS_Editor P{font-family:宋体;font-size:14pt;}.TRS_Editor DIV{font-family:宋体;font-size:14pt;}.TRS_Editor TD{font-family:宋体;font-size:14pt;}.TRS_Editor TH{font-family:宋体;font-size:14pt;}.TRS_Editor SPAN{font-family:宋体;font-size:14pt;}.TRS_Editor FONT{font-family:宋体;font-size:14pt;}.TRS_Editor UL{font-family:宋体;font-size:14pt;}.TRS_Editor LI{font-family:宋体;font-size:14pt;}.TRS_Editor A{font-family:宋体;font-size:14pt;}</style><div class=TRS_Editor><style type=\"text/css\">\n.TRS_Editor P{font-family:宋体;font-size:14pt;}.TRS_Editor DIV{font-family:宋体;font-size:14pt;}.TRS_Editor TD{font-family:宋体;font-size:14pt;}.TRS_Editor TH{font-family:宋体;font-size:14pt;}.TRS_Editor SPAN{font-family:宋体;font-size:14pt;}.TRS_Editor FONT{font-family:宋体;font-size:14pt;}.TRS_Editor UL{font-family:宋体;font-size:14pt;}.TRS_Editor LI{font-family:宋体;font-size:14pt;}.TRS_Editor A{font-family:宋体;font-size:14pt;}</style>\n<p>　　<span>问:</span><span>用于开展</span>稳定性研究的体外诊断试剂有哪些要求？</p>\n<div>　　<span><span><span>答：在进行稳定性</span></span></span><span><span>研究</span></span><span><span>时，使用的试剂产品</span></span><span><span>应在保证产品原材料、生产工艺定型基础上，在质量可控的环境下进行生产</span></span><span><span>，</span></span><span><span>以避免因生产规模、环境条件等因素对试剂产品的稳定性造成影响</span></span><span><span>。</span></span></div></div>","url":"http://www.jspcc.org.cn/spzx/fwzc/nwwd/ylqx2024/202602/t20260203_1419924.html","subtitleSetting":{},"releaseType":"1","releaseStatus":"1","titleSetting":{},"siteId":"af59cd763b6e724f44dd1164f962326a","createUser":"1833320486794067970","id":"E409717443A9B211A7A696A46AAC6145","isdelete":"2","status":"4","createDate":1770071338000};
+    $(function (){
+        //浏览次数+1
+        SiteMain.view(article.columnId, article.id);
+    });
+</script>    <div class="spzx_con2024_4">
+        <!-- <div class="spzx_zlfz2024"><img src="/spzx/web/assets/images/zlfz2024.gif" alt="" /></div> -->
+        <!-- 当前位置 -->
+        <div class="bread">
+            <div class="lmydqwz">你问我答</div>
+            <span class="breadNav">您所在的位置：首页》服务之窗》你问我答</span>
+        </div>
+        <!-- 当前位置 -->
+        <!-- 正文s -->
+        <div class="qxs_wzy_20" style="padding-bottom: 15px;">
+                <div class="doctitle" style="color:#333333;line-height:40px; margin:10px 0;    text-align: center; font-size: 22px;">172、用于开展稳定性研究的体外诊断试剂有哪些要求？</div>
+                <div class="field" style="width:100%; border-bottom:1px solid #CCC;text-align:center;padding: 10px;line-height:30px">
+                    日期：2026-02-03 字号：[ <a href="javascript:font('16')">大</a> <a href="javascript:font('14')">中</a> <a href="javascript:font('12')">小</a> ]
+                </div>
+                <div class="doccontent" id="con" style="padding:20px 30px; width:100%; padding-top:35px;">
+                    <p><style type="text/css">.TRS_Editor P{font-family:宋体;font-size:14pt;}.TRS_Editor DIV{font-family:宋体;font-size:14pt;}.TRS_Editor TD{font-family:宋体;font-size:14pt;}.TRS_Editor TH{font-family:宋体;font-size:14pt;}.TRS_Editor SPAN{font-family:宋体;font-size:14pt;}.TRS_Editor FONT{font-family:宋体;font-size:14pt;}.TRS_Editor UL{font-family:宋体;font-size:14pt;}.TRS_Editor LI{font-family:宋体;font-size:14pt;}.TRS_Editor A{font-family:宋体;font-size:14pt;}</style><div class=TRS_Editor><style type="text/css">
+.TRS_Editor P{font-family:宋体;font-size:14pt;}.TRS_Editor DIV{font-family:宋体;font-size:14pt;}.TRS_Editor TD{font-family:宋体;font-size:14pt;}.TRS_Editor TH{font-family:宋体;font-size:14pt;}.TRS_Editor SPAN{font-family:宋体;font-size:14pt;}.TRS_Editor FONT{font-family:宋体;font-size:14pt;}.TRS_Editor UL{font-family:宋体;font-size:14pt;}.TRS_Editor LI{font-family:宋体;font-size:14pt;}.TRS_Editor A{font-family:宋体;font-size:14pt;}</style>
+<p>　　<span>问:</span><span>用于开展</span>稳定性研究的体外诊断试剂有哪些要求？</p>
+<div>　　<span><span><span>答：在进行稳定性</span></span></span><span><span>研究</span></span><span><span>时，使用的试剂产品</span></span><span><span>应在保证产品原材料、生产工艺定型基础上，在质量可控的环境下进行生产</span></span><span><span>，</span></span><span><span>以避免因生产规模、环境条件等因素对试剂产品的稳定性造成影响</span></span><span><span>。</span></span></div></div></p>
+                </div>
+            <div class="share" style=" border-bottom:1px solid #CCC; margin-bottom:10px;text-align:center"><div class="icon_share"></div>
+            【<a onclick="window.opener=null;window.open('','_self','');window.close();" href="javascript:void(0);">关闭本页</a>】  【<a href="javascript:window.print();">打印本页</a>】  【<a href="javascript:scroll(0,200)">返回顶部</a>】
+            </div>
+        </div>
+        <!-- 正文e -->
+    </div>
+   
+</div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no">
+    <title>Title</title>
+    <title>江苏省药品监督管理局审评中心</title>
+    <link rel="stylesheet" href="/spzx/web/assets/css/css.reset.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/toubu2024.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/spzx_gt.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/index2024.css">
+    <link rel="stylesheet" href="/spzx/web/assets/css/index_tplb.css">
+
+</head>
+<body>
+<div class="spzx2024_pc">
+    <div class="spzx_bottom">
+        <div class="spzx_xt"><img src="/spzx/web/assets/css/spzx_xian2.jpg" alt="" /></div>
+    <div class="spzx_botton_con">
+        <div class="spzx_botton_nav">
+            <a href="https://www.nmpa.gov.cn/" target="_blank">国家药品监督管理局</a>
+            <a href="http://da.jiangsu.gov.cn/" target="_blank">江苏省药品监督管理局</a>
+            <a href="http://da.jiangsu.gov.cn/art/2024/1/16/art_84627_11126578.html" target="_blank">审评核查分中心/工作站</a>
+            <a class="qtdw2024">其他相关单位 <img src="/spzx/web/assets/css/dbjt2024.png" alt="" /></a>
+            <div class="qtxgdw2024">
+                
+                <a href="http://www.jsifdc.org.cn/" target="_blank"><b>·</b>江苏省药品监督检验研究院  </a>
+                <a href="http://www.jsmdt.org.cn/" target="_blank"><b>·</b>江苏省医疗器械检验所</a>
+<a href="http://www.jscdi.org.cn/" target="_blank" style="display:block;text-align:left;margin-left:29px;">江苏省药品监督管理局审核查验中心</a>
+<a href="http://www.jsadr.org.cn/" target="_blank"><b>·</b>江苏省药品不良反应监测中心 </a>
+               
+                <a href="http://www.xzmvc.net.cn/" target="_blank"><b>·</b>江苏省徐州医药高职校</a>
+ <a href="http://www.jspa.org.cn/" target="_blank"><b>·</b>江苏省药学会 </a>
+            </div>
+        </div>
+        <div class="botton_xq2024"> 
+            <div class="wlxq_l"><a href="http://bszs.conac.cn/sitename?method=show&id=105E03E77DAF21CFE053012819ACD4B6"  target="_blank"><img src="/spzx/web/assets/css/wlxq12024.png" alt="" /></a></div>
+            <div class="wlxq_r">
+                <p><a href="https://beian.miit.gov.cn/#/Integrated/index" target="_blank">苏ICP备09096984号</a><a href="https://beian.mps.gov.cn/#/query/webSearch" style="padding-left: 15px" target="_blank"><img src="/spzx/web/assets/css/wlxq22024.png" alt="" />苏公网安备 32010402000929号</a></p>
+                <p>2006(C)江苏省药品监督管理局审评中心版权所有，未经协议授权，禁止转载</p>
+                <p>地址：江苏省南京市中山东路448号普华大厦9楼 邮编：210002</p>
+            </div>
+
+        </div>
+
+    </div>
+</div>
+</div>
+<div class="spzx2024_sjd">
+    <div class="spzx2024_bottom_sjd">
+        <div class="bottom_pic_sjd">
+            <a href="http://bszs.conac.cn/sitename?method=show&id=105E03E77DAF21CFE053012819ACD4B6" target="_blank"><img src="/spzx/web/assets/css/wlxq12024.png" alt="" width="55" /></a>
+            <a style="margin: 0 20px"><img src="/spzx/web/assets/css/weixin32024.jpg" alt="" width="75" /></a>
+            <a href="http://www.jspcc.org.cn/gbcs1/lxwm2024/" target="_blank"><img src="/spzx/web/assets/css/lxwm2024_sjd.png" alt="" width="95" /></a>
+        </div>
+        <p><a href="https://beian.miit.gov.cn/#/Integrated/index" target="_blank">苏ICP备09096984号</a><a href="https://beian.mps.gov.cn/#/query/webSearch" style="padding-left: 15px" target="_blank"><img src="/spzx/web/assets/css/wlxq22024.png" alt="" />苏公网安备 32010402000929号</a></p>
+        <p>2006(C)江苏省药品监督管理局审评中心版权所有</p>
+    </div>
+</div>
+<div style="display: none">
+    <img src="/spzx/web/assets/css/bj2024.png" alt="" />
+    <img src="/spzx/web/assets/css/dbjt2024.png" alt="" />
+    <img src="/spzx/web/assets/css/fwzc_hzp2024.png" alt="" />
+    <img src="/spzx/web/assets/css/fwzc_nwwd2024.png" alt="" />
+    <img src="/spzx/web/assets/css/fwzc_ylqx2024.png" alt="" />
+    <img src="/spzx/web/assets/css/fwzc_yp2024.png" alt="" />
+    <img src="/spzx/web/assets/css/fwzc_zxyy12024.png" alt="" />
+    <img src="/spzx/web/assets/css/fwzc_zxyy22024.png" alt="" />
+    <img src="/spzx/web/assets/css/fwzc_zxyy32024.png" alt="" />
+    <img src="/spzx/web/assets/css/hdhd2024.png" alt="" />
+    <img src="/spzx/web/assets/css/hdjl2024.png" alt="" />
+    <img src="/spzx/web/assets/css/jqr2024.gif" alt="" />
+    <img src="/spzx/web/assets/css/list_12024.png" alt="" />
+    <img src="/spzx/web/assets/css/list_22024.png" alt="" />
+    <img src="/spzx/web/assets/css/list_32024.png" alt="" />
+    <img src="/spzx/web/assets/css/list_42024.png" alt="" />
+    <img src="/spzx/web/assets/css/lxwm2024.png" alt="" />
+    <img src="/spzx/web/assets/css/nav2024_bj1.png" alt="" />
+    <img src="/spzx/web/assets/css/nav2024_bj2.png" alt="" />
+    <img src="/spzx/web/assets/css/nav2024_xt.png" alt="" />
+    <img src="/spzx/web/assets/css/nav2024_xt1.png" alt="" />
+    <img src="/spzx/web/assets/css/news_bj2024.png" alt="" />
+    <img src="/spzx/web/assets/css/news_bj12024.png" alt="" />
+    <img src="/spzx/web/assets/css/spjd_bj2024.png" alt="" />
+    <img src="/spzx/web/assets/css/spkt2024.png" alt="" />
+    <img src="/spzx/web/assets/css/spkt2024_1.png" alt="" />
+    <img src="/spzx/web/assets/css/spkt2024_2.png" alt="" />
+    <img src="/spzx/web/assets/css/spzx_db2024.png" alt="" />
+    <img src="/spzx/web/assets/css/spzx_logo2024.png" alt="" />
+    <img src="/spzx/web/assets/css/ss2024.png" alt="" />
+    <img src="/spzx/web/assets/css/top_xt2024.png" alt="" />
+    <img src="/spzx/web/assets/css/tpxw.png" alt="" />
+    <img src="/spzx/web/assets/css/tsjb2024.png" alt="" />
+    <img src="/spzx/web/assets/css/weixin32024.jpg" alt="" />
+    <img src="/spzx/web/assets/css/wlxq12024.png" alt="" />
+    <img src="/spzx/web/assets/css/wlxq22024.png" alt="" />
+    <img src="/spzx/web/assets/css/wx2024.png" alt="" />
+    <img src="/spzx/web/assets/css/xxgk_banner2024.png" alt="" />
+    <img src="/spzx/web/assets/css/xxgk_jgsz2024.png" alt="" />
+    <img src="/spzx/web/assets/css/xxgk_zxzz2024.png" alt="" />
+    <img src="/spzx/web/assets/css/zlfz2024.gif" alt="" />
+    <img src="/spzx/web/assets/css/zrxx2024.png" alt="" />
+    <img src="/spzx/web/assets/css/zxzx2024.png" alt="" />
+   <img src="/spzx/web/assets/css/jqr2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/spzx_logo2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/bj2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/nav2024_xt_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/news_bj2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/bj2024_1_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/bj2024_1.png" alt="" />
+    <img src="/spzx/web/assets/css/lxwm2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/zfcg_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/bmyjs_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/spbg_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/xxgk_zxzz2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/xxgk_jgsz2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/xxgk_banner2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/spkt2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/css/spkt2024_1_sjd.png" alt="" />
+</div>
+</body>
+</html><div style="display: none">
+    <img src="/spzx/web/assets/images/bj2024.png" alt="" />
+    <img src="/spzx/web/assets/images/dbjt2024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_hzp2024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_nwwd2024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_ylqx2024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_yp2024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_zxyy12024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_zxyy22024.png" alt="" />
+    <img src="/spzx/web/assets/images/fwzc_zxyy32024.png" alt="" />
+    <img src="/spzx/web/assets/images/hdhd2024.png" alt="" />
+    <img src="/spzx/web/assets/images/hdjl2024.png" alt="" />
+    <img src="/spzx/web/assets/images/jqr2024.gif" alt="" />
+    <img src="/spzx/web/assets/images/list_12024.png" alt="" />
+    <img src="/spzx/web/assets/images/list_22024.png" alt="" />
+    <img src="/spzx/web/assets/images/list_32024.png" alt="" />
+    <img src="/spzx/web/assets/images/list_42024.png" alt="" />
+    <img src="/spzx/web/assets/images/lxwm2024.png" alt="" />
+    <img src="/spzx/web/assets/images/nav2024_bj1.png" alt="" />
+    <img src="/spzx/web/assets/images/nav2024_bj2.png" alt="" />
+    <img src="/spzx/web/assets/images/nav2024_xt.png" alt="" />
+    <img src="/spzx/web/assets/images/nav2024_xt1.png" alt="" />
+    <img src="/spzx/web/assets/images/news_bj2024.png" alt="" />
+    <img src="/spzx/web/assets/images/news_bj12024.png" alt="" />
+    <img src="/spzx/web/assets/images/spjd_bj2024.png" alt="" />
+    <img src="/spzx/web/assets/images/spkt2024.png" alt="" />
+    <img src="/spzx/web/assets/images/spkt2024_1.png" alt="" />
+    <img src="/spzx/web/assets/images/spkt2024_2.png" alt="" />
+    <img src="/spzx/web/assets/images/spzx_db2024.png" alt="" />
+    <img src="/spzx/web/assets/images/spzx_logo2024.png" alt="" />
+    <img src="/spzx/web/assets/images/ss2024.png" alt="" />
+    <img src="/spzx/web/assets/images/top_xt2024.png" alt="" />
+    <img src="/spzx/web/assets/images/tpxw.png" alt="" />
+    <img src="/spzx/web/assets/images/tsjb2024.png" alt="" />
+    <img src="/spzx/web/assets/images/weixin32024.jpg" alt="" />
+    <img src="/spzx/web/assets/images/wlxq12024.png" alt="" />
+    <img src="/spzx/web/assets/images/wlxq22024.png" alt="" />
+    <img src="/spzx/web/assets/images/wx2024.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_banner2024.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_jgsz2024.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_zxzz2024.png" alt="" />
+    <img src="/spzx/web/assets/images/zlfz2024.gif" alt="" />
+    <img src="/spzx/web/assets/images/zrxx2024.png" alt="" />
+    <img src="/spzx/web/assets/images/zxzx2024.png" alt="" />
+    <img src="/spzx/web/assets/images/jqr2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/spzx_logo2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/bj2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/nav2024_xt_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/news_bj2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/bj2024_1_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/bj2024_1.png" alt="" />
+    <img src="/spzx/web/assets/images/lxwm2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/zfcg_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/bmyjs_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/spbg_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_zxzz2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_jgsz2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/xxgk_banner2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/spkt2024_sjd.png" alt="" />
+    <img src="/spzx/web/assets/images/spkt2024_1_sjd.png" alt="" />
+</div>
+</body>
+</html>
+<script src="/spzx/web/assets/js/jquery-1.8.3.min.js"></script>
+<script>
+    $(".spzx_nav2024 li").eq(4).children("a").addClass("h2")
+    $(".spzx_nav2024 li").eq(4).addClass("h1")
+</script>
+
+<script src="/spzx/web/assets/js/index2024.js"></script><!-- 发布时间：2026-06-15 10:37:23，耗时：0.0s -->

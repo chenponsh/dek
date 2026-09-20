@@ -36,12 +36,16 @@ USER_AGENT = (
 )
 
 
-def http_get(url: str, timeout: int = 45) -> str:
+def http_get(url: str, timeout: int = 45, verify: bool = True) -> str:
     """GET a page as text. Government sites here are reachable directly and
     some refuse the shared proxy, so go direct first and only then fall back
     to the environment's proxy."""
     headers = {"User-Agent": USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9"}
     context = ssl.create_default_context()
+    if not verify:
+        # Only for a listed public site whose certificate does not match its name (NIFDC).
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
     direct = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
     fallback = urllib.request.build_opener()
     last: Exception | None = None
