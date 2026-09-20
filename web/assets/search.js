@@ -269,14 +269,17 @@
     return Number.isFinite(parsed) ? Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, parsed)) : PAGE_SIZE;
   }
 
-  // Page numbers to show: all of them up to 7 pages, else the first, last and the
-  // current one with its neighbours, `null` marking a gap.
+  // Page numbers to show: the first and last page, and the current one with 5 on
+  // each side (at most 11 in a run), `null` marking a gap between runs.
+  const PAGE_REACH = 5;
   function pageWindow(page, pages) {
-    if (pages <= 7) return Array.from({ length: pages }, (_, index) => index + 1);
-    const shown = [...new Set([1, pages, page - 1, page, page + 1])].filter(n => n >= 1 && n <= pages).sort((a, b) => a - b);
+    const shown = new Set([1, pages]);
+    for (let number = page - PAGE_REACH; number <= page + PAGE_REACH; number += 1) {
+      if (number >= 1 && number <= pages) shown.add(number);
+    }
     const window = [];
     let previous = 0;
-    for (const number of shown) {
+    for (const number of [...shown].sort((a, b) => a - b)) {
       if (number - previous > 1) window.push(null);
       window.push(number);
       previous = number;
@@ -286,19 +289,59 @@
 
   function pagerHtml(page, pages) {
     const link = (number, label) => `<a href="#" data-page="${number}">${label}</a>`;
-    const parts = [page > 1 ? link(page - 1, "上一页") : '<span class="disabled">上一页</span>'];
+    const off = label => `<span class="disabled">${label}</span>`;
+    const parts = [page > 1 ? link(1, "首页") : off("首页"), page > 1 ? link(page - 1, "上一页") : off("上一页")];
     for (const number of pageWindow(page, pages)) {
       if (number === null) parts.push('<span class="gap">…</span>');
       else if (number === page) parts.push(`<span class="current" aria-current="page">${number}</span>`);
       else parts.push(link(number, number));
     }
-    parts.push(page < pages ? link(page + 1, "下一页") : '<span class="disabled">下一页</span>');
+    parts.push(page < pages ? link(page + 1, "下一页") : off("下一页"), page < pages ? link(pages, "末页") : off("末页"));
     parts.push(`<span class="page-info">第 ${page}/${pages} 页</span>`);
     return `<nav class="pager" aria-label="分页">${parts.join("")}</nav>`;
   }
 
+  function pageJumpHtml(pages) {
+    // novalidate: a number past either end is taken to the last / first page, not refused by the browser.
+    return `<form class="page-jump" novalidate>跳转到第<input type="number" name="page_jump" min="1" max="${pages}" step="1" inputmode="numeric" aria-label="跳转到页码">页<button type="submit">跳转</button></form>`;
+  }
+
   function pageSizeHtml(size) {
     return `<form class="page-size">每页<input type="number" name="page_size" min="${MIN_PAGE_SIZE}" max="${MAX_PAGE_SIZE}" step="1" value="${size}" inputmode="numeric" aria-label="每页条数">条</form>`;
+  }
+
+  // ---- The list's place in the address bar ---------------------------------
+  // ?page=3&range=90&size=40 - the page, and what it is a page of, so a refresh,
+  // the back button or a shared link lands on the same rows.
+  const RANGES = ["0", "7", "30", "90", "undated", "custom"];
+  const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+  function listStateFromQuery(search) {
+    const query = new URLSearchParams(search || "");
+    const range = RANGES.includes(query.get("range")) ? query.get("range") : "0";
+    const day = name => (ISO_DAY.test(query.get(name) || "") ? query.get(name) : "");
+    const page = parseInt(query.get("page"), 10);
+    return {
+      range,
+      start: range === "custom" ? day("start") : "",
+      end: range === "custom" ? day("end") : "",
+      page: Number.isFinite(page) && page > 0 ? page : 1,
+      size: query.has("size") ? clampPageSize(query.get("size")) : PAGE_SIZE,
+    };
+  }
+
+  // The query string for a state, leaving out whatever is the default ("" when all are).
+  function listStateToQuery(state) {
+    const query = new URLSearchParams();
+    if (state.page > 1) query.set("page", String(state.page));
+    if (state.range && state.range !== "0") query.set("range", state.range);
+    if (state.range === "custom") {
+      if (ISO_DAY.test(state.start || "")) query.set("start", state.start);
+      if (ISO_DAY.test(state.end || "")) query.set("end", state.end);
+    }
+    if (state.size && state.size !== PAGE_SIZE) query.set("size", String(state.size));
+    const text = query.toString();
+    return text ? "?" + text : "";
   }
 
   // Documents with no date at all (directory pages, notes that carry no date), by path.
@@ -316,5 +359,5 @@
     return count;
   }
 
-  return { normalize, scoreDocument, searchDocuments, resultSnippet, highlight, homeHtml, undatedDocuments, countUndated, PAGE_SIZE, clampPageSize, pageWindow, pagerHtml, pageSizeHtml, resultUrl, recentDocuments, recentDocumentsInRange, countInRange };
+  return { normalize, scoreDocument, searchDocuments, resultSnippet, highlight, homeHtml, undatedDocuments, countUndated, PAGE_SIZE, clampPageSize, pageWindow, pagerHtml, pageJumpHtml, pageSizeHtml, listStateFromQuery, listStateToQuery, resultUrl, recentDocuments, recentDocumentsInRange, countInRange };
 });

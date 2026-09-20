@@ -457,6 +457,21 @@ class SiteBuildTests(unittest.TestCase):
         self.assertNotIn("发布于", script)
         self.assertNotIn('"无日期"', script)          # no placeholder text in the date column
 
+    def test_the_list_keeps_its_place_in_the_address_bar(self):
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('history[replace ? "replaceState" : "pushState"](null, "", url)', script)
+        self.assertIn('window.addEventListener("popstate"', script)             # back / forward restore the list
+        self.assertIn("DEKSearch.listStateFromQuery(location.search)", script)  # a refresh or shared link starts from it
+        self.assertIn("if (initial) syncUrl(true)", script)                     # tidied without adding a history entry
+        # every way of changing the list writes it: page links and the jump form (goToPage), the page size, the tabs, 自定义, the date fields
+        self.assertEqual(script.count("syncUrl();"), 5)
+        self.assertIn("goToPage(number)", script)
+        self.assertIn('event.target.elements.page_jump.value', script)
+        style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        for rule in (".list-tools{", ".page-jump{", ".page-jump input[type=number]{", ".page-jump button{"):
+            self.assertIn(rule, style)
+
     def test_the_list_has_a_header_row_and_a_pager_footer(self):
         build_site(self.vault, self.out)
         homepage = self.home_markup()
@@ -466,7 +481,13 @@ class SiteBuildTests(unittest.TestCase):
         style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
         # header and rows share one grid, so the three columns line up; the path column reads left to right
         self.assertIn(".recent-head,.recent-item{display:grid;grid-template-columns:var(--recent-cols,7.5rem minmax(0,1fr) minmax(10rem,32%))", style)   # the columns a user drags to override the default
-        self.assertIn("text-align:left;overflow:hidden;text-overflow:ellipsis", style)
+        self.assertIn(".recent-item small{color:var(--muted);font-size:11px;line-height:1.5;text-align:left;white-space:normal;overflow-wrap:anywhere}", style)
+        small_rule = style.split(".recent-item small{color", 1)[1].split("}", 1)[0]
+        self.assertNotIn("nowrap", small_rule)                 # the path wraps and is shown in full ...
+        self.assertNotIn("ellipsis", small_rule)               # ... never cut off with …
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('replace(/\\//g, "/<wbr>")', script)     # it prefers to break after a slash
+        self.assertIn('<small title="${escapeHtml(location)}">', script)   # and the tooltip still carries the full text
         for shared in (".pager a,.pager .current,.pager .disabled{", ".page-size input[type=number]{", ".list-footer{"):
             self.assertIn(shared, style)
 

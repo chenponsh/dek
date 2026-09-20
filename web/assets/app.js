@@ -499,6 +499,23 @@
     let listDocs = [];
     let page = 1;
     let pageSize = DEKSearch.PAGE_SIZE;
+    let mode = "0";   // what the list is of: "7" / "30" / "90" days, "0" for 全部, "undated", or "custom"
+
+    // The page, and what it is a page of, live in the address bar (?page=3&range=90&size=40):
+    // a refresh, the back button or a shared link lands on the same rows.
+    const currentState = () => ({ range: mode, start: startInput?.value || "", end: endInput?.value || "", page, size: pageSize });
+    function syncUrl(replace) {
+      const url = location.pathname + DEKSearch.listStateToQuery(currentState()) + location.hash;
+      if (url === location.pathname + location.search + location.hash) return;
+      history[replace ? "replaceState" : "pushState"](null, "", url);
+    }
+    function goToPage(number) {
+      page = number;
+      renderPage();
+      syncUrl();
+      const table = document.querySelector(".recent-table");
+      if (table && table.getBoundingClientRect().top < 0) table.scrollIntoView({ block: "start" });
+    }
 
     function renderPage() {
       const pages = Math.max(1, Math.ceil(listDocs.length / pageSize));
@@ -510,11 +527,12 @@
       }
       recentList.innerHTML = listDocs.slice((page - 1) * pageSize, page * pageSize).map(doc => {
         const href = DEKSearch.resultUrl(doc, indexUrl);
+        // The whole path, wrapping at its slashes rather than cut off.
         const location = `${doc.kind.toUpperCase()} · ${doc.path}`;
-        return `<a class="recent-item" href="${href}"><span class="recent-date">${escapeHtml(doc.date || "")}</span><strong>${escapeHtml(doc.title)}</strong><small title="${escapeHtml(location)}">${escapeHtml(location)}</small></a>`;
+        return `<a class="recent-item" href="${href}"><span class="recent-date">${escapeHtml(doc.date || "")}</span><strong>${escapeHtml(doc.title)}</strong><small title="${escapeHtml(location)}">${escapeHtml(location).replace(/\//g, "/<wbr>")}</small></a>`;
       }).join("");
       if (footer) {
-        footer.innerHTML = DEKSearch.pagerHtml(page, pages) + DEKSearch.pageSizeHtml(pageSize);
+        footer.innerHTML = DEKSearch.pagerHtml(page, pages) + `<div class="list-tools">${DEKSearch.pageJumpHtml(pages)}${DEKSearch.pageSizeHtml(pageSize)}</div>`;
         footer.hidden = false;
       }
     }
@@ -529,18 +547,21 @@
       const link = event.target.closest("a[data-page]");
       if (!link) return;
       event.preventDefault();
-      page = Number(link.dataset.page);
-      renderPage();
-      const table = document.querySelector(".recent-table");
-      if (table && table.getBoundingClientRect().top < 0) table.scrollIntoView({ block: "start" });
+      goToPage(Number(link.dataset.page));
     });
     footer?.addEventListener("change", event => {
       if (event.target.name !== "page_size") return;
       pageSize = DEKSearch.clampPageSize(event.target.value);
       page = 1;
       renderPage();
+      syncUrl();
     });
-    footer?.addEventListener("submit", event => event.preventDefault());
+    footer?.addEventListener("submit", event => {
+      event.preventDefault();
+      if (!event.target.classList.contains("page-jump")) return;
+      const number = parseInt(event.target.elements.page_jump.value, 10);
+      if (Number.isFinite(number)) goToPage(number);   // beyond either end lands on the first / last page
+    });
 
     const customButton = document.querySelector("#recent-custom");
     const rangeBox = document.querySelector("#recent-range");
@@ -599,6 +620,7 @@
     function applyDays(days) {
       setCustomOpen(false);
       undatedOnly = days === "undated";
+      mode = String(days);
       tabs.forEach(tab => tab.classList.toggle("active", tab.dataset.days === String(days)));
       if (!startInput || !endInput) return;
       if (undatedOnly || Number(days) === 0) {
@@ -613,10 +635,31 @@
       renderRange();
     }
 
+    // Show what the address bar says: the range, the page size and the page (clamped to what exists).
+    function restoreFromUrl(initial) {
+      const state = DEKSearch.listStateFromQuery(location.search);
+      pageSize = state.size;
+      if (state.range === "custom") {
+        undatedOnly = false;
+        mode = "custom";
+        tabs.forEach(tab => tab.classList.remove("active"));
+        setCustomOpen(true);
+        if (startInput) startInput.value = state.start;
+        if (endInput) endInput.value = state.end;
+        renderRange();
+      } else {
+        applyDays(state.range === "undated" ? "undated" : Number(state.range));
+      }
+      page = state.page;
+      renderPage();
+      if (initial) syncUrl(true);   // tidy an out-of-range page number without adding a history entry
+    }
+    window.addEventListener("popstate", () => { if (recentDocs.length) restoreFromUrl(false); });
+
     function loadRecent() {
       recentList.innerHTML = '<div class="muted">正在加载信息速览…</div>';
       loadSharedIndex(indexUrl)
-        .then(data => { recentDocs = data; applyDays(0); })
+        .then(data => { recentDocs = data; restoreFromUrl(true); })
         .catch(() => {
           recentList.innerHTML = '<div class="muted">信息速览加载失败，<button type="button" id="recent-retry">点击重试</button></div>';
           document.querySelector("#recent-retry")?.addEventListener("click", loadRecent);
@@ -624,19 +667,25 @@
     }
     loadRecent();
 
-    tabs.forEach(tab => tab.addEventListener("click", () => applyDays(tab.dataset.days === "undated" ? "undated" : Number(tab.dataset.days))));
+    tabs.forEach(tab => tab.addEventListener("click", () => {
+      applyDays(tab.dataset.days === "undated" ? "undated" : Number(tab.dataset.days));
+      syncUrl();
+    }));
     customButton?.addEventListener("click", () => {
       const open = rangeBox?.hidden !== false;
       undatedOnly = false;
       tabs.forEach(tab => tab.classList.remove("active"));
       setCustomOpen(open);
-      if (!open) applyDays(0);
+      if (open) mode = "custom"; else applyDays(0);
+      syncUrl();
     });
     [startInput, endInput].forEach(field => field?.addEventListener("change", () => {
       undatedOnly = false;
+      mode = "custom";
       tabs.forEach(tab => tab.classList.remove("active"));
       setCustomOpen(true);
       renderRange();
+      syncUrl();
     }));
   }
 

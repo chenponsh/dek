@@ -58,22 +58,74 @@ class FuzzySearchTests(unittest.TestCase):
         self.assertEqual(self.run_javascript(f"s.countUndated({documents}, 'wiki')"), 3)
         self.assertEqual(self.run_javascript(f"s.countUndated({documents}, 'source')"), 1)
 
-    def test_page_window_matches_the_review_list_for_every_page_count(self):
-        from web.review import _page_window
-        for pages in range(1, 16):
-            expected = {page: _page_window(page, pages) for page in range(1, pages + 1)}
-            got = self.run_javascript(f"Object.fromEntries(Array.from({{length:{pages}}},(_,i)=>[i+1,s.pageWindow(i+1,{pages})]))")
-            self.assertEqual({int(k): v for k, v in got.items()}, expected, pages)
+    def test_page_window_shows_5_pages_each_side_of_the_current_one_with_first_and_last(self):
+        window = lambda page, pages: self.run_javascript(f"s.pageWindow({page},{pages})")
+        self.assertEqual(window(1, 78), [1, 2, 3, 4, 5, 6, None, 78])
+        self.assertEqual(window(40, 78), [1, None] + list(range(35, 46)) + [None, 78])
+        self.assertEqual(window(78, 78), [1, None, 73, 74, 75, 76, 77, 78])
+        self.assertEqual(window(7, 78), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, None, 78])   # the gap closes when the run reaches page 1
+        self.assertEqual(window(1, 1), [1])
+        self.assertEqual(window(3, 5), [1, 2, 3, 4, 5])
 
-    def test_pager_markup_is_the_review_lists_pager(self):
-        html = self.run_javascript("s.pagerHtml(5, 12)")
-        self.assertEqual(html, '<nav class="pager" aria-label="分页"><a href="#" data-page="4">上一页</a><a href="#" data-page="1">1</a>'
-                               '<span class="gap">…</span><a href="#" data-page="4">4</a><span class="current" aria-current="page">5</span>'
-                               '<a href="#" data-page="6">6</a><span class="gap">…</span><a href="#" data-page="12">12</a>'
-                               '<a href="#" data-page="6">下一页</a><span class="page-info">第 5/12 页</span></nav>')
-        first = self.run_javascript("s.pagerHtml(1, 1)")
-        self.assertIn('<span class="disabled">上一页</span>', first)
-        self.assertIn('<span class="disabled">下一页</span>', first)
+    def test_page_window_rules_hold_for_every_page_of_every_list_up_to_120_pages(self):
+        script = ("(()=>{const out=[];for(let pages=1;pages<=120;pages++)for(let page=1;page<=pages;page++)out.push([pages,page,s.pageWindow(page,pages)]);return out})()")
+        for pages, page, window in self.run_javascript(script):
+            numbers = [n for n in window if n is not None]
+            self.assertEqual(numbers, sorted(set(numbers)), (pages, page))                       # ascending, no repeats
+            self.assertTrue({1, pages, page} <= set(numbers), (pages, page))                    # first, last and current always there
+            self.assertTrue(set(range(max(1, page - 5), min(pages, page + 5) + 1)) <= set(numbers), (pages, page))
+            self.assertLessEqual(len(numbers), 13, (pages, page))                               # 11 in the run + first + last
+            for left, right in zip(window, window[1:]):
+                self.assertFalse(left is None and right is None, (pages, page))                 # no doubled gaps
+            for index, item in enumerate(window):
+                if item is None:
+                    self.assertGreater(window[index + 1] - window[index - 1], 1, (pages, page))  # a gap only where pages are skipped
+                elif index and window[index - 1] is not None:
+                    self.assertEqual(item - window[index - 1], 1, (pages, page))                # no skipped page without a gap mark
+
+    def test_pager_has_first_and_last_buttons_and_the_window(self):
+        html = self.run_javascript("s.pagerHtml(40, 78)")
+        self.assertTrue(html.startswith('<nav class="pager" aria-label="分页"><a href="#" data-page="1">首页</a><a href="#" data-page="39">上一页</a>'), html)
+        self.assertIn('<span class="gap">…</span><a href="#" data-page="35">35</a>', html)
+        self.assertIn('<span class="current" aria-current="page">40</span>', html)
+        self.assertIn('<a href="#" data-page="45">45</a><span class="gap">…</span><a href="#" data-page="78">78</a><a href="#" data-page="41">下一页</a><a href="#" data-page="78">末页</a>', html)
+        self.assertTrue(html.endswith('<span class="page-info">第 40/78 页</span></nav>'))
+        first = self.run_javascript("s.pagerHtml(1, 78)")
+        self.assertIn('<span class="disabled">首页</span><span class="disabled">上一页</span>', first)
+        last = self.run_javascript("s.pagerHtml(78, 78)")
+        self.assertIn('<span class="disabled">下一页</span><span class="disabled">末页</span>', last)
+        self.assertEqual(self.run_javascript("s.pagerHtml(1, 1)").count("disabled"), 4)
+
+    def test_jump_form_takes_a_page_number_up_to_the_last_page(self):
+        html = self.run_javascript("s.pageJumpHtml(78)")
+        self.assertEqual(html, '<form class="page-jump" novalidate>跳转到第<input type="number" name="page_jump" min="1" max="78" step="1" inputmode="numeric" aria-label="跳转到页码">页<button type="submit">跳转</button></form>')
+
+    def test_list_state_round_trips_through_the_address_bar_and_leaves_out_defaults(self):
+        to = lambda state: self.run_javascript(f"s.listStateToQuery({json.dumps(state)})")
+        self.assertEqual(to({"page": 1, "range": "0", "size": 15}), "")
+        self.assertEqual(to({"page": 40, "range": "0", "size": 15}), "?page=40")
+        self.assertEqual(to({"page": 3, "range": "90", "size": 40}), "?page=3&range=90&size=40")
+        self.assertEqual(to({"page": 2, "range": "undated", "size": 15}), "?page=2&range=undated")
+        self.assertEqual(to({"page": 1, "range": "custom", "start": "2025-01-01", "end": "2025-12-31", "size": 15}), "?range=custom&start=2025-01-01&end=2025-12-31")
+        self.assertEqual(to({"page": 1, "range": "90", "start": "2025-01-01", "end": "2025-12-31", "size": 15}), "?range=90")   # dates only matter for custom
+        for state in ({"page": 40, "range": "0", "size": 15}, {"page": 3, "range": "90", "size": 40}, {"page": 2, "range": "undated", "size": 15},
+                      {"page": 5, "range": "custom", "start": "2025-01-01", "end": "", "size": 25}):
+            with self.subTest(state=state):
+                back = self.run_javascript(f"s.listStateFromQuery(s.listStateToQuery({json.dumps(state)}))")
+                self.assertEqual((back["page"], back["range"], back["size"]), (state["page"], state["range"], state["size"]))
+                self.assertEqual((back["start"], back["end"]), (state.get("start", ""), state.get("end", "")))
+
+    def test_a_damaged_address_bar_falls_back_to_the_defaults(self):
+        read = lambda query: self.run_javascript(f"s.listStateFromQuery({json.dumps(query)})")
+        self.assertEqual(read(""), {"range": "0", "start": "", "end": "", "page": 1, "size": 15})
+        self.assertEqual(read("?page=-3&range=zzz&size=abc&start=x&end=y"), {"range": "0", "start": "", "end": "", "page": 1, "size": 15})
+        self.assertEqual(read("?page=abc"), {"range": "0", "start": "", "end": "", "page": 1, "size": 15})
+        self.assertEqual(read("?range=custom&start=2025-1-1&end=2025-12-31")["start"], "")       # not a date
+        self.assertEqual(read("?range=custom&end=2025-12-31")["end"], "2025-12-31")
+        self.assertEqual(read("?range=90&start=2025-01-01")["start"], "")                        # dates are only read for custom
+        self.assertEqual(read("?size=999")["size"], 100)
+        self.assertEqual(read("?size=2")["size"], 5)
+        self.assertEqual(read("?page=7&extra=1")["page"], 7)
 
     def test_page_size_defaults_to_15_and_is_held_to_5_through_100(self):
         self.assertEqual(self.run_javascript("s.PAGE_SIZE"), 15)
