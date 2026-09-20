@@ -86,7 +86,9 @@
   - `updated_with_new`：已写入 source 增量，并已生成 `ingestion/rough/` 草稿。
   - `skipped_browser_unavailable`：来源需要浏览器上下文/反爬初始化，但当前环境无可用浏览器。
   - `skipped_no_fetch_rule`：来源笔记标明抓取规则尚未固化，未机械摄入。
+  - `new_articles_staged`：来源按“一篇文章一个摘录笔记”存放（如 CPC），新文章已各自生成摘录笔记和草稿；每篇新笔记另有一条 `updated_with_new` 记录。
   - `failed`：抓取或解析失败，需要人工复核。
+  - 已自动抓取的来源（上海、江苏×2、海南、陕西、北京、CPC、CDE×3）的新条目由 `ingestion/automation` 直接写入 source 并生成待审草稿，主题筛选由关键词粗筛完成，最终取舍由审核人在草稿页决定。
 - 摄入记录属于可复用的过程记忆，应纳入 git；临时 HTML、接口原始缓存、PDF 下载、调试脚本等仍放入 `_/`，通常不纳入 git。
 - 更新 source 笔记 `last_updated` 的边界：
   - 只有成功核对该来源并完成“无新增/已增量写入/已确认无符合主题新增”的判断后，才更新 `last_updated`。

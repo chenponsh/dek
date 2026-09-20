@@ -193,6 +193,43 @@ class BeijingTests(unittest.TestCase):
         self.assertEqual(meta["filtered_count"], 3)
 
 
+class CpcNewNotesTests(unittest.TestCase):
+    CPC = {"detail_url": "https://x/detail?newsId={news_id}"}
+
+    def test_attachment_only_article_lists_the_files(self):
+        from ingestion.automation.fetchers import CPCArticle
+        payload = {"result": {"news": {"newsContent": None, "toLink": None, "annexFileList": [{"id": "1", "name": "解读.pdf"}]}}}
+        notes, _ = sources.fetch_cpc_notes(self.CPC, [CPCArticle("n1", "药典执行解读", "2026-06-01", "2026-06-01_药典执行解读.md")], lambda url: payload)
+        self.assertEqual(notes[0].body, "附件：\n- 解读.pdf")
+        self.assertEqual(notes[0].source_url, "https://www.chp.org.cn/#/newsDetail?id=n1")
+
+    def test_external_link_without_body_gets_the_standard_placeholder(self):
+        from ingestion.automation.fetchers import CPCArticle
+        payload = {"result": {"news": {"newsContent": None, "toLink": "1", "toLinkIp": "https://nmpa.example/a.html"}}}
+        notes, _ = sources.fetch_cpc_notes(self.CPC, [CPCArticle("n2", "公告", "2026-06-01", "f.md")], lambda url: payload)
+        self.assertEqual(notes[0].body, sources.CPC_NO_BODY)
+        self.assertEqual(notes[0].external_url, "https://nmpa.example/a.html")
+
+    def test_training_notices_and_failed_details_are_reported_not_drafted(self):
+        from ingestion.automation.fetchers import CPCArticle
+
+        def broken(url):
+            raise SafetyStop("HTTP 500")
+        notes, meta = sources.fetch_cpc_notes(self.CPC, [
+            CPCArticle("n3", "药典培训班通知", "2026-06-01", "a.md"),
+            CPCArticle("n4", "药典解读", "2026-06-01", "b.md")], broken)
+        self.assertEqual(notes, [])
+        self.assertEqual(len(meta["filtered_out"]), 1)
+        self.assertEqual(len(meta["skipped_items"]), 1)
+
+    def test_note_text_has_frontmatter_and_one_row_table(self):
+        note = sources.NewNote("f.md", "标题|含竖线", "2026-06-01", "https://u", "", "第一段\n第二段")
+        text = sources.note_text(note, "CPC_专栏")
+        self.assertTrue(text.startswith('---\nsource_note: "[[CPC_专栏]]"\n'))
+        self.assertIn("| 标题\\|含竖线 | 第一段<br>第二段 | 2026-06-01 |", text)
+        self.assertNotIn("external_url", text)
+
+
 class TableSourceStagingTests(unittest.TestCase):
     NOTE = (
         "---\nentity: x\nlast_updated: 2026-02-28\n---\n\n## 内容\n\n"
@@ -272,3 +309,35 @@ class TableSourceStagingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CpcStagingTests(unittest.TestCase):
+    def test_new_articles_become_notes_in_the_included_dir_with_one_draft_each(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "source" / "CPC").mkdir(parents=True)
+            (root / "ingestion" / "rough").mkdir(parents=True)
+            with patch.object(cli, "ROOT", root):
+                result = {"report": {}, "auto_write_paths": [], "rough_created": [], "rough_sources": {}}
+                writes = {}
+                notes = [sources.NewNote("2026-06-01_解读.md", "解读", "2026-06-01", "https://u", "", "正文")]
+                cli.stage_new_notes(result, writes, notes, "source/CPC/专栏", "source/CPC/专栏.md", datetime(2026, 9, 20, tzinfo=timezone.utc))
+                self.assertEqual(result["report"]["source/CPC/专栏/2026-06-01_解读.md"]["status"], "updated_with_new")
+                self.assertEqual(len(result["rough_created"]), 1)
+                self.assertEqual(set(result["rough_sources"].values()), {"source/CPC/专栏/2026-06-01_解读.md"})
+                self.assertIn('source: "[[source/CPC/专栏/2026-06-01_解读]]"', writes[root / result["rough_created"][0]])
+                cli.validate_report_invariants(result)
+                config = {"cpc": {"included_dir": "source/CPC/专栏"}, "cde": {"sources": []}}
+                result.update(planned_writes=sorted(str(p.relative_to(root)) for p in writes))
+                cli.validate_automatic_plan(config, result, writes)
+
+    def test_a_new_note_outside_the_included_dir_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "source").mkdir()
+            with patch.object(cli, "ROOT", root):
+                config = {"cpc": {"included_dir": "source/CPC/专栏"}, "cde": {"sources": []}}
+                writes = {root / "source" / "elsewhere.md": "x"}
+                report = {"planned_writes": ["source/elsewhere.md"], "auto_write_paths": ["source/elsewhere.md"], "rough_created": [], "rough_sources": {}, "report": {"source/elsewhere.md": {"status": "updated_with_new"}}}
+                with self.assertRaises(SafetyStop):
+                    cli.validate_automatic_plan(config, report, writes)

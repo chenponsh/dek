@@ -19,8 +19,8 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from .core import Row, SafetyStop, normalize
-from .fetchers import fetch_shanghai, http_get
+from .core import Row, SafetyStop, markdown_cell, normalize
+from .fetchers import fetch_shanghai, get_json, http_get
 
 def html_to_text(fragment: str) -> str:
     """Article HTML -> plain text with one line per paragraph."""
@@ -355,6 +355,78 @@ def fetch_beijing(
     if skipped:
         meta["skipped_items"] = skipped
     return rows, meta
+
+
+# ------------------------------------------------------------ 国家药典委员会 (one note per article)
+
+@dataclass(frozen=True)
+class NewNote:
+    """An article that becomes its own excerpt note under a source folder."""
+    filename: str
+    title: str
+    date: str
+    source_url: str
+    external_url: str
+    body: str
+
+
+_CPC_SKIP = re.compile(r"培训|会议|预算|经销|出版|招标|采购")
+CPC_NO_BODY = "原文为外部链接，当前国家药典委员会接口未提供正文；NMPA 等外部页面请点击外部链接查看原文。"
+
+
+def fetch_cpc_notes(
+    cpc: dict[str, Any], articles: list[Any], fetch_json: Callable[[str], Any] = get_json,
+) -> tuple[list[NewNote], dict[str, Any]]:
+    """Detail pages of the new CPC articles -> excerpt notes."""
+    notes: list[NewNote] = []
+    skipped: list[dict[str, str]] = []
+    filtered: list[dict[str, str]] = []
+    for article in articles:
+        if _CPC_SKIP.search(article.title) or _NOT_DRUG.search(article.title):
+            filtered.append({"title": article.title, "reason": "培训/会议/非药品主题"})
+            continue
+        try:
+            payload = fetch_json(cpc["detail_url"].format(news_id=article.news_id))
+        except Exception as exc:
+            skipped.append({"title": article.title, "reason": str(exc)})
+            continue
+        container = payload.get("result") or payload.get("data") or payload
+        data = container.get("news", container) if isinstance(container, dict) else {}
+        html_body = str(data.get("newsContent") or "")
+        body = html_to_text(html_body) if html_body.strip() not in ("", "None") else str(data.get("newsContentText") or "")
+        body = "" if body.strip() == "None" else body
+        external = str(data.get("toLinkIp") or "") if str(data.get("toLink")) == "1" else ""
+        external = "" if external == "None" else external
+        attachments = []
+        for key in ("annexFileList", "annexPicList", "annexMediaList"):
+            for item in data.get(key) or []:
+                name = item.get("name") if isinstance(item, dict) else str(item).replace("\\", "/").rsplit("/", 1)[-1]
+                if name:
+                    attachments.append(str(name))
+        if attachments:
+            body = (body + "\n" if body else "") + "附件：\n" + "\n".join(f"- {name}" for name in attachments)
+        if not body:
+            body = CPC_NO_BODY
+        notes.append(NewNote(
+            article.filename, article.title, article.date,
+            f"https://www.chp.org.cn/#/newsDetail?id={article.news_id}", external, body,
+        ))
+    meta: dict[str, Any] = {}
+    if skipped:
+        meta["skipped_items"] = skipped
+    if filtered:
+        meta["filtered_out"] = filtered
+    return notes, meta
+
+
+def note_text(note: NewNote, source_note_stem: str) -> str:
+    """The excerpt note as the library stores it: frontmatter + one-row table."""
+    q = lambda value: '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    lines = ["---", f'source_note: "[[{source_note_stem}]]"', f"source_url: {q(note.source_url)}"]
+    if note.external_url:
+        lines.append(f"external_url: {q(note.external_url)}")
+    lines += [f"article_title: {q(note.title)}", f"date: {note.date}", "---", ""]
+    return "\n".join(lines) + "\n" + f"| 问题 | 解答 | 发布日期 |\n|---|---|---|\n| {markdown_cell(note.title)} | {markdown_cell(note.body)} | {note.date} |\n"
 
 
 def fetch_shanghai_all(source: dict[str, Any], known: set[tuple[str, str]], since: str) -> tuple[list[Row], dict[str, Any]]:

@@ -18,7 +18,7 @@ from .core import (
     workspace_snapshot, write_json,
 )
 from .fetchers import CDEBrowserUnavailable, fetch_cde, fetch_cpc, fetch_cpc_content_hash, fetch_shanghai
-from .sources import FETCHERS
+from .sources import FETCHERS, fetch_cpc_notes, note_text
 
 MAX_NEW_PER_SOURCE = 50
 
@@ -136,6 +136,34 @@ def stage_source_rows(
             result["auto_write_paths"].append(rough_relative)
 
 
+def stage_new_notes(
+    result: dict[str, Any], writes: dict[Path, str], notes: list[Any], directory: str,
+    parent_note: str, now: datetime,
+) -> None:
+    """Each new article becomes its own excerpt note under `directory` plus one
+    pending draft. Existing files are never touched."""
+    from .core import Row
+    day = now.strftime("%Y-%m-%d")
+    stem = Path(parent_note).stem
+    for note in notes:
+        relative = f"{directory}/{note.filename}"
+        path = ROOT / relative
+        if path.exists():
+            raise SafetyStop(f"excerpt note already exists: {relative}")
+        writes[path] = note_text(note, stem)
+        result["report"][relative] = {"status": "updated_with_new", "new_count": 1, "latest_date": note.date}
+        result["auto_write_paths"].append(relative)
+        prefix = f"{now:%Y%m%d}_{path.stem}_增量_"
+        rough_path = ROOT / "ingestion" / "rough" / f"{prefix}1.md"
+        if rough_path.exists():
+            raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
+        writes[rough_path] = rough_content(relative, [Row(note.title, note.body, note.date)], day)
+        rough_relative = str(rough_path.relative_to(ROOT))
+        result["rough_created"].append(rough_relative)
+        result["rough_sources"][rough_relative] = relative
+        result["auto_write_paths"].append(rough_relative)
+
+
 def stage_table_sources(config: dict[str, Any], result: dict[str, Any], writes: dict[Path, str], now: datetime) -> None:
     """Sources fetched over plain HTTP into a `| 问题 | 解答 | 发布日期 |` note. A
     failure of one source is reported and leaves every other source alone."""
@@ -199,11 +227,9 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
             result["blocking"] = True
             result["alerts"].append(f"CPC remote revision detected: {config['cpc']['path']}")
         elif additions:
-            # CPC articles are whole documents that nothing here imports, so
-            # blocking on them would stop every other source's writes until
-            # someone imports them by hand. Report them and carry on.
-            entry.update(status="candidate_new", reason="新增文章需要人工导入、主题分类和正文核对", candidates=[article.filename for article in additions[:20]])
-            result["alerts"].append(f"manual import required: {config['cpc']['path']}")
+            notes, detail_meta = fetch_cpc_notes(config["cpc"], additions)
+            stage_new_notes(result, writes, notes, config["cpc"]["included_dir"], config["cpc"]["path"], now)
+            entry.update(status="new_articles_staged", staged_count=len(notes), **detail_meta)
         elif unavailable:
             entry.update(status="skipped_revision_check_unavailable", reason="既有文章缺少内容哈希基线或详情无法可靠规范化", unverified=unavailable)
         else:
@@ -284,6 +310,11 @@ def add_pipeline_health(report: dict[str, Any]) -> None:
         report["blocking"] = True
 
 
+def automatic_write_dirs(config: dict[str, Any]) -> set[str]:
+    """Folders where a run may create new excerpt notes."""
+    return {config["cpc"]["included_dir"].rstrip("/") + "/"} if "cpc" in config else set()
+
+
 def automatic_write_allowlist(config: dict[str, Any]) -> set[str]:
     return {
         source["path"] for source in [*config["cde"]["sources"], *config.get("table_sources", [])]
@@ -300,7 +331,9 @@ def validate_automatic_plan(config: dict[str, Any], report: dict[str, Any], writ
     source_allowlist = automatic_write_allowlist(config)
     source_paths = {path for path in planned if path.startswith("source/")}
     rough_paths = {path for path in planned if path.startswith("ingestion/rough/")}
-    if source_paths - source_allowlist or planned != source_paths | rough_paths:
+    source_dirs = automatic_write_dirs(config)
+    outside = {path for path in source_paths - source_allowlist if not any(path.startswith(d) and path.endswith(".md") for d in source_dirs)}
+    if outside or planned != source_paths | rough_paths:
         raise SafetyStop("scheduled plan contains a non-allowlisted path")
     rough_sources = report.get("rough_sources", {})
     if (rough_paths != set(report.get("rough_created", []))

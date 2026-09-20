@@ -735,13 +735,15 @@ class CoreTests(unittest.TestCase):
         with self.assertRaisesRegex(SafetyStop, "not clean"):
             core.reconcile_remote(root)
 
-    def test_cpc_new_article_is_reported_but_does_not_block_other_sources(self):
-        # CPC articles are whole documents that nothing imports automatically;
-        # blocking on them stopped every other source's writes indefinitely.
-        report = self.inspect_cpc(article_exists=False)
+    def test_cpc_new_article_becomes_a_note_and_a_pending_draft_without_blocking(self):
+        from ingestion.automation.sources import NewNote
+        notes = [NewNote("2026-01-01_标题.md", "标题", "2026-01-01", "https://u", "", "正文")]
+        with patch.object(cli, "fetch_cpc_notes", return_value=(notes, {})):
+            report = self.inspect_cpc(article_exists=False)
         self.assertFalse(report["blocking"])
-        self.assertEqual(report["report"]["cpc.md"]["status"], "candidate_new")
-        self.assertTrue(any("cpc.md" in alert for alert in report["alerts"]))
+        self.assertEqual(report["report"]["cpc.md"]["status"], "new_articles_staged")
+        self.assertEqual(report["report"]["included/2026-01-01_标题.md"]["status"], "updated_with_new")
+        self.assertEqual(len(report["rough_created"]), 1)
 
     def test_cpc_existing_content_unchanged(self):
         report = self.inspect_cpc(remote_hash="sha256:" + "a" * 64)
