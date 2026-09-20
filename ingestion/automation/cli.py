@@ -13,7 +13,7 @@ from typing import Any
 from .audit import audit_history
 from .core import (
     SafetyStop, assert_git_safe, atomic_write_batch, compare_rows, git,
-    git_status_paths, ingestion_lock, insert_rows, json_text, last_updated, markdown_cell,
+    git_status_paths, ingestion_lock, insert_articles, insert_rows, note_urls, json_text, last_updated, markdown_cell,
     parse_table, reconcile_remote, replace_last_updated, repo_fingerprint, report_path,
     workspace_snapshot, write_json,
 )
@@ -114,7 +114,8 @@ def stage_source_rows(
     entry["status"] = "updated_with_new" if additions else "no_change"
     if not additions:
         return
-    writes[path] = replace_last_updated(insert_rows(note, additions), day)
+    insert = insert_articles if source.get("layout") == "articles" else insert_rows
+    writes[path] = replace_last_updated(insert(note, additions), day)
     # One draft per question: the review page turns one rough into one wiki
     # page, so a batched table could never be approved as-is.
     prefix = f"{now:%Y%m%d}_{path.stem}_增量_"
@@ -141,7 +142,9 @@ def stage_table_sources(config: dict[str, Any], result: dict[str, Any], writes: 
     for source in config.get("table_sources", []):
         try:
             note = (ROOT / source["path"]).read_text(encoding="utf-8")
-            known = {row.key for row in parse_table(note)}
+            known: set[Any] = {row.key for row in parse_table(note)}
+            if source.get("layout") == "articles":
+                known |= note_urls(note)
             rows, meta = FETCHERS[source["fetcher"]](source, known, last_updated(note))
             stage_source_rows(result, writes, source, rows, meta, now, revisions_block=False)
         except Exception as exc:

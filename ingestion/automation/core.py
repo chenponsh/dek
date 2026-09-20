@@ -85,10 +85,39 @@ CONTENT_TABLE_HEADER = re.compile(
     r"^\| 问题 \| 解答 \| 发布日期 \|[ \t]*\n\|(?:[ \t]*:?-+:?[ \t]*\|){3}[ \t]*\n", re.MULTILINE)
 
 
+def note_urls(note: str) -> set[str]:
+    """Article links (`### [title](url)（date）`) already in an article-layout note."""
+    return set(re.findall(r"(?m)^###\s+\[[^\]]*\]\((https?://[^)\s]+)\)", note))
+
+
+def insert_articles(note: str, rows: list[Row]) -> str:
+    """Add one `### [title](url)（date）` section per new article, with its
+    question/answer table, directly under `## 内容` (newest first, like the
+    existing sections). `rows` carry article_title / article_url."""
+    marker = re.search(r"(?m)^## 内容[ \t]*\n", note)
+    if not marker:
+        raise SafetyStop("source note has no ## 内容 section")
+    groups: dict[str, list[Row]] = {}
+    for row in rows:
+        groups.setdefault(row.article_url, []).append(row)
+    sections = []
+    for url, group in groups.items():
+        first = group[0]
+        title = re.sub(r"[\[\]]", "", first.article_title)
+        table = "".join(f"| {markdown_cell(r.question)} | {markdown_cell(r.answer)} | {r.date[:10]} |\n" for r in group)
+        sections.append(
+            f"### [{title}]({url})（{first.date[:10]}）\n\n| 问题 | 解答 | 发布日期 |\n| --- | --- | --- |\n{table}\n"
+        )
+    return note[:marker.end()] + "\n" + "".join(sections) + note[marker.end():].lstrip("\n")
+
+
 def insert_rows(note: str, rows: list[Row]) -> str:
     if not rows:
         return note
-    headers = list(CONTENT_TABLE_HEADER.finditer(note))
+    # The rules section may show the table format in a code block; only the
+    # header under `## 内容` counts.
+    start = note.find("## 内容")
+    headers = list(CONTENT_TABLE_HEADER.finditer(note, max(start, 0)))
     if len(headers) != 1:
         raise SafetyStop("source note does not have one canonical content table")
     rendered = "".join(

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+<meta name="SiteName" content="海南省药品监督管理局"/>
+<meta name="SiteDomain" content="http://amr.hainan.gov.cn/himpa/"/>
+<meta name="SiteIDCode" content="4600000064"/>
+<meta name="ColumnName" content="服务事项" />
+<meta name="ColumnDescription" content="海南省药品监督管理局:服务事项"/>
+<meta name="ColumnKeywords" content="服务事项,海南省药品监督管理局"/>
+<meta name="ColumnType" content="服务事项"/>
+<meta name="description" content="海南省药品监督管理局:服务事项" />
+<meta name="keywords" content="服务事项,海南省药品监督管理局" />
+
+
+
+	<title>服务事项 -- 海南省药品和医疗器械审评服务中心</title>
+	<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+	<link rel="stylesheet" type="text/css" href="../../images/hnyp2021-reset.css">
+	<link rel="stylesheet" type="text/css" href="../../images/hnyp2021-style.css">
+<link rel="stylesheet" type="text/css" href="../../images/shareStyle.css">
+<script type="text/javascript" language="javascript">
+function createPageHTML(_nPageCount, _nCurrIndex, _sPageName, _sPageExt)
+{ 
+//tita 翻页函数
+
+//定义翻页的字体样式
+var styleDIY = "cn";
+
+if(_nPageCount == null || _nPageCount<=0){
+return; 
+} 
+
+//tita
+document.write("　　");
+
+if(_nPageCount==1)
+	document.write("<font class=\"" + styleDIY +"\">首页</font> <font class=\"" + styleDIY +"\">上一页</font> <font class=\"" + styleDIY +"\">下一页</font> <font class=\"" + styleDIY +"\">尾页</font>")
+else
+{
+	if(_nPageCount==2)
+	{
+		if (_nCurrIndex==0)
+			document.write("<font class=\"" + styleDIY +"\">首页</font> <font class=\"" + styleDIY +"\">上一页</font> <a href=\""+_sPageName+"_" + (_nCurrIndex+1) + "."+_sPageExt+"\" class=\"" + styleDIY +"\">下一页</a> <a href=\""+_sPageName+"_" + (_nPageCount-1) + "."+_sPageExt+"\" class=\"" + styleDIY +"\">尾页</a>")
+		else
+		{
+			if (_nCurrIndex==1)
+				document.write("<a href=\""+_sPageName+"."+_sPageExt+"\" class=\"" + styleDIY +"\">首页</a> <a href=\""+_sPageName+"."+_sPageExt+"\" class=\"" + styleDIY +"\">上一页</a> <font class=\"" + styleDIY +"\">下一页</font> <font class=\"" + styleDIY +"\">尾页</font>")
+		}
+	}
+	else
+	{
+		if (_nCurrIndex==0)
+			document.write("<font class=\"" + styleDIY +"\">首页</font> <font class=\"" + styleDIY +"\">上一页</font> <a href=\""+_sPageName+"_" + (_nCurrIndex+1) + "."+_sPageExt+"\" class=\"" + styleDIY +"\">下一页</a> <a href=\""+_sPageName+"_" + (_nPageCount-1) + "."+_sPageExt+"\" class=\"" + styleDIY +"\">尾页</a>")
+		else
+		{
+			if (_nCurrIndex==1)
+				document.write("<a href=\""+_sPageName+"."+_sPageExt+"\" class=\"" + styleDIY +"\">首页</a> <a href=\""+_sPageName+"."+_sPageExt+"\" class=\"" + styleDIY +"\">上一页</a> <a href=\""+_sPageName+"_" + (_nCurrIndex+1) + "."+_sPageExt+"\" class=\"" + styleDIY +"\">下一页</a> <a href=\""+_sPageName+"_" + (_nPageCount-1) + "."+_sPageExt+"\" class=\"" + styleDIY +"\">尾页</a>")
+			else
+			{
+				if (_nCurrIndex<_nPageCount-1)
+					document.write("<a href=\""+_sPageName+"."+_sPageExt+"\" class=\"" + styleDIY +"\">首页</a> <a href=\""+_sPageName+"_" + (_nCurrIndex-1) + "."+_sPageExt+"\" class=\"" + styleDIY +"\">上一页</a> <a href=\""+_sPageName+"_" + (_nCurrIndex+1) + "."+_sPageExt+"\" class=\"" + styleDIY +"\">下一页</a> <a href=\""+_sPageName+"_" + (_nPageCount-1) + "."+_sPageExt+"\" class=\"" + styleDIY +"\">尾页</a>")
+				else
+				{
+					if (_nCurrIndex==_nPageCount-1)
+						document.write("<a href=\""+_sPageName+"."+_sPageExt+"\" class=\"" + styleDIY +"\">首页</a> <a href=\""+_sPageName+"_" + (_nCurrIndex-1) + "."+_sPageExt+"\" class=\"" + styleDIY +"\">上一页</a> <font class=\"" + styleDIY +"\">下一页</font> <font class=\"" + styleDIY +"\">尾页</font>")
+				}
+			}
+		}
+	}
+}
+document.write("　<font class=\"" + styleDIY +"\">总共" + _nPageCount + "页</font>　");
+document.write("<font class=\"" + styleDIY +"\">当前第" + (_nCurrIndex+1) + "页</font>　");
+document.write("<select name=\"select\" style=\"margin-bottom:0px;\" onchange=\"location.replace(this.value)\">");
+//document.write("<option selected >转到</option>");
+
+//document.write("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<select name=\"select\" style=\"margin-bottom:-2px;border:0px solid #efdfed;overflow:hidden\" onchange=\"location.replace(this.value)\">");
+for(var i=0; i<_nPageCount; i++)
+{
+	if(i==0)
+		document.write("<option value=\""+_sPageName+"."+_sPageExt+"\">1</option>");
+	else
+		if(i==_nCurrIndex)
+			document.write("<option selected=\"selected\" value=\""+_sPageName+"_" + i + "."+_sPageExt+"\">"+(i+1)+"</option>");
+		else
+			document.write("<option value=\""+_sPageName+"_" + i + "."+_sPageExt+"\">"+(i+1)+"</option>");
+		
+}
+document.write("</select>");
+
+}
+</script>
+</head>
+<body>
+<div class="nr">	
+<!--头部开始-->	
+<!--头部开始-->	
+<div class="yp21-top">
+<div class="yp21-logo"><img src="https://amr.hainan.gov.cn/himpa/HICDME/images/P020250313617723418089.png" /> </div>
+<div class="yp21-dh">
+<div class="yp21-dhnr">
+<div class="yp21-dhlm">
+<ul>
+<li><a href="https://amr.hainan.gov.cn/himpa/HICDME/" target="_blank">首页</a></li>
+<li><a href="https://amr.hainan.gov.cn/himpa/HICDME/zxjs/" target="_blank">中心介绍</a></li>
+<li><a href="https://amr.hainan.gov.cn/himpa/HICDME/zcfg/" target="_blank">政策法规</a></li>
+<li><a href="https://amr.hainan.gov.cn/himpa/HICDME/xxgk/" target="_blank">信息公开</a></li>
+<li><a href="https://amr.hainan.gov.cn/himpa/HICDME/zdyz/" target="_blank">指导原则</a></li>
+<li><a href="https://amr.hainan.gov.cn/himpa/HICDME/zxfw/" target="_blank">咨询服务</a></li>
+<li><a href="https://amr.hainan.gov.cn/himpa/HICDME/zxdt/" target="_blank">最新动态</a></li>
+</ul>
+</div>
+
+<div class="yp21-ss">
+<div class="top-r">
+<script>
+                    function checkSubmit() {
+                        if (document.getElementById('keywords').value == '' || document.getElementById('keywords').value == '请输入关键词搜索')
+                            alert('请输入关键词搜索！');
+                        else {
+                            document.pageform.submit();
+                            $("#keywords").attr("value", "");
+                        }
+                    }
+                </script>
+				 <form name="pageform" method="get" action="https://amr.hainan.gov.cn/himpa/wzss/search.html?siteId=15&pageSize=10" id="pageform" target="_blank">
+				
+				 <input type="text" value="请输入关键词搜索" onBlur="if(this.value==''){this.value='请输入关键词搜索'}" maxlength="50" id="keywords" class="searchText" onFocus="this.value=''" name="searchWord" />
+				 
+			   <input type="hidden" name="siteId" value="15" />
+                    <input type="hidden" name="pageSize" value="10" />
+				<button type="button" onClick="checkSubmit();" value="检索"></button>
+				  </form>
+			</div>
+
+</div>	
+</div>	
+</div>	
+</div>	
+<!--头部结束-->
+<style>
+.yp21-dhlm li a{display:block;height:72px;line-height:72px;padding-left: 18px;padding-right: 18px;font-size:22px;color:#FFFFFF;}
+</style>			
+<!--头部结束-->	
+<!--主体开始-->
+<div class="yp21-zt">
+<div class="yp21-one">
+<div class="dqwz-nr">
+			<h2><a href="../" target="_self" title="首页" class="CurrChnlCls">首页</a>>><a href="./" target="_self" title="服务事项" class="CurrChnlCls">服务事项</a></h2>
+			</div>
+
+<div class="erji-nr">
+			
+			 <div class="dlmgl-t">
+			 	<span>服务事项</span>
+			 	
+			 </div>
+			 <div class="zt-lm3-m kongzhi2">
+			 
+			
+				<ul>
+				 
+				<li><a href="../zxdt/202509/t20250901_3922425.html" target="_blank">· 普通化妆品备案常见问题解答（第十一期）        ——备案申请表专题</a><em>2025-09-10</em></li>
+				
+				<li><a href="../zxdt/202509/t20250901_3922460.html" target="_blank">· 普通化妆品备案常见问题解答（第十五期）                 ——产品标签专题</a><em>2025-08-20</em></li>
+				
+				<li><a href="../zxdt/202509/t20250901_3922452.html" target="_blank">· 普通化妆品备案常见问题解答  （第十四期）   ——产品执行的标准专题</a><em>2025-08-14</em></li>
+				
+				<li><a href="../zxdt/202509/t20250901_3922444.html" target="_blank">· 普通化妆品备案常见问题解答（第十三期）                 ——产品配方专题</a><em>2025-08-05</em></li>
+				
+				<li><a href="../zxdt/202509/t20250901_3922435.html" target="_blank">· 普通化妆品备案常见问题解答（第十二期）           ——产品命名依据专题</a><em>2025-07-24</em></li>
+				
+				</ul>
+			
+				
+			
+				<ul>
+				 
+				<li><a href="../zxdt/202509/t20250901_3922413.html" target="_blank">· 普通化妆品备案常见问题解答（第十期）          ——化妆品安全评估专题</a><em>2025-06-27</em></li>
+				
+				<li><a href="../zxdt/202509/t20250901_3922400.html" target="_blank">· 普通化妆品备案常见问题解答（第九期）     ——化妆品安全评估专题</a><em>2025-06-23</em></li>
+				
+				<li><a href="./202506/t20250618_3881897.html" target="_blank">· 普通化妆品备案常见问题解答（第八期）  ——化妆品安全评估专题</a><em>2025-06-18</em></li>
+				
+				<li><a href="./202506/t20250612_3879116.html" target="_blank">· 普通化妆品备案常见问题解答（第七期）     ——化妆品安全评估专题</a><em>2025-06-10</em></li>
+				
+				<li><a href="./202506/t20250612_3879104.html" target="_blank">· 药问药答|药品上市后备案类变更篇（八）    ——中药申报资料及研究验证</a><em>2025-06-06</em></li>
+				
+				</ul>
+			
+				
+			
+				<ul>
+				 
+				<li><a href="./202505/t20250530_3872780.html" target="_blank">· 药问药答|药品上市后备案类变更篇（七）  ——化学药品申报资料及研究验证</a><em>2025-05-27</em></li>
+				
+				<li><a href="./202505/t20250530_3872775.html" target="_blank">· 普通化妆品备案常见问题解答（第五期） ——化妆品安全评估专题</a><em>2025-05-16</em></li>
+				
+				<li><a href="./202505/t20250506_3859189.html" target="_blank">· ​  普通化妆品备案常见问题解答（第四期）    ——化妆品安全评估专题</a><em>2025-05-06</em></li>
+				
+				<li><a href="./202505/t20250506_3859187.html" target="_blank">· 普通化妆品备案常见问题解答（第三期）    ——化妆品安全评估专题</a><em>2025-05-06</em></li>
+				
+				<li><a href="./202504/t20250425_3855291.html" target="_blank">· 敲黑板！海南省药械审评服务中心 “云课堂”来啦！​——第五讲《海南省第二类创新医疗器械审批程序》</a><em>2025-04-25</em></li>
+				
+				</ul>
+			
+				
+				
+			</div>
+		
+			<div class="page">
+				<span><script>
+			createPageHTML(3, 0, "index", "html");
+		 </script></span>
+			</div>
+			 
+			
+			 
+		</div>
+
+
+
+</div>
+</div>
+<!--主体结束-->
+<!--底部开始-->
+<!--底部开始-->
+<div class="yp21-dibu">
+<div class="yp21-dibunr">
+<ul class="yp21-dil">
+<li>版权所有：海南省药品和医疗器械审评服务中心</li>
+<li>地址：海南省海口市南海大道53号</li>
+<li>技术支持：海南信息岛技术服务中心</li>
+</ul>
+<ul class="yp21-di2">
+<script type="text/javascript">document.write(unescape("%3Cspan id='_ideConac' %3E%3C/span%3E%3Cscript src='https://dcs.conac.cn/js/22/000/0000/41012001/CA220000000410120010005.js' type='text/javascript'%3E%3C/script%3E"));</script>
+</ul>
+</div>	
+</div>
+<!--底部结束-->
+<!--底部结束-->	
+</div>
+<script src="../../images/share.js"></script>
+</body>
+
+
+</html>

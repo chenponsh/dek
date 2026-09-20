@@ -32,11 +32,8 @@
   },
   "known_unautomated": [
     "source/NIFDC/NIFDC_常见共性问题解答.md",
-    "source/北京/北京局_咨询建议.md",
     "source/安徽/安徽局_许可注册惠企政策超市-药品.md",
-    "source/江苏/江苏局CDE_你问我答.md",
-    "source/海南/海南局CDE_服务事项.md",
-    "source/陕西/陕西局CDE_药品上市后变更管理.md"
+    "source/江苏/江苏局CDE_你问我答.md"
   ],
   "no_fetch_rule": [
     "source/江苏/江苏局_药小问普法讲堂.md",
@@ -61,6 +58,29 @@
       "path": "source/江苏/江苏局_药品变更与再注册专栏-优化药品补充申请改革试点前置服务问答及典型案例.md",
       "fetcher": "jiangsu",
       "url": "https://da.jiangsu.gov.cn/col/col91925/index.html",
+      "auto_classified": true,
+      "auto_ingest": true
+    },
+    {
+      "path": "source/海南/海南局CDE_服务事项.md",
+      "fetcher": "articles",
+      "layout": "articles",
+      "url": "https://amr.hainan.gov.cn/himpa/HICDME/fwsx/",
+      "auto_classified": true,
+      "auto_ingest": true
+    },
+    {
+      "path": "source/陕西/陕西局CDE_药品上市后变更管理.md",
+      "fetcher": "articles",
+      "layout": "articles",
+      "url": "https://mpa.shaanxi.gov.cn/ztzl/ypzcgl/ypsshbggl/",
+      "auto_classified": true,
+      "auto_ingest": true
+    },
+    {
+      "path": "source/北京/北京局_咨询建议.md",
+      "fetcher": "beijing",
+      "url": "https://yjj.beijing.gov.cn/hudong/xinxiang/yjj/sindex/xx-yjj.html",
       "auto_classified": true,
       "auto_ingest": true
     }

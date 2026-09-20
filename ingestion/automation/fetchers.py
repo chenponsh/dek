@@ -45,7 +45,8 @@ def http_get(url: str, timeout: int = 45) -> str:
     direct = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
     fallback = urllib.request.build_opener()
     last: Exception | None = None
-    for opener in (direct, fallback):
+    # Government servers drop the odd connection: one direct retry before the proxy.
+    for opener in (direct, direct, fallback):
         try:
             with opener.open(urllib.request.Request(url, headers=headers), timeout=timeout) as response:
                 if response.status != 200:
