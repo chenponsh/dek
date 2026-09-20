@@ -263,9 +263,9 @@
     return Number.isFinite(parsed) ? Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, parsed)) : PAGE_SIZE;
   }
 
-  // Page numbers to show: the first and last page, and the current one with 3 on
-  // each side (at most 7 in a run), `null` marking a gap between runs.
-  const PAGE_REACH = 3;
+  // Page numbers to show: the first and last page, and the current one with 2 on
+  // each side (at most 5 in a run), `null` marking a gap between runs.
+  const PAGE_REACH = 2;
   function pageWindow(page, pages) {
     const shown = new Set([1, pages]);
     for (let number = page - PAGE_REACH; number <= page + PAGE_REACH; number += 1) {

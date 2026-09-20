@@ -58,16 +58,16 @@ class FuzzySearchTests(unittest.TestCase):
         self.assertEqual(self.run_javascript(f"s.countUndated({documents}, 'wiki')"), 3)
         self.assertEqual(self.run_javascript(f"s.countUndated({documents}, 'source')"), 1)
 
-    def test_page_window_shows_3_pages_each_side_of_the_current_one_with_first_and_last(self):
+    def test_page_window_shows_2_pages_each_side_of_the_current_one_with_first_and_last(self):
         window = lambda page, pages: self.run_javascript(f"s.pageWindow({page},{pages})")
-        self.assertEqual(window(1, 78), [1, 2, 3, 4, None, 78])
-        self.assertEqual(window(40, 78), [1, None] + list(range(37, 44)) + [None, 78])
-        self.assertEqual(window(78, 78), [1, None, 75, 76, 77, 78])
-        self.assertEqual(window(4, 78), [1, 2, 3, 4, 5, 6, 7, None, 78])       # the gap closes when the run reaches page 1
-        self.assertEqual(window(5, 78), [1, 2, 3, 4, 5, 6, 7, 8, None, 78])
+        self.assertEqual(window(1, 78), [1, 2, 3, None, 78])
+        self.assertEqual(window(40, 78), [1, None, 38, 39, 40, 41, 42, None, 78])
+        self.assertEqual(window(78, 78), [1, None, 76, 77, 78])
+        self.assertEqual(window(3, 78), [1, 2, 3, 4, 5, None, 78])              # the gap closes when the run reaches page 1
+        self.assertEqual(window(4, 78), [1, 2, 3, 4, 5, 6, None, 78])
         self.assertEqual(window(1, 1), [1])
         self.assertEqual(window(3, 5), [1, 2, 3, 4, 5])
-        self.assertEqual(window(2, 9), [1, 2, 3, 4, 5, None, 9])
+        self.assertEqual(window(2, 9), [1, 2, 3, 4, None, 9])
 
     def test_page_window_rules_hold_for_every_page_of_every_list_up_to_120_pages(self):
         script = ("(()=>{const out=[];for(let pages=1;pages<=120;pages++)for(let page=1;page<=pages;page++)out.push([pages,page,s.pageWindow(page,pages)]);return out})()")
@@ -75,8 +75,8 @@ class FuzzySearchTests(unittest.TestCase):
             numbers = [n for n in window if n is not None]
             self.assertEqual(numbers, sorted(set(numbers)), (pages, page))                       # ascending, no repeats
             self.assertTrue({1, pages, page} <= set(numbers), (pages, page))                    # first, last and current always there
-            self.assertTrue(set(range(max(1, page - 3), min(pages, page + 3) + 1)) <= set(numbers), (pages, page))
-            self.assertLessEqual(len(numbers), 9, (pages, page))                                # 7 in the run + first + last
+            self.assertTrue(set(range(max(1, page - 2), min(pages, page + 2) + 1)) <= set(numbers), (pages, page))
+            self.assertLessEqual(len(numbers), 7, (pages, page))                                # 5 in the run + first + last
             for left, right in zip(window, window[1:]):
                 self.assertFalse(left is None and right is None, (pages, page))                 # no doubled gaps
             for index, item in enumerate(window):
@@ -88,9 +88,9 @@ class FuzzySearchTests(unittest.TestCase):
     def test_pager_has_first_and_last_buttons_and_the_window(self):
         html = self.run_javascript("s.pagerHtml(40, 78)")
         self.assertTrue(html.startswith('<nav class="pager" aria-label="分页"><a href="#" data-page="1">首页</a><a href="#" data-page="39">上一页</a>'), html)
-        self.assertIn('<span class="gap">…</span><a href="#" data-page="37">37</a>', html)
+        self.assertIn('<span class="gap">…</span><a href="#" data-page="38">38</a>', html)
         self.assertIn('<span class="current" aria-current="page">40</span>', html)
-        self.assertIn('<a href="#" data-page="43">43</a><span class="gap">…</span><a href="#" data-page="78">78</a><a href="#" data-page="41">下一页</a><a href="#" data-page="78">末页</a>', html)
+        self.assertIn('<a href="#" data-page="42">42</a><span class="gap">…</span><a href="#" data-page="78">78</a><a href="#" data-page="41">下一页</a><a href="#" data-page="78">末页</a>', html)
         self.assertTrue(html.endswith('<span class="page-info">第 40/78 页</span></nav>'))
         first = self.run_javascript("s.pagerHtml(1, 78)")
         self.assertIn('<span class="disabled">首页</span><span class="disabled">上一页</span>', first)
