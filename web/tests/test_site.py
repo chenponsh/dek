@@ -393,13 +393,13 @@ class SiteBuildTests(unittest.TestCase):
         big = next(card for card in cards if "16_注册变更" in card)
         # An older release's page still carries the nested lists while the scripts are already new.
         self.assertIn('document.querySelectorAll(".card-subs").forEach(list => list.remove())', script)
-        self.assertEqual(big.count("<a "), 1)              # one link, no nested sub-folder links
+        self.assertEqual((big.count("<button"), big.count("<a ")), (1, 0))
         self.assertIn('data-total="11"', big)             # its count is the whole category
 
     def test_every_card_link_has_the_full_name_as_a_hover_title(self):
         build_site(self.vault, self.out)
         homepage = self.home_markup()
-        self.assertRegex(homepage, r'<a class="folder-card-link" href="[^"]+" title="01_注册">')
+        self.assertRegex(homepage, r'<button type="button" class="folder-card-link" data-path="wiki/01_注册" aria-pressed="false" title="01_注册">')
 
     def test_custom_dates_are_collapsed_behind_a_button_and_the_presets_stay(self):
         build_site(self.vault, self.out)
@@ -455,7 +455,8 @@ class SiteBuildTests(unittest.TestCase):
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
         self.assertIn('escapeHtml(doc.date || "")', script)
         self.assertNotIn("发布于", script)
-        self.assertNotIn('"无日期"', script)          # no placeholder text in the date column
+        row = script[script.index('class="recent-item"'):][:300]
+        self.assertNotIn("无日期", row)                 # no placeholder text in the date column
 
     def test_the_list_keeps_its_place_in_the_address_bar(self):
         build_site(self.vault, self.out)
@@ -464,12 +465,29 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn('window.addEventListener("popstate"', script)             # back / forward restore the list
         self.assertIn("DEKSearch.listStateFromQuery(location.search)", script)  # a refresh or shared link starts from it
         self.assertIn("if (initial) syncUrl(true)", script)                     # tidied without adding a history entry
-        # every way of changing the list writes it: page links and the jump form (goToPage), the page size, the tabs, 自定义, the date fields
-        self.assertEqual(script.count("syncUrl();"), 5)
+        # every way of changing the list writes it: page links and the jump form (goToPage), the page size, the tabs, 自定义, the date fields, the category cards
+        self.assertEqual(script.count("syncUrl();"), 6)   # + choosing a category
         self.assertIn("goToPage(number)", script)
         self.assertIn('event.target.elements.page_jump.value', script)
         style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
         for rule in (".list-tools{", ".page-jump{", ".page-jump input[type=number]{", ".page-jump button{"):
+            self.assertIn(rule, style)
+
+    def test_a_category_card_is_a_filter_for_the_list_not_a_link(self):
+        build_site(self.vault, self.out)
+        homepage = self.home_markup()
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        self.assertNotIn("folder-card-link\" href", homepage)      # nothing to navigate to
+        self.assertNotIn("<a class=\"folder-card-link", homepage)
+        self.assertEqual(homepage.count('class="folder-card-link"'), homepage.count('aria-pressed="false"'))   # every card starts unselected
+        self.assertIn("category = category === path ? \"\" : path;", script)       # choosing again clears it
+        self.assertIn("DEKSearch.inCategory(doc, category)", script)              # the list is the chosen category within the range
+        self.assertIn('card.closest(".folder-card")?.classList.toggle("selected", on)', script)
+        self.assertIn("box.hidden = filtered && shown === 0 && box.querySelector", script)   # a chosen card is never hidden by an empty range
+        self.assertIn("取消选择分类", script)                                        # a way to clear it from the summary line too
+        self.assertIn("category = cards.some(card => card.dataset.path === state.category) ? state.category : \"\"", script)
+        for rule in (".folder-card.selected{", "button.folder-card-link{", ".folder-card-link:focus-visible{", ".link-button{"):
             self.assertIn(rule, style)
 
     def test_the_list_has_a_header_row_and_a_pager_footer(self):

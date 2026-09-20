@@ -115,11 +115,33 @@ class FuzzySearchTests(unittest.TestCase):
                 self.assertEqual((back["page"], back["range"], back["size"]), (state["page"], state["range"], state["size"]))
                 self.assertEqual((back["start"], back["end"]), (state.get("start", ""), state.get("end", "")))
 
+    def test_the_chosen_category_travels_in_the_address_bar_and_only_a_wiki_or_source_path_is_believed(self):
+        to = lambda state: self.run_javascript(f"s.listStateToQuery({json.dumps(state)})")
+        read = lambda query: self.run_javascript(f"s.listStateFromQuery({json.dumps(query)})")
+        query = to({"page": 2, "range": "90", "category": "wiki/03_药品核查", "size": 15})
+        self.assertEqual(query, "?page=2&range=90&category=wiki%2F03_%E8%8D%AF%E5%93%81%E6%A0%B8%E6%9F%A5")
+        self.assertEqual(read(query)["category"], "wiki/03_药品核查")
+        self.assertEqual(read("?category=source%2FCPC")["category"], "source/CPC")
+        self.assertEqual(read("?category=wiki")["category"], "wiki")
+        for bad in ("evil", "wikipedia", "../wiki/x", "javascript:alert(1)", ""):
+            with self.subTest(bad=bad):
+                self.assertEqual(read("?category=" + bad)["category"], "")
+        self.assertEqual(to({"page": 1, "range": "0", "category": "", "size": 15}), "")
+
+    def test_a_document_is_in_a_category_when_its_path_is_or_is_under_it(self):
+        inside = lambda path, category: self.run_javascript(f"s.inCategory({{path:{json.dumps(path)}}}, {json.dumps(category)})")
+        self.assertTrue(inside("wiki/03_药品核查/03-0001.md", "wiki/03_药品核查"))
+        self.assertTrue(inside("wiki/03_药品核查", "wiki/03_药品核查"))
+        self.assertTrue(inside("source/CPC/a/b.md", "source/CPC"))
+        self.assertFalse(inside("wiki/03_药品核查x/a.md", "wiki/03_药品核查"))     # a sibling with the same start is not inside
+        self.assertFalse(inside("source/CPC/a.md", "wiki/03_药品核查"))
+        self.assertTrue(inside("wiki/a.md", ""))                                    # no category chosen: everything
+
     def test_a_damaged_address_bar_falls_back_to_the_defaults(self):
         read = lambda query: self.run_javascript(f"s.listStateFromQuery({json.dumps(query)})")
-        self.assertEqual(read(""), {"range": "0", "start": "", "end": "", "page": 1, "size": 15})
-        self.assertEqual(read("?page=-3&range=zzz&size=abc&start=x&end=y"), {"range": "0", "start": "", "end": "", "page": 1, "size": 15})
-        self.assertEqual(read("?page=abc"), {"range": "0", "start": "", "end": "", "page": 1, "size": 15})
+        self.assertEqual(read(""), {"category": "", "range": "0", "start": "", "end": "", "page": 1, "size": 15})
+        self.assertEqual(read("?page=-3&range=zzz&size=abc&start=x&end=y"), {"category": "", "range": "0", "start": "", "end": "", "page": 1, "size": 15})
+        self.assertEqual(read("?page=abc"), {"category": "", "range": "0", "start": "", "end": "", "page": 1, "size": 15})
         self.assertEqual(read("?range=custom&start=2025-1-1&end=2025-12-31")["start"], "")       # not a date
         self.assertEqual(read("?range=custom&end=2025-12-31")["end"], "2025-12-31")
         self.assertEqual(read("?range=90&start=2025-01-01")["start"], "")                        # dates are only read for custom

@@ -213,25 +213,19 @@
   // is built here, from installed code, so changing it needs a deploy, not a release.
   const HOME_SECTION_TITLES = { wiki: "Wiki · 正式知识", source: "Source · 来源材料" };
 
-  function firstDocumentUrl(node) {
-    let target = node;
-    while (target.type === "directory" && target.children && target.children.length) target = target.children[0];
-    return target.url || "#";
-  }
-
   function countHtml(path, total, className, isSection) {
     const text = isSection ? String(total) : `共 ${total} 篇`;
     return `<span class="${className}" data-count-path="${escapeText(path)}" data-total="${total}">${text}</span>`;
   }
 
   function homeHtml(tree, options) {
-    const resolve = (options && options.resolve) || (url => url);
     const indexPath = (options && options.indexPath) || "assets/search-index.json";
     const sections = tree.map(root => {
       const cards = root.children.map(child => {
         const name = escapeText(child.name);
         const total = child.type === "directory" ? child.count : 1;
-        return `<div class="folder-card"><a class="folder-card-link" href="${escapeText(resolve(firstDocumentUrl(child)))}" title="${name}"><strong>${name}</strong>${countHtml(child.path, total, "card-count", false)}</a></div>`;
+        // A card is a filter for the list below, not a link: choosing it selects the category.
+        return `<div class="folder-card"><button type="button" class="folder-card-link" data-path="${escapeText(child.path)}" aria-pressed="false" title="${name}"><strong>${name}</strong>${countHtml(child.path, total, "card-count", false)}</button></div>`;
       }).join("");
       const title = HOME_SECTION_TITLES[root.path] || escapeText(root.name);
       return `<section class="home-section"><h2>${title}${countHtml(root.path, root.count, "section-count", true)}</h2><div class="folder-grid">${cards}</div><p class="section-empty" hidden>该时段内暂无新增内容</p></section>`;
@@ -321,7 +315,9 @@
     const range = RANGES.includes(query.get("range")) ? query.get("range") : "0";
     const day = name => (ISO_DAY.test(query.get(name) || "") ? query.get(name) : "");
     const page = parseInt(query.get("page"), 10);
+    const category = query.get("category") || "";
     return {
+      category: /^(wiki|source)(\/|$)/.test(category) && category.length <= 300 ? category : "",
       range,
       start: range === "custom" ? day("start") : "",
       end: range === "custom" ? day("end") : "",
@@ -339,9 +335,14 @@
       if (ISO_DAY.test(state.start || "")) query.set("start", state.start);
       if (ISO_DAY.test(state.end || "")) query.set("end", state.end);
     }
+    if (state.category) query.set("category", state.category);
     if (state.size && state.size !== PAGE_SIZE) query.set("size", String(state.size));
     const text = query.toString();
     return text ? "?" + text : "";
+  }
+
+  function inCategory(document, category) {
+    return !category || document.path === category || String(document.path).startsWith(category + "/");
   }
 
   // Documents with no date at all (directory pages, notes that carry no date), by path.
@@ -359,5 +360,5 @@
     return count;
   }
 
-  return { normalize, scoreDocument, searchDocuments, resultSnippet, highlight, homeHtml, undatedDocuments, countUndated, PAGE_SIZE, clampPageSize, pageWindow, pagerHtml, pageJumpHtml, pageSizeHtml, listStateFromQuery, listStateToQuery, resultUrl, recentDocuments, recentDocumentsInRange, countInRange };
+  return { normalize, scoreDocument, searchDocuments, resultSnippet, highlight, homeHtml, undatedDocuments, countUndated, PAGE_SIZE, clampPageSize, pageWindow, pagerHtml, pageJumpHtml, pageSizeHtml, listStateFromQuery, listStateToQuery, inCategory, resultUrl, recentDocuments, recentDocumentsInRange, countInRange };
 });

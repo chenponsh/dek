@@ -37,3 +37,12 @@ table.resizable.fixed td{overflow-wrap:anywhere}
 .col-resizer::after{content:"";position:absolute;top:20%;bottom:20%;right:3px;width:2px;border-radius:1px;background:transparent}
 th:hover>.col-resizer::after,.recent-head>span:hover>.col-resizer::after,.col-resizer:hover::after,.col-resizer:focus-visible::after,.col-resizer.dragging::after{background:var(--accent)}
 .col-resizer:focus-visible{outline:none}
+
+/* Category cards are filters for the list below (app.js): a chosen one is highlighted */
+button.folder-card-link{appearance:none;width:100%;margin:0;padding:0;border:0;border-radius:0;background:transparent;text-align:left;font:inherit;cursor:pointer}
+button.folder-card-link:hover{background:transparent}
+.folder-card-link:focus-visible{outline:2px solid var(--accent);outline-offset:6px;border-radius:7px}
+.folder-card.selected{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--bg))}
+.folder-card.selected strong{color:var(--accent)}
+.link-button{padding:0;border:0;background:transparent;color:var(--accent);font:inherit;font-size:inherit;cursor:pointer;text-decoration:underline}
+.link-button:hover{background:transparent}

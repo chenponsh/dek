@@ -500,10 +500,13 @@
     let page = 1;
     let pageSize = DEKSearch.PAGE_SIZE;
     let mode = "0";   // what the list is of: "7" / "30" / "90" days, "0" for 全部, "undated", or "custom"
+    let category = "";   // "" for every category, else the chosen card's path (say "wiki/03_药品核查")
+    const cards = [...document.querySelectorAll(".folder-card-link")];
+    const cardName = path => cards.find(card => card.dataset.path === path)?.querySelector("strong")?.textContent || path;
 
     // The page, and what it is a page of, live in the address bar (?page=3&range=90&size=40):
     // a refresh, the back button or a shared link lands on the same rows.
-    const currentState = () => ({ range: mode, start: startInput?.value || "", end: endInput?.value || "", page, size: pageSize });
+    const currentState = () => ({ range: mode, start: startInput?.value || "", end: endInput?.value || "", category, page, size: pageSize });
     function syncUrl(replace) {
       const url = location.pathname + DEKSearch.listStateToQuery(currentState()) + location.hash;
       if (url === location.pathname + location.search + location.hash) return;
@@ -586,7 +589,8 @@
         const isSection = element.classList.contains("section-count");
         element.textContent = isSection ? String(shown) : (filtered ? `${shown} 篇` : `共 ${total} 篇`);
         const box = element.closest(".folder-card");
-        if (box) box.hidden = filtered && shown === 0;
+        // A chosen card stays even with nothing in the range, so it can be chosen off again.
+        if (box) box.hidden = filtered && shown === 0 && box.querySelector(".folder-card-link")?.dataset.path !== category;
       });
       document.querySelectorAll(".home-section").forEach(section => {
         const anyCard = Boolean(section.querySelector(".folder-card:not([hidden])"));
@@ -597,6 +601,21 @@
       });
     }
 
+    // Choosing a card selects that category as a filter on the list; choosing it again clears it.
+    function markCategory() {
+      cards.forEach(card => {
+        const on = card.dataset.path === category;
+        card.setAttribute("aria-pressed", String(on));
+        card.closest(".folder-card")?.classList.toggle("selected", on);
+      });
+    }
+    function chooseCategory(path) {
+      category = category === path ? "" : path;
+      renderRange();
+      syncUrl();
+    }
+    cards.forEach(card => card.addEventListener("click", () => chooseCategory(card.dataset.path)));
+
     function renderRange() {
       const start = undatedOnly ? "" : (startInput?.value || "");
       const end = undatedOnly ? "" : (endInput?.value || "");
@@ -604,10 +623,23 @@
       const docs = undatedOnly ? DEKSearch.undatedDocuments(recentDocs)
         : (start || end) ? DEKSearch.recentDocumentsInRange(recentDocs, start, end)
         : [...DEKSearch.recentDocumentsInRange(recentDocs, "", ""), ...DEKSearch.undatedDocuments(recentDocs)];
-      renderRecentList(docs);
+      const shownDocs = category ? docs.filter(doc => DEKSearch.inCategory(doc, category)) : docs;
+      renderRecentList(shownDocs);
       updateCounts(start, end);
+      markCategory();
       if (summary) {
         const undated = recentDocs.filter(doc => !doc.date).length;
+        if (category) {
+          const scope = undatedOnly ? "无日期" : (start || end) ? `${start || "最早"} 至 ${end || "今天"}` : "全部";
+          summary.textContent = `${category.startsWith("wiki") ? "Wiki" : "Source"} · ${cardName(category)}（${scope}）：共 ${shownDocs.length} 篇。 `;
+          const clear = document.createElement("button");
+          clear.type = "button";
+          clear.className = "link-button";
+          clear.textContent = "取消选择分类";
+          clear.addEventListener("click", () => chooseCategory(category));
+          summary.appendChild(clear);
+          return;
+        }
         summary.textContent = undatedOnly
           ? `无日期的内容共 ${docs.length} 篇。上方只显示含有无日期内容的分类，数字为无日期的篇数。`
           : (start || end)
@@ -639,6 +671,7 @@
     function restoreFromUrl(initial) {
       const state = DEKSearch.listStateFromQuery(location.search);
       pageSize = state.size;
+      category = cards.some(card => card.dataset.path === state.category) ? state.category : "";
       if (state.range === "custom") {
         undatedOnly = false;
         mode = "custom";
@@ -697,10 +730,7 @@
       fetch(manifestUrl, { credentials: "same-origin", cache: "no-store" })
         .then(response => response.ok ? response.json() : Promise.reject())
         .then(({ tree }) => {
-          homeApp.innerHTML = DEKSearch.homeHtml(tree, {
-            resolve: url => new URL(url, manifestUrl).href,
-            indexPath: homeApp.dataset.index,
-          });
+          homeApp.innerHTML = DEKSearch.homeHtml(tree, { indexPath: homeApp.dataset.index });
           initRecent(document.querySelector("#recent-list"));
           makeGridResizable(document.querySelector(".recent-table"));
         })
