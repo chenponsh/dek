@@ -100,7 +100,7 @@ class SiteBuildTests(unittest.TestCase):
     def test_layout_has_tree_content_toc_theme_and_search(self):
         build_site(self.vault, self.out)
         page = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
-        for marker in ('class="sidebar"', 'class="document"', 'class="toc"', 'id="theme-toggle"', 'id="global-search"'):
+        for marker in ('class="sidebar"', 'class="document"', 'id="theme-toggle"', 'id="global-search"'):
             self.assertIn(marker, page)
         self.assertTrue((self.out / "assets" / "style.css").is_file())
         self.assertTrue((self.out / "assets" / "app.js").is_file())
@@ -310,10 +310,12 @@ class SiteBuildTests(unittest.TestCase):
         wiki = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))
         source = rendered_page((self.out / "source" / "CDE" / "来源.html"))
 
-        self.assertIn("来源笔记", wiki)
-        self.assertIn('../../source/CDE/' + quote('来源.html'), wiki)
-        self.assertIn("引用此来源的 Wiki", source)
-        self.assertIn('../../wiki/' + quote('01_注册/条目.html', safe='/'), source)
+        self.assertIn('../../source/CDE/' + quote('来源.html'), wiki)               # the entry still links to its source
+        self.assertIn('../../wiki/' + quote('01_注册/条目.html', safe='/'), source)   # and the source lists the entries citing it (反向链接)
+        self.assertIn("反向链接", source)
+        for page in (wiki, source):
+            self.assertNotIn("引用此来源的 Wiki", page)                                # the right-hand panel is gone
+            self.assertNotIn("来源笔记", page)
 
     def test_page_includes_authenticated_name_and_logout_controls(self):
         build_site(self.vault, self.out)
@@ -541,17 +543,29 @@ class SiteBuildTests(unittest.TestCase):
         page = (self.out / "wiki" / "01_注册" / "无小节.html").read_text(encoding="utf-8")
         self.assertNotIn("本页目录", page)
 
-    def test_page_with_headings_still_shows_the_table_of_contents(self):
-        # _toc() only surfaces h2-h4 (the document's own h1 title is excluded),
-        # so this needs a real subsection heading, unlike the plain-body fixture.
+    def test_pages_have_no_right_hand_panel_and_are_as_wide_as_the_home_page(self):
         (self.vault / "wiki" / "01_注册" / "带小节.md").write_text(
             "---\nno: 4\nquestion: 带小节问答\n---\n\n## 第一节\n\n正文。", encoding="utf-8",
         )
         build_site(self.vault, self.out)
         page = rendered_page((self.out / "wiki" / "01_注册" / "带小节.html"))
-        self.assertIn('class="toc"', page)
-        self.assertIn("本页目录", page)
-        self.assertIn("第一节", page)
+        self.assertNotIn('class="toc"', page)                     # no contents list / source card on the right
+        self.assertNotIn("本页目录", page)
+        self.assertIn("第一节", page)                             # the section itself is still in the article
+        style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        self.assertIn(".document{max-width:1440px;margin:0 0 0 var(--sidebar-w);padding:88px 64px 100px}", style)   # same width as the home page
+        self.assertNotIn("max-width:860px", style)
+        self.assertNotIn(".toc{", style)                          # nothing left to style
+        self.assertIn("article code{overflow-wrap:anywhere}", style)   # a long unbroken code span wraps instead of widening the page
+
+    def test_the_link_back_to_the_original_page_sits_in_the_note_information(self):
+        (self.vault / "source" / "CDE" / "带链接.md").write_text(
+            "---\nsource_url: https://example.com/original\ndate: 2026-01-01\n---\n\n正文。", encoding="utf-8")
+        build_site(self.vault, self.out)
+        page = rendered_page((self.out / "source" / "CDE" / "带链接.html"))
+        panel = page.split('<details class="note-properties"', 1)[1].split("</details>", 1)[0]
+        self.assertIn('<dt>来源链接</dt><dd><a class="external" href="https://example.com/original"', panel)
+        self.assertLess(panel.index("来源链接"), panel.index("笔记路径"))
 
     def test_sidebar_has_a_drag_resize_handle(self):
         build_site(self.vault, self.out)

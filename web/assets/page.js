@@ -44,26 +44,23 @@
     }).join("");
   }
 
-  function propertiesHtml(props) {
-    if (!props || !props.length) return "";
-    const rows = props.map(row => {
-      const cell = row.code !== undefined ? `<code>${e(row.code)}</code>` : valueHtml(row.value);
-      return `<div class="property-row"><dt>${e(row.label)}</dt><dd>${cell}</dd></div>`;
-    }).join("");
-    return `<details class="note-properties" open><summary>笔记信息</summary><dl>${rows}</dl></details>`;
+  function externalLinksHtml(data) {
+    const urls = (data.externalLinks || []).map(safeHref).filter(url => /^https?:\/\//i.test(url));
+    return urls.map(url => `<a class="external" href="${e(url)}" rel="noreferrer" target="_blank">打开来源链接 ↗</a>`).join(" ");
   }
 
-  function asideHtml(data) {
-    const toc = (data.toc || []).map(item => `<a class="toc-${e(item.level)}" href="#${e(item.anchor)}">${e(item.text)}</a>`).join("");
-    let card = "";
-    if ((data.sourceNotes || []).length) card += `<section><h3>来源笔记</h3>${linkList(data.sourceNotes)}</section>`;
-    const external = (data.externalLinks || []).map(safeHref).filter(url => /^https?:\/\//i.test(url));
-    if (external.length) {
-      card += `<section><h3>来源链接</h3>${external.map(url => `<a class="external" href="${e(url)}" rel="noreferrer" target="_blank">打开来源链接 ↗</a>`).join("")}</section>`;
-    }
-    if (data.kind === "source" && (data.sourceWiki || []).length) card += `<section><h3>引用此来源的 Wiki</h3>${linkList(data.sourceWiki)}</section>`;
-    const section = toc ? `<h3>本页目录</h3>${toc}` : "";
-    return (section || card) ? `<aside class="toc">${section}${card}</aside>` : "";
+  // The 笔记信息 panel: the note's own fields, the link back to the original page (when there
+  // is one) and the note's path last.
+  function propertiesHtml(data) {
+    const props = data.props;
+    if (!props || !props.length) return "";
+    const link = externalLinksHtml(data);
+    const rows = props.map(row => {
+      const cell = row.code !== undefined ? `<code>${e(row.code)}</code>` : valueHtml(row.value);
+      const before = row.code !== undefined && link ? `<div class="property-row"><dt>来源链接</dt><dd>${link}</dd></div>` : "";
+      return `${before}<div class="property-row"><dt>${e(row.label)}</dt><dd>${cell}</dd></div>`;
+    }).join("");
+    return `<details class="note-properties" open><summary>笔记信息</summary><dl>${rows}</dl></details>`;
   }
 
   // The whole page around `bodyHtml` (already-sanitised content from the build).
@@ -80,7 +77,7 @@
       + `<div class="user-menu" data-auth-me="${e(root)}auth/me"><a class="review-entry" href="/review/">知识审核</a><span id="user-name">正在读取…</span><a href="${e(root)}auth/logout">退出</a></div>`
       + `<button id="theme-toggle" aria-label="切换主题">◐</button></header>`
       + `<aside class="sidebar"><nav id="nav-tree" data-manifest="${e(root)}manifest.json" data-current="${e(data.path)}"></nav></aside>`
-      + `<main class="document${home}"><div class="breadcrumbs">${crumbs}</div>${kind}<h1>${e(data.title)}</h1><div class="badges">${badges}</div>${propertiesHtml(data.props)}<article>${bodyHtml || ""}</article><section class="backlinks"><h2>反向链接</h2>${backlinks}</section></main>${asideHtml(data)}`;
+      + `<main class="document${home}"><div class="breadcrumbs">${crumbs}</div>${kind}<h1>${e(data.title)}</h1><div class="badges">${badges}</div>${propertiesHtml(data)}<article>${bodyHtml || ""}</article><section class="backlinks"><h2>反向链接</h2>${backlinks}</section></main>`;
   }
 
   function mount(document) {

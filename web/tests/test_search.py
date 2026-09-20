@@ -274,8 +274,10 @@ class PageScriptTests(unittest.TestCase):
 
     BASE = {"kind": "wiki", "title": "标题", "path": "wiki/a.md", "root": "../", "tags": [], "crumbs": [], "props": [], "backlinks": [], "toc": [], "sourceNotes": [], "externalLinks": [], "sourceWiki": []}
 
+    PROPS = [{"label": "编号", "value": {"parts": [{"t": "1"}]}}, {"label": "笔记路径", "code": "wiki/a.md"}]
+
     def test_unsafe_links_in_the_data_are_dropped(self):
-        html = self.render({**self.BASE,
+        html = self.render({**self.BASE, "props": self.PROPS,
                             "crumbs": [{"text": "坏", "href": "javascript:alert(1)"}, {"text": "好", "href": "../index.html"}],
                             "externalLinks": ["javascript:alert(2)", "data:text/html,x", "https://example.com/a"],
                             "backlinks": [{"title": "x", "href": "//evil.example/"}]})
@@ -293,10 +295,21 @@ class PageScriptTests(unittest.TestCase):
         self.assertIn('data-auth-me="../auth/me"', html)
         self.assertIn('data-current="wiki/a.md"', html)
 
-    def test_contents_list_and_source_panel_appear_only_when_there_is_something_in_them(self):
-        self.assertNotIn('class="toc"', self.render(self.BASE))
-        html = self.render({**self.BASE, "toc": [{"level": "2", "anchor": "s", "text": "小节"}]})
-        self.assertIn('<aside class="toc"><h3>本页目录</h3><a class="toc-2" href="#s">小节</a></aside>', html)
+    def test_there_is_no_right_hand_panel_whatever_the_data_holds(self):
+        full = {**self.BASE, "props": self.PROPS, "toc": [{"level": "2", "anchor": "s", "text": "小节"}],
+                "sourceNotes": [{"title": "n", "href": "n.html"}], "sourceWiki": [{"title": "w", "href": "w.html"}],
+                "externalLinks": ["https://example.com/a"], "kind": "source"}
+        html = self.render(full)
+        for gone in ('class="toc"', "<aside class=\"toc", "本页目录", "来源笔记", "引用此来源的 Wiki"):
+            self.assertNotIn(gone, html)
+        self.assertTrue(html.rstrip().endswith("</main>"))               # the page ends with the article and 反向链接
+
+    def test_the_source_link_is_a_row_of_the_note_information_before_the_path(self):
+        html = self.render({**self.BASE, "props": self.PROPS, "externalLinks": ["https://example.com/a", "https://example.com/b"]})
+        panel = html.split('<details class="note-properties"', 1)[1].split("</details>", 1)[0]
+        self.assertEqual(panel.count("打开来源链接"), 2)
+        self.assertLess(panel.index("来源链接</dt>"), panel.index("笔记路径</dt>"))
+        self.assertNotIn("来源链接</dt>", self.render({**self.BASE, "props": self.PROPS}))     # no link, no row
 
     def test_the_home_kind_gets_the_wide_layout_and_no_properties(self):
         html = self.render({**self.BASE, "kind": "home", "title": "DEK 知识库"}, '<div id="home-app"></div>')
