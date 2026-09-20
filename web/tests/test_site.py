@@ -438,6 +438,8 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn('days === "undated"', script)
         self.assertIn("countUndated", script)                                      # cards count only the undated ones there
         self.assertIn("没有无日期的内容", script)
+        self.assertIn("篇无日期，排在列表最后", script)   # the note under the filters says how many, without guessing what they are
+        self.assertNotIn("如目录页", script)
 
     def test_the_home_section_is_called_信息速览(self):
         build_site(self.vault, self.out)
