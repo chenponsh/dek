@@ -275,10 +275,14 @@ def default_wiki_path(value: object) -> str:
     return raw
 
 
-def wiki_folder_candidates(root: Path) -> list[tuple[str, str]]:
+def wiki_folder_candidates(root: Path, taken: frozenset[str] | set[str] = frozenset()) -> list[tuple[str, str]]:
     """For every wiki folder that already holds numbered notes, return
     (display label, suggested next path) so the reviewer can search by
-    folder name instead of typing the whole path by hand."""
+    folder name instead of typing the whole path by hand.
+
+    `taken` holds paths already promised to approved-but-unpublished drafts; a
+    suggestion never lands on one, so two drafts approved before either is
+    published do not both get the same number."""
     wiki_root = root / "wiki"
     if not wiki_root.is_dir():
         return []
@@ -300,7 +304,10 @@ def wiki_folder_candidates(root: Path) -> list[tuple[str, str]]:
     for folder in sorted(groups):
         prefix, (max_number, width) = max(groups[folder].items(), key=lambda item: item[1][0])
         label = folder[len("wiki/"):] if folder.startswith("wiki/") else folder
-        candidates.append((label, f"{folder}/{prefix}-{max_number + 1:0{width}d}.md"))
+        number = max_number + 1
+        while f"{folder}/{prefix}-{number:0{width}d}.md" in taken:
+            number += 1
+        candidates.append((label, f"{folder}/{prefix}-{number:0{width}d}.md"))
     return candidates
 
 
@@ -866,6 +873,19 @@ class ReviewService:
             if record.get("rough_path") == relative
         ]
 
+    def _promised_wiki_paths(self, root: Path, except_rough: str = "") -> frozenset[str]:
+        """Wiki paths that approved drafts (other than `except_rough`) are waiting to be published at."""
+        latest: dict[str, dict] = {}
+        for record in self._decisions():
+            if isinstance(record.get("rough_path"), str):
+                latest[record["rough_path"]] = record
+        return frozenset(
+            str(record.get("wiki_path"))
+            for path, record in latest.items()
+            if path != except_rough and record.get("action") == "approve" and record.get("wiki_path")
+            and not (root / str(record["wiki_path"])).exists()
+        )
+
     @staticmethod
     def _rough_status(root: Path, relative: str) -> str:
         """The `status` a draft carries in this snapshot; "" when it is not there (or not readable)."""
@@ -926,8 +946,8 @@ class ReviewService:
                 return item
         return None
 
-    def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None, action_query: str = "", heading: str = "原文", suggested: str = "", alternatives: list[tuple[str, str]] | None = None) -> str:
-        candidates = wiki_folder_candidates(root) if root else []
+    def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None, action_query: str = "", heading: str = "原文", suggested: str = "", alternatives: list[tuple[str, str]] | None = None, taken: frozenset[str] = frozenset()) -> str:
+        candidates = wiki_folder_candidates(root, taken) if root else []
         options_json = json.dumps([[label, path] for label, path in candidates], ensure_ascii=False)
         chips = ""
         if alternatives:
@@ -1054,14 +1074,17 @@ class ReviewService:
             binding = rough_binding_at(root, validate_relative_path(item.path, ROUGH_PREFIX))
             suggested = default_wiki_path(item.wiki_target)
             alternatives = []
+            # Numbers other approved drafts are already waiting for are not offered again.
+            taken = self._promised_wiki_paths(root, item.path)
             if not suggested:
                 # The draft carries no target: suggest the folders holding the most similar filed entries.
                 alternatives = suggest_wiki_paths(
-                    root, item.content, preferred=read_suggestion(self.suggestions_path, binding.path, binding.sha256))
+                    root, item.content, candidates=wiki_folder_candidates(root, taken),
+                    preferred=read_suggestion(self.suggestions_path, binding.path, binding.sha256))
                 if alternatives:
                     suggested = alternatives[0][1]
             form = self._form_card(binding, nonce, wiki_path=suggested, candidate=candidate_draft(item.content, suggested), root=root,
-                                   action_query=position, suggested=suggested, alternatives=alternatives)
+                                   action_query=position, suggested=suggested, alternatives=alternatives, taken=taken)
             if decided:
                 form = (
                     '<div class="notice">注意：该条目已有处理决定，提交将新增一条决定并覆盖当前显示的状态，请谨慎确认后再提交。</div>' + form

@@ -81,7 +81,7 @@ def authorized_queue_snapshot(review_module, queue: Path, decision_key: bytes, d
 
 
 def process_decision(publisher, decision: dict, approved_root: Path, builds_root: Path,
-                     review_bundle_archive: Path, push_authorizer=None) -> str:
+                     review_bundle_archive: Path, push_authorizer=None, chain_from: dict | None = None) -> str:
     """Deterministic, idempotent per-decision publish step.
 
     Returns "wait" when the fixed builder has not yet produced a build, otherwise
@@ -99,7 +99,10 @@ def process_decision(publisher, decision: dict, approved_root: Path, builds_root
         preparing = approved_root / (".preparing-" + decision_id)
         if preparing.exists():
             shutil.rmtree(preparing)
-        publisher.prepare_change(preparing, decision)
+        if chain_from is None:
+            publisher.prepare_change(preparing, decision)
+        else:
+            publisher.prepare_change(preparing, decision, chain_from=chain_from)
         os.replace(preparing, target)
     approval_meta = json.loads((target / "approval.json").read_text(encoding="utf-8"))
     generation = f'{approval_meta["decision_id"]}-{approval_meta["nonce"]}'
@@ -225,11 +228,23 @@ def main(argv=None):
         write_state("queue-corruption-"+value["sha256"],value)
         print("DEK queue corruption quarantined: "+value["sha256"],file=sys.stderr)
     valid=load_approved_decisions(modules["web.review"],queue,decision_key,state_root/"quarantine",queue_alert)
+    # Approvals waiting together are prepared as a chain: each package sits on top of the one
+    # before it, so they push (and activate) one after another without ever conflicting.
+    chain={"value":None}
     def worker(decision):
         def authorize(current):
             return authorized_queue_snapshot(modules["web.review"], queue, decision_key, current,
                                              state_root/"quarantine", queue_alert)
-        status=process_decision(publisher,decision,approved,builds,archive,authorize)
+        status=process_decision(publisher,decision,approved,builds,archive,authorize,chain_from=chain["value"])
+        prepared_dir=approved/decision["decision_id"]
+        if status=="pushed":
+            chain["value"]=None       # origin already holds it; the next one starts from origin
+        elif status=="wait":
+            try:
+                package=json.loads((prepared_dir/"approval.json").read_text(encoding="utf-8"))
+                chain["value"]={"bundle":str(prepared_dir/"repository.bundle"),"commit":package["commit"]}
+            except (OSError,ValueError,KeyError):
+                pass
         if status=="pushed":
             prepared=approved/decision["decision_id"]
             approval_meta=json.loads((prepared/"approval.json").read_text(encoding="utf-8"))

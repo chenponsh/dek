@@ -1036,6 +1036,43 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         self.assertIn('value="wiki/05_药学研究/0507_溶出曲线/0507-0004.md"', page)
 
+    def second_draft(self, question="溶出曲线取样点怎么选择", answer="溶出曲线研究应选择合适的取样点和溶出介质。"):
+        rough = ROUGH.replace("| Q | A | 2026-09-14 |", f"| {question} | {answer} | 2026-09-16 |")
+        (self.root / "repo/ingestion/rough/second.md").write_text(rough, encoding="utf-8")
+        return next(item for item in self.service.list_items() if item.path == "ingestion/rough/second.md")
+
+    def test_a_number_an_approved_draft_is_waiting_for_is_not_suggested_to_the_next_draft(self):
+        self.add_filed_entries()
+        first = self.rough_about("溶出曲线f2相似性因子怎么算", "比较溶出曲线时使用相似性因子f2，选择合适的溶出介质。")
+        promised = "wiki/05_药学研究/0507_溶出曲线/0507-0004.md"
+        page = self.service.render_item("opaque-session", first.identity).decode("utf-8")
+        self.assertRegex(page, r'class="wiki-path-input"[^>]*value="' + promised.replace(".", r"\.") + '"')   # the first draft gets the next free number ...
+        self.decide(action="approve", wiki_path=promised)                                                        # ... and is approved, not yet published
+        second = self.second_draft()
+        page = self.service.render_item("opaque-session", second.identity).decode("utf-8")
+        self.assertRegex(page, r'class="wiki-path-input"[^>]*value="wiki/05_药学研究/0507_溶出曲线/0507-0005\.md"')   # ... so the second one moves on
+        self.assertNotIn("0507-0004.md", page.split('class="wiki-path-input"', 1)[1].split(">", 1)[0])
+        self.assertIn('data-path="wiki/05_药学研究/0507_溶出曲线/0507-0005.md"', page)                           # chips agree
+        self.assertIn("0507-0005.md", page.split("data-options=", 1)[1].split(">", 1)[0])                         # and so does the dropdown
+
+    def test_editing_an_approved_draft_again_may_keep_its_own_promised_number(self):
+        self.add_filed_entries()
+        first = self.rough_about("溶出曲线f2相似性因子怎么算", "比较溶出曲线时使用相似性因子f2，选择合适的溶出介质。")
+        promised = "wiki/05_药学研究/0507_溶出曲线/0507-0004.md"
+        self.decide(action="approve", wiki_path=promised)
+        page = self.service.render_item("opaque-session", first.identity, unlocked=True).decode("utf-8")
+        self.assertRegex(page, r'class="wiki-path-input"[^>]*value="' + promised.replace(".", r"\.") + '"')   # its own number is not "taken" from itself
+
+    def test_a_promised_number_is_free_again_once_the_entry_is_in_the_snapshot(self):
+        self.add_filed_entries()
+        self.rough_about("溶出曲线f2相似性因子怎么算", "比较溶出曲线时使用相似性因子f2，选择合适的溶出介质。")
+        promised = "wiki/05_药学研究/0507_溶出曲线/0507-0004.md"
+        self.decide(action="approve", wiki_path=promised)
+        (self.root / "repo" / promised).write_text('---\nno: 4\ndate: 2026-01-01\nquestion: "x"\nsource:\ntag_pages:\ntags:\n---\n\nx\n', encoding="utf-8")   # published
+        second = self.second_draft()
+        page = self.service.render_item("opaque-session", second.identity).decode("utf-8")
+        self.assertRegex(page, r'class="wiki-path-input"[^>]*value="wiki/05_药学研究/0507_溶出曲线/0507-0005\.md"')   # next after the now-existing 0004
+
     def test_a_target_the_draft_already_carries_wins_over_the_suggestion(self):
         self.add_filed_entries()
         item = self.rough_about("溶出曲线f2相似性因子怎么算", "溶出介质", wiki_target="wiki/01_注册申报/0106_受理审查/0106-0009.md")

@@ -317,8 +317,33 @@ class ReleasePublisher:
         (output/"approval.sig").write_bytes(self.signing_key.sign(_canonical(approval)))
         return approval
 
-    def prepare_change(self, output: Path, decision: dict) -> dict:
-        """Apply one approved review decision in its own clone and bundle that commit."""
+    def _chain_base(self, clone: Path, chain_from: dict, tip: str) -> str | None:
+        """The commit of an earlier package from this same publishing run, when a change can sit on top of it.
+
+        Several approvals waiting together are published as one chain (each on top
+        of the one before), which is the order the activator expects. A package
+        that was built on something older than the current tip is not a usable
+        base: it is left out, so a stale package never drags later ones with it.
+        """
+        bundle=Path(str(chain_from.get("bundle",""))); commit=str(chain_from.get("commit",""))
+        if not bundle.is_file() or not re.fullmatch(r"[0-9a-f]{40,64}",commit): return None
+        try:
+            _run((*GIT,"-c","protocol.file.allow=always","fetch","--",str(bundle),"refs/heads/dek-approved"),cwd=clone)
+            fetched=_run((*GIT,"rev-parse","FETCH_HEAD^{commit}"),cwd=clone).decode().strip()
+        except BundleError:
+            return None
+        if fetched!=commit: return None
+        if _run_status((*GIT,"merge-base","--is-ancestor",tip,commit),cwd=clone).returncode!=0: return None
+        return commit
+
+    def prepare_change(self, output: Path, decision: dict, *, chain_from: dict | None = None) -> dict:
+        """Apply one approved review decision in its own clone and bundle that commit.
+
+        The change goes on top of what is published now (or, in a chain, on top of the
+        previous package), not on the older snapshot the reviewer looked at: the draft
+        and the target path are re-checked there, so nothing else the reviewer did not
+        see is touched, and the push is always a fast-forward.
+        """
         if decision.get("action") != "approve": raise BundleError("only approved decisions produce releases")
         decision_id=str(decision.get("decision_id","")); nonce=decision_id
         approval_generation(decision_id, nonce)
@@ -332,21 +357,23 @@ class ReleasePublisher:
             exact_snapshot=_run((*GIT,"rev-parse",f"{snapshot}^{{commit}}"),cwd=clone).decode().strip()
             snapshot_tree=_run((*GIT,"rev-parse",f"{exact_snapshot}^{{tree}}"),cwd=clone).decode().strip()
             if exact_snapshot!=snapshot or snapshot_tree!=decision.get("snapshot_tree"): raise BundleError("review snapshot identity mismatch")
-            parent_commit=_nearest_decision_commit(clone,exact_snapshot)
+            tip=_run((*GIT,"rev-parse","HEAD^{commit}"),cwd=clone).decode().strip()
+            if _run_status((*GIT,"merge-base","--is-ancestor",exact_snapshot,tip),cwd=clone).returncode!=0:
+                raise BundleError("review snapshot is not part of the published history")
+            base=tip
+            if chain_from:
+                chained=self._chain_base(clone,chain_from,tip)
+                if chained: base=chained
+            parent_commit=_nearest_decision_commit(clone,base)
             rough=clone/str(decision.get("rough_path","")); wiki=clone/str(decision.get("wiki_path",""))
             if not rough.resolve().is_relative_to((clone/"ingestion/rough").resolve()) or not wiki.resolve().is_relative_to((clone/"wiki").resolve()): raise BundleError("decision path escapes repository")
             candidate_bytes=decision["candidate_markdown"].encode("utf-8")
-            # Checked against the clone's freshly-cloned tip -- i.e. what is
-            # actually live right now -- before `reset --hard` below moves the
-            # working tree back to this decision's own, possibly older, pinned
-            # snapshot. Two decisions reviewed close together can each suggest
-            # the same "next free number" wiki_path against their own snapshot
-            # and never see each other's pick; without this check the second
-            # one to publish silently clobbers the first one's unrelated,
-            # already-published content.
+            # Two decisions reviewed close together can each name the same wiki_path;
+            # the working tree is put on the base first, so a path the base already
+            # holds with different content is refused here instead of being overwritten.
+            _run((*GIT,"reset","--hard",base),cwd=clone)
             if wiki.is_file() and wiki.read_bytes()!=candidate_bytes:
                 raise BundleError("wiki_path already published with different content")
-            _run((*GIT,"reset","--hard",exact_snapshot),cwd=clone)
             try:
                 rough_details=rough.lstat()
             except OSError as exc:
