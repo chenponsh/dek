@@ -1073,6 +1073,41 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_item("opaque-session", second.identity).decode("utf-8")
         self.assertRegex(page, r'class="wiki-path-input"[^>]*value="wiki/05_药学研究/0507_溶出曲线/0507-0005\.md"')   # next after the now-existing 0004
 
+    def test_a_draft_that_repeats_another_pending_draft_says_so_on_its_page(self):
+        first = self.rough_about("溶出曲线f2怎么算", "用相似性因子f2比较。")
+        twin = self.root / "repo/ingestion/rough/twin.md"
+        twin.write_text((self.root / "repo/ingestion/rough/pending.md").read_text(encoding="utf-8"), encoding="utf-8")   # same question and answer, another file
+        page = self.service.render_item("opaque-session", first.identity).decode("utf-8")
+        self.assertIn("另有 1 份待审草稿问题和答案都相同：twin.md", page)
+        self.assertIn("同一条问答只需批准一份，其余请拒绝", page)
+        twin_item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/twin.md")
+        self.assertIn("问题和答案都相同：pending.md", self.service.render_item("opaque-session", twin_item.identity).decode("utf-8"))   # and the other way round
+
+    def test_a_draft_with_the_same_question_but_another_answer_gets_a_different_warning(self):
+        first = self.rough_about("溶出曲线f2怎么算", "用相似性因子f2比较。")
+        other = ROUGH.replace("| Q | A | 2026-09-14 |", "| 问：溶出曲线f2怎么算？ | 完全不同的另一种答案。 | 2026-09-15 |")   # a 问： label and punctuation do not make it another question
+        (self.root / "repo/ingestion/rough/other.md").write_text(other, encoding="utf-8")
+        page = self.service.render_item("opaque-session", first.identity).decode("utf-8")
+        self.assertIn("另有 1 份待审草稿问题相同、答案不同：other.md", page)
+        self.assertIn("请核对后再决定", page)
+        self.assertNotIn("其余请拒绝", page)
+
+    def test_a_question_the_wiki_already_asks_is_flagged(self):
+        self.add_filed_entries()
+        item = self.rough_about("溶出曲线相似性因子f2如何计算，溶出介质如何选择，溶出度方法学验证", "答。")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertIn("Wiki 里已有相同问题的条目：05_药学研究/0507_溶出曲线/0507-0001.md", page)
+        self.assertIn("批准前请确认不是重复", page)
+
+    def test_a_unique_draft_gets_no_duplicate_warning_and_names_are_escaped(self):
+        item = self.rough_about("一个独一无二的问题", "答。")
+        self.assertNotIn("duplicate-notice", self.service.render_item("opaque-session", item.identity).decode("utf-8"))
+        same = ROUGH.replace("| Q | A | 2026-09-14 |", "| 一个独一无二的问题 | 答。 | 2026-09-14 |")
+        (self.root / "repo/ingestion/rough/x<b>y.md").write_text(same, encoding="utf-8")
+        page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        self.assertIn("x&lt;b&gt;y.md", page)
+        self.assertNotIn("x<b>y.md", page)
+
     def test_a_target_the_draft_already_carries_wins_over_the_suggestion(self):
         self.add_filed_entries()
         item = self.rough_about("溶出曲线f2相似性因子怎么算", "溶出介质", wiki_target="wiki/01_注册申报/0106_受理审查/0106-0009.md")

@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlencode
 import yaml
 from deploy.release_bundle import APPROVAL_ID_PATTERN
 
-from .suggest import read_suggestion, rough_qa, suggest_folders
+from .suggest import question_key, read_suggestion, rough_qa, suggest_folders, wiki_questions
 
 
 HASH_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -886,6 +886,29 @@ class ReviewService:
             and not (root / str(record["wiki_path"])).exists()
         )
 
+    def _duplicate_notice(self, root: Path, item) -> str:
+        """A warning when this draft asks a question another pending draft, or a wiki entry, already asks."""
+        question, answer = rough_qa(item.content)
+        key = question_key(question)
+        if not key:
+            return ""
+        notices = []
+        same_question = [(binding, rough_qa(binding.content)) for binding in self._pending(root)
+                         if binding.path != item.path and question_key(rough_qa(binding.content)[0]) == key]
+        if same_question:
+            identical = [PurePosixPath(b.path).name for b, (_, other) in same_question if question_key(other) == question_key(answer)]
+            different = [PurePosixPath(b.path).name for b, (_, other) in same_question if question_key(other) != question_key(answer)]
+            if identical:
+                notices.append(f"另有 {len(identical)} 份待审草稿问题和答案都相同：" + "、".join(html.escape(n) for n in identical)
+                               + "。同一条问答只需批准一份，其余请拒绝。")
+            if different:
+                notices.append(f"另有 {len(different)} 份待审草稿问题相同、答案不同：" + "、".join(html.escape(n) for n in different)
+                               + "。请核对后再决定。")
+        existing = wiki_questions(str(root)).get(key)
+        if existing:
+            notices.append("Wiki 里已有相同问题的条目：" + "、".join(html.escape(path[len("wiki/"):]) for path in existing[:3]) + "。批准前请确认不是重复。")
+        return "".join(f'<div class="notice duplicate-notice">注意：{text}</div>' for text in notices)
+
     @staticmethod
     def _rough_status(root: Path, relative: str) -> str:
         """The `status` a draft carries in this snapshot; "" when it is not there (or not readable)."""
@@ -1085,6 +1108,7 @@ class ReviewService:
                     suggested = alternatives[0][1]
             form = self._form_card(binding, nonce, wiki_path=suggested, candidate=candidate_draft(item.content, suggested), root=root,
                                    action_query=position, suggested=suggested, alternatives=alternatives, taken=taken)
+            form = self._duplicate_notice(root, item) + form
             if decided:
                 form = (
                     '<div class="notice">注意：该条目已有处理决定，提交将新增一条决定并覆盖当前显示的状态，请谨慎确认后再提交。</div>' + form

@@ -143,3 +143,34 @@ def read_suggestion(path: Path | None, rough_path: str, rough_sha256: str) -> st
         return ""
     folder = entry.get("folder")
     return folder if isinstance(folder, str) and folder.startswith("wiki/") else ""
+
+
+_KEY_NOISE = re.compile(r"[\s，。、；：？！（）()“”\"'《》\[\]|·\-—/\\<>*#`~,.;:?!]+")
+_LABEL = re.compile(r"\A\s*(?:问题?|Q)\s*[0-9一二三四五六七八九十]*\s*[:：]\s*", re.I)
+
+
+def question_key(text: str) -> str:
+    """A question (or answer) reduced to what identifies it: no 问：label, spacing, punctuation or case."""
+    return _KEY_NOISE.sub("", _LABEL.sub("", text or "", count=1)).lower()
+
+
+@lru_cache(maxsize=4)
+def wiki_questions(root: str) -> dict[str, tuple[str, ...]]:
+    """question_key -> the wiki entries (relative paths) that already ask it."""
+    wiki = Path(root) / "wiki"
+    found: dict[str, list[str]] = defaultdict(list)
+    if not wiki.is_dir():
+        return {}
+    for path in sorted(wiki.rglob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        match = _FRONTMATTER.match(text)
+        if not match:
+            continue
+        question = _QUESTION.search(match.group(1))
+        if question and question.group(1).strip() and _NUMBERED.search(match.group(1)):
+            found[question_key(question.group(1))].append(path.relative_to(root).as_posix())
+    return {key: tuple(paths) for key, paths in found.items() if key}
+
