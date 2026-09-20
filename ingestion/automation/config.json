@@ -32,7 +32,6 @@
   },
   "known_unautomated": [
     "source/NIFDC/NIFDC_常见共性问题解答.md",
-    "source/安徽/安徽局_许可注册惠企政策超市-药品.md",
     "source/江苏/江苏局CDE_你问我答.md"
   ],
   "no_fetch_rule": [
@@ -83,6 +82,19 @@
       "url": "https://yjj.beijing.gov.cn/hudong/xinxiang/yjj/sindex/xx-yjj.html",
       "auto_classified": true,
       "auto_ingest": true
+    }
+  ],
+  "file_sources": [
+    {
+      "note": "source/安徽/安徽局_许可注册惠企政策超市-药品.md",
+      "dir": "source/安徽/安徽局_许可注册惠企政策超市-药品",
+      "known_dirs": [
+        "source/安徽/安徽局_许可注册惠企政策超市-药品_排除"
+      ],
+      "fetcher": "anhui",
+      "url": "https://mpa.ah.gov.cn/ztgz/yssypbgba/yp/index.html",
+      "list_url": "https://mpa.ah.gov.cn/content/column/31415151?pageIndex={page}",
+      "cpc_detail_url": "https://www.chp.org.cn/three/sys/news/es/detail?newsId={news_id}"
     }
   ]
 }

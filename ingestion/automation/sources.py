@@ -185,6 +185,7 @@ BODY_SELECTORS: list[Callable[[str, dict[str, str]], bool]] = [
     lambda tag, a: tag == "div" and _has_class(a, "TRS_UEDITOR"),
     lambda tag, a: tag == "div" and _has_class(a, "news-content"),
     lambda tag, a: tag == "div" and a.get("id", "").startswith("vsb_content"),
+    lambda tag, a: tag == "div" and _has_class(a, "wzcon"),
 ]
 
 _QUESTION = re.compile(r"^\s*(?:问题\s*[0-9一二三四五六七八九十]*|问|\d+[.、．]|[一二三四五六七八九十]+[、.．])\s*[:：]?\s*(?P<q>.+)$")
@@ -220,7 +221,7 @@ def split_qa(text: str) -> list[tuple[str, str]]:
     return [("\n".join(q).strip(), "\n".join(a).strip()) for q, a in pairs if "".join(q).strip() and "".join(a).strip()]
 
 
-_NOT_DRUG = re.compile(r"化妆品|医疗器械|器械|数字疗法|体外诊断|保健食品|特殊食品")
+_NOT_DRUG = re.compile(r"化妆品|医疗器械|器械|数字疗法|体外诊断|保健食品|特殊食品|疫苗|生物制品|配方颗粒|饮片")
 _DRUG = re.compile(r"化学药|药品|制剂|药学|说明书|再注册|上市后|变更|仿制药")
 
 
@@ -368,6 +369,13 @@ class NewNote:
     source_url: str
     external_url: str
     body: str
+    # Question/answer pairs when the article is a Q&A collection; otherwise the
+    # note has one row: title -> body.
+    pairs: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def rows(self) -> list[tuple[str, str]]:
+        return list(self.pairs) or [(self.title, self.body)]
 
 
 _CPC_SKIP = re.compile(r"培训|会议|预算|经销|出版|招标|采购")
@@ -426,12 +434,105 @@ def note_text(note: NewNote, source_note_stem: str) -> str:
     if note.external_url:
         lines.append(f"external_url: {q(note.external_url)}")
     lines += [f"article_title: {q(note.title)}", f"date: {note.date}", "---", ""]
-    return "\n".join(lines) + "\n" + f"| 问题 | 解答 | 发布日期 |\n|---|---|---|\n| {markdown_cell(note.title)} | {markdown_cell(note.body)} | {note.date} |\n"
+    table = "".join(f"| {markdown_cell(q_)} | {markdown_cell(a_)} | {note.date} |\n" for q_, a_ in note.rows)
+    return "\n".join(lines) + "\n" + f"| 问题 | 解答 | 发布日期 |\n|---|---|---|\n{table}"
+
+
+# ------------------------------------------------------------------ 安徽省药监局
+
+_AH_ITEM = re.compile(
+    r'<li[^>]*>\s*<a href="(?P<href>[^"]+)"[^>]*title="(?P<title>[^"]*)"[^>]*>.*?</a>\s*<span class="right date">(?P<date>\d{4}-\d{2}-\d{2})</span>',
+    re.S,
+)
+_AH_PAGES = re.compile(r"pageCount:\s*(\d+)")
+AH_NO_BODY = "正文未能自动提取（外部站点需访问校验）；请通过 source_url 查看原文。"
+
+
+def safe_filename(date: str, title: str) -> str:
+    title = re.sub(r"\s+", " ", html.unescape(title)).strip()
+    return date + "_" + "".join("、" if c in '<>:"/\\|?*' else c for c in title) + ".md"
+
+
+def fetch_anhui_notes(
+    source: dict[str, Any], known: set[str], since: str,
+    get: Callable[[str], str] = http_get, fetch_json: Callable[[str], Any] = get_json,
+    max_pages: int = 10,
+) -> tuple[list[NewNote], dict[str, Any]]:
+    """Column list -> one NewNote per new, on-topic article. `known` holds the
+    file names already in the note folders (kept and excluded)."""
+    notes: list[NewNote] = []
+    skipped: list[dict[str, str]] = []
+    filtered: list[dict[str, str]] = []
+    seen = 0
+    pages = 1
+    page_no = 1
+    while page_no <= min(pages, max_pages):
+        page = get(source["list_url"].format(page=page_no))
+        if page_no == 1:
+            found = _AH_PAGES.search(page)
+            pages = int(found.group(1)) if found else 1
+        items = [(m.group("href"), re.sub(r"\s+", " ", html.unescape(m.group("title"))).strip(), m.group("date"))
+                 for m in _AH_ITEM.finditer(page)]
+        if not items:
+            if page_no == 1:
+                raise SafetyStop("Anhui column page lists no articles; page structure may have changed")
+            break
+        seen += len(items)
+        for href, title, date in items:
+            if date <= since or safe_filename(date, title) in known:
+                continue
+            url = urllib.parse.urljoin(source["url"], href)
+            try:
+                body, external = _anhui_body(url, get, fetch_json, source)
+            except SafetyStop as exc:
+                skipped.append({"title": title, "reason": str(exc)})
+                continue
+            if not on_topic(title, body):
+                filtered.append({"title": title, "reason": "不属于化学药品制剂主题"})
+                continue
+            pairs = tuple(split_qa(body))
+            notes.append(NewNote(safe_filename(date, title), title, date, url, external, body or AH_NO_BODY, pairs))
+        if items[-1][2] <= since:
+            break
+        page_no += 1
+    meta: dict[str, Any] = {"remote_count": seen, "latest_date": max((n.date for n in notes), default=None)}
+    if skipped:
+        meta["skipped_items"] = skipped
+    if filtered:
+        meta["filtered_out"] = filtered
+    return notes, meta
+
+
+def _anhui_body(url: str, get, fetch_json, source: dict[str, Any]) -> tuple[str, str]:
+    """(body text, external url) for a listed article, wherever it lives."""
+    host = urllib.parse.urlsplit(url).netloc
+    if host.endswith("chp.org.cn"):
+        news_id = re.search(r"[?&]id=([^&#]+)", url)
+        if not news_id:
+            raise SafetyStop("CPC link has no id")
+        payload = fetch_json(source["cpc_detail_url"].format(news_id=news_id.group(1)))
+        container = payload.get("result") or payload.get("data") or payload
+        data = container.get("news", container) if isinstance(container, dict) else {}
+        raw = str(data.get("newsContent") or "")
+        return (html_to_text(raw) if raw.strip() not in ("", "None") else ""), ""
+    if host.endswith("ah.gov.cn"):
+        page = get(url)
+        for selector in BODY_SELECTORS:
+            body = html_to_text(extract_block(page, selector))
+            if body:
+                return body, ""
+        raise SafetyStop("article body not found")
+    return "", url
 
 
 def fetch_shanghai_all(source: dict[str, Any], known: set[tuple[str, str]], since: str) -> tuple[list[Row], dict[str, Any]]:
     """Shanghai serves the whole Q&A list as JSON in one request."""
     return fetch_shanghai(source["url"])
+
+
+FILE_FETCHERS: dict[str, Callable[..., tuple[list[NewNote], dict[str, Any]]]] = {
+    "anhui": fetch_anhui_notes,
+}
 
 
 FETCHERS: dict[str, Callable[..., tuple[list[Row], dict[str, Any]]]] = {

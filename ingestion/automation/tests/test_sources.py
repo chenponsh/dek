@@ -230,6 +230,79 @@ class CpcNewNotesTests(unittest.TestCase):
         self.assertNotIn("external_url", text)
 
 
+class AnhuiTests(unittest.TestCase):
+    SOURCE = {"url": "https://mpa.ah.gov.cn/ztgz/yssypbgba/yp/index.html",
+              "list_url": "https://mpa.ah.gov.cn/content/column/31415151?pageIndex={page}",
+              "cpc_detail_url": "https://x/detail?newsId={news_id}"}
+
+    def get(self, calls=None):
+        listing, article = fixture("anhui_list.html"), fixture("anhui_article.html")
+
+        def get(url):
+            if calls is not None:
+                calls.append(url)
+            return listing if "pageIndex" in url else article
+        return get
+
+    def test_file_name_follows_the_library_rule(self):
+        self.assertEqual(sources.safe_filename("2026-07-02", "a/b:c\n d"), "2026-07-02_a、b、c d.md")
+
+    def test_new_qa_article_becomes_a_note_with_one_pair_per_question(self):
+        notes, meta = sources.fetch_anhui_notes(self.SOURCE, set(), "2026-06-01", get=self.get(), fetch_json=lambda url: {})
+        titles = [n.title for n in notes]
+        self.assertIn("药品上市后变更备案共性问题解答（五）", titles)
+        note = next(n for n in notes if n.title.endswith("（五）"))
+        self.assertGreaterEqual(len(note.pairs), 2)
+        self.assertEqual(note.date, "2026-07-02")
+
+    def test_articles_about_traditional_medicine_or_vaccines_are_filtered_out(self):
+        notes, meta = sources.fetch_anhui_notes(self.SOURCE, set(), "2000-01-01", get=self.get(), fetch_json=lambda url: {})
+        self.assertFalse(any("配方颗粒" in n.title or "疫苗" in n.title for n in notes))
+        self.assertTrue(any("配方颗粒" in item["title"] for item in meta["filtered_out"]))
+
+    def test_known_files_and_old_items_are_not_opened(self):
+        calls = []
+        known = {sources.safe_filename("2026-07-02", "药品上市后变更备案共性问题解答（五）")}
+        notes, _ = sources.fetch_anhui_notes(self.SOURCE, known, "2026-07-14", get=self.get(calls), fetch_json=lambda url: {})
+        self.assertEqual(notes, [])
+        self.assertEqual(len(calls), 1)  # only the list page
+
+    def test_external_site_without_access_gets_a_placeholder_and_the_link(self):
+        listing = ('<li class="odd"><a href="https://www.nmpa.gov.cn/x/1.html" title="药品上市后变更管理公告" class="left"><span>t</span></a>'
+                   '<span class="right date">2026-08-01</span></li> pageCount:1,')
+        notes, _ = sources.fetch_anhui_notes(self.SOURCE, set(), "2026-01-01", get=lambda url: listing, fetch_json=lambda url: {})
+        self.assertEqual(notes[0].body, sources.AH_NO_BODY)
+        self.assertEqual(notes[0].external_url, "https://www.nmpa.gov.cn/x/1.html")
+
+    def test_empty_list_is_a_failure(self):
+        with self.assertRaises(SafetyStop):
+            sources.fetch_anhui_notes(self.SOURCE, set(), "2026-01-01", get=lambda url: "<html></html>", fetch_json=lambda url: {})
+
+
+class FileSourceStagingTests(unittest.TestCase):
+    def test_qa_note_gives_one_draft_per_question_and_failures_do_not_raise(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "source" / "x" / "dir").mkdir(parents=True)
+            (root / "source" / "x" / "dir_排除").mkdir()
+            (root / "ingestion" / "rough").mkdir(parents=True)
+            (root / "source" / "x" / "n.md").write_text("---\nlast_updated: 2026-01-01\n---\n\n## 内容\n", encoding="utf-8")
+            config = {"file_sources": [{"note": "source/x/n.md", "dir": "source/x/dir", "known_dirs": ["source/x/dir_排除"], "fetcher": "fake"}]}
+            note = sources.NewNote("2026-06-01_a.md", "a", "2026-06-01", "https://u", "", "正文", (("问1", "答1"), ("问2", "答2")))
+            with patch.object(cli, "ROOT", root), patch.dict(sources.FILE_FETCHERS, {"fake": lambda s, k, since: ([note], {})}):
+                result = {"report": {}, "auto_write_paths": [], "rough_created": [], "rough_sources": {}, "alerts": []}
+                writes = {}
+                cli.stage_file_sources(config, result, writes, datetime(2026, 9, 20, tzinfo=timezone.utc))
+                self.assertEqual(len(result["rough_created"]), 2)
+                self.assertEqual(result["report"]["source/x/n.md"]["status"], "new_articles_staged")
+                text = writes[root / "source/x/dir/2026-06-01_a.md"]
+                self.assertIn("| 问2 | 答2 | 2026-06-01 |", text)
+            with patch.object(cli, "ROOT", root), patch.dict(sources.FILE_FETCHERS, {"fake": lambda s, k, since: (_ for _ in ()).throw(SafetyStop("403"))}):
+                result = {"report": {}, "auto_write_paths": [], "rough_created": [], "rough_sources": {}, "alerts": []}
+                cli.stage_file_sources(config, result, {}, datetime(2026, 9, 20, tzinfo=timezone.utc))
+                self.assertEqual(result["report"]["source/x/n.md"]["status"], "failed")
+
+
 class TableSourceStagingTests(unittest.TestCase):
     NOTE = (
         "---\nentity: x\nlast_updated: 2026-02-28\n---\n\n## 内容\n\n"

@@ -18,7 +18,7 @@ from .core import (
     workspace_snapshot, write_json,
 )
 from .fetchers import CDEBrowserUnavailable, fetch_cde, fetch_cpc, fetch_cpc_content_hash, fetch_shanghai
-from .sources import FETCHERS, fetch_cpc_notes, note_text
+from .sources import FETCHERS, FILE_FETCHERS, fetch_cpc_notes, note_text
 
 MAX_NEW_PER_SOURCE = 50
 
@@ -154,14 +154,35 @@ def stage_new_notes(
         result["report"][relative] = {"status": "updated_with_new", "new_count": 1, "latest_date": note.date}
         result["auto_write_paths"].append(relative)
         prefix = f"{now:%Y%m%d}_{path.stem}_增量_"
-        rough_path = ROOT / "ingestion" / "rough" / f"{prefix}1.md"
-        if rough_path.exists():
-            raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
-        writes[rough_path] = rough_content(relative, [Row(note.title, note.body, note.date)], day)
-        rough_relative = str(rough_path.relative_to(ROOT))
-        result["rough_created"].append(rough_relative)
-        result["rough_sources"][rough_relative] = relative
-        result["auto_write_paths"].append(rough_relative)
+        # One draft per question, like table rows.
+        for number, (question, answer) in enumerate(note.rows, start=1):
+            rough_path = ROOT / "ingestion" / "rough" / f"{prefix}{number}.md"
+            if rough_path.exists():
+                raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
+            writes[rough_path] = rough_content(relative, [Row(question, answer, note.date)], day)
+            rough_relative = str(rough_path.relative_to(ROOT))
+            result["rough_created"].append(rough_relative)
+            result["rough_sources"][rough_relative] = relative
+            result["auto_write_paths"].append(rough_relative)
+
+
+def stage_file_sources(config: dict[str, Any], result: dict[str, Any], writes: dict[Path, str], now: datetime) -> None:
+    """Sources kept as one excerpt note per article in a folder. A failing
+    source is reported and leaves every other source alone."""
+    for source in config.get("file_sources", []):
+        try:
+            known = set()
+            for folder in [source["dir"], *source.get("known_dirs", [])]:
+                known |= {p.name for p in (ROOT / folder).glob("*.md")}
+            since = last_updated((ROOT / source["note"]).read_text(encoding="utf-8"))
+            notes, meta = FILE_FETCHERS[source["fetcher"]](source, known, since)
+            if len(notes) > MAX_NEW_PER_SOURCE:
+                raise SafetyStop(f"一次新增 {len(notes)} 篇，超过 {MAX_NEW_PER_SOURCE} 篇上限，疑似页面结构变化")
+            stage_new_notes(result, writes, notes, source["dir"], source["note"], now)
+            result["report"][source["note"]] = {**meta, "new_count": len(notes), "status": "new_articles_staged" if notes else "no_change"}
+        except Exception as exc:
+            result["report"][source["note"]] = {"status": "failed", "reason": str(exc)}
+            result["alerts"].append(f"source failure: {source['note']}: {exc}")
 
 
 def stage_table_sources(config: dict[str, Any], result: dict[str, Any], writes: dict[Path, str], now: datetime) -> None:
@@ -190,6 +211,7 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
         result["report"][path] = {"status": "skipped_adapter_pending", "reason": "已固化来源尚未接入首批自动适配器"}
 
     stage_table_sources(config, result, writes, now)
+    stage_file_sources(config, result, writes, now)
 
     try:
         articles, meta = fetch_cpc(config["cpc"]["list_url"])
@@ -312,7 +334,9 @@ def add_pipeline_health(report: dict[str, Any]) -> None:
 
 def automatic_write_dirs(config: dict[str, Any]) -> set[str]:
     """Folders where a run may create new excerpt notes."""
-    return {config["cpc"]["included_dir"].rstrip("/") + "/"} if "cpc" in config else set()
+    folders = [config["cpc"]["included_dir"]] if "cpc" in config else []
+    folders += [source["dir"] for source in config.get("file_sources", [])]
+    return {folder.rstrip("/") + "/" for folder in folders}
 
 
 def automatic_write_allowlist(config: dict[str, Any]) -> set[str]:
