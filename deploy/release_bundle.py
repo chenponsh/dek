@@ -411,6 +411,50 @@ class ReleasePublisher:
         (output/"approval.sig").write_bytes(self.signing_key.sign(_canonical(approval)))
         return approval
 
+    SYNC_MAX_REMOVALS = 500
+
+    def prepare_sync(self, output: Path) -> dict | None:
+        """A release that only takes wiki content away, so it needs no reviewer decision.
+
+        The live site is built from a commit the publisher signed for a reviewed decision.
+        Deleting content (a reset, a retraction) used to reach the site only with the next
+        such decision. This publishes the current tip when, compared with the last published
+        commit, `wiki/` differs by deleted files and nothing else: it can make knowledge
+        disappear, never appear. Anything added or changed in `wiki/` is refused and still
+        needs a reviewed decision. Returns None when there is nothing to remove.
+        """
+        if not self.test_only_local_origin:
+            validate_systemd_credential(self.credential_file)
+        with tempfile.TemporaryDirectory(prefix="dek-publisher-sync-") as temporary:
+            clone=Path(temporary)/"clone"
+            self._clone_remote(clone)
+            tip=_run((*GIT,"rev-parse","HEAD^{commit}"),cwd=clone).decode().strip()
+            base=_nearest_decision_commit(clone,tip)
+            if base is None or base==tip: return None
+            raw=_run((*GIT,"diff","--name-status","--no-renames","-z",base,tip,"--","wiki"),cwd=clone).decode("utf-8","strict")
+            tokens=[token for token in raw.split("\0") if token]
+            changes=list(zip(tokens[0::2],tokens[1::2]))
+            if not changes: return None
+            if any(status!="D" for status,_ in changes):
+                raise BundleError("wiki changes other than removals need a reviewed decision")
+            if len(changes)>self.SYNC_MAX_REMOVALS:
+                raise BundleError("too many removals for a sync release")
+            removed=sorted(path for _,path in changes)
+            descriptor=json.dumps({"action":"sync","base":base,"tip":tip,"removed":removed},sort_keys=True,separators=(",",":"),ensure_ascii=False)
+            digest=hashlib.sha256(descriptor.encode("utf-8")).hexdigest()
+            decision_id="sync-"+digest[:16]; nonce=decision_id
+            approval_generation(decision_id, nonce)
+            output.mkdir(parents=True,exist_ok=False)
+            _run((*GIT,"-c",f"user.name={PUBLISHER_COMMIT_NAME}","-c",f"user.email={PUBLISHER_COMMIT_EMAIL}","commit","--allow-empty","-m",f"publish: {decision_id}"),cwd=clone)
+            exact=_run((*GIT,"rev-parse","HEAD^{commit}"),cwd=clone).decode().strip(); tree=_run((*GIT,"rev-parse","HEAD^{tree}"),cwd=clone).decode().strip()
+            bundle=output/"repository.bundle"
+            _run((*GIT,"branch","--force","dek-approved",exact),cwd=clone)
+            _run((*GIT,"bundle","create",str(bundle),"refs/heads/dek-approved"),cwd=clone)
+        approval={"schema_version":2,"decision_id":decision_id,"decision_sha256":digest,"nonce":nonce,"origin":self.origin,"commit":exact,"tree":tree,"bundle_sha256":_digest(bundle),"parent_commit":base}
+        (output/"approval.json").write_text(json.dumps(approval,sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
+        (output/"approval.sig").write_bytes(self.signing_key.sign(_canonical(approval)))
+        return approval
+
     @staticmethod
     def verify_review_snapshot(bundle: Path, commit: str, tree: str, expected_digest: str) -> None:
         if _digest(Path(bundle)) != expected_digest:

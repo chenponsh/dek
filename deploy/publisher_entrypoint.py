@@ -118,6 +118,54 @@ def process_decision(publisher, decision: dict, approved_root: Path, builds_root
         publisher.publish(build, queue_snapshot=snapshot)
     return "pushed"
 
+def process_sync(publisher, approved_root: Path, builds_root: Path, push_authorizer=None):
+    """The sync release: deletions from wiki/ that reached origin, published without a decision.
+
+    Returns None when there is nothing to remove, else (release id, "wait" | "pushed").
+    Same shape as process_decision: prepare once per state of origin, wait for the builder,
+    then sign and push. Safe to run again at any point.
+    """
+    preparing = approved_root / ".preparing-sync"
+    if preparing.exists():
+        shutil.rmtree(preparing)
+    approval = publisher.prepare_sync(preparing)
+    if approval is None:
+        return None
+    release_id = approval["decision_id"]
+    target = approved_root / release_id
+    if target.exists():
+        shutil.rmtree(preparing)          # already prepared for exactly this state: carry on with that one
+    else:
+        os.replace(preparing, target)
+    meta = json.loads((target / "approval.json").read_text(encoding="utf-8"))
+    build = builds_root / f'{meta["decision_id"]}-{meta["nonce"]}'
+    if not (build / "release.json").is_file():
+        return release_id, "wait"
+    if not (build / "release.sig").is_file():
+        publisher.finalize(build)
+    snapshot = push_authorizer() if push_authorizer is not None else None
+    if snapshot is None:
+        publisher.publish(build)
+    else:
+        publisher.publish(build, queue_snapshot=snapshot)
+    return release_id, "pushed"
+
+
+def published_result(approved_root: Path, builds_root: Path, decision_id: str) -> dict:
+    """The publisher's state record for a release that has just been pushed."""
+    prepared = approved_root / decision_id
+    approval_meta = json.loads((prepared / "approval.json").read_text(encoding="utf-8"))
+    build = builds_root / (f'{approval_meta["decision_id"]}-{approval_meta["nonce"]}')
+    approval = json.loads((build / "release.json").read_text(encoding="utf-8"))
+    result = {"status": "published", "decision_id": decision_id, "decision_sha256": approval["decision_sha256"],
+              "nonce": approval["nonce"], "generation": approval["generation"], "origin": approval["origin"],
+              "commit": approval["commit"], "tree": approval["tree"], "bundle_sha256": approval["bundle_sha256"],
+              "artifacts": approval["artifacts"]}
+    if "parent_commit" in approval:
+        result["parent_commit"] = approval["parent_commit"]
+    return result
+
+
 def process_records(decisions, worker, write_state) -> None:
     for decision in decisions:
         decision_id=decision["decision_id"]
@@ -203,6 +251,31 @@ def ingest_activation_outcomes(outcomes: Path, state_root: Path, quarantine_dir:
             _write_isolation(Path(quarantine_dir), path.name, type(exc).__name__)
 
 
+def run_sync_release(modules, publisher, decisions, approved, builds, state_root, queue, write_state) -> None:
+    """After the decisions: publish removals from wiki/ that origin already holds.
+
+    Reviewed decisions come first (this waits while any is not yet published), and a
+    failure here is logged and never touches the decisions' own publishing.
+    """
+    try:
+        for decision in decisions:
+            try:
+                status=json.loads((state_root/(decision["decision_id"]+".json")).read_text(encoding="utf-8")).get("status")
+            except (OSError,ValueError):
+                status=None
+            if status not in {"published","activated"}:
+                return
+        def authorize():
+            with modules["web.review"].queue_lock(queue,read_only=True):
+                return queue_snapshot(queue)
+        outcome=process_sync(publisher,approved,builds,authorize)
+        if outcome is not None and outcome[1]=="pushed":
+            write_state(outcome[0],published_result(approved,builds,outcome[0]))
+    except (Exception,SystemExit) as exc:
+        traceback.print_exc(file=sys.stderr)
+        print(f"DEK sync release failed error_type={type(exc).__name__}",file=sys.stderr)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--installed-root", type=Path, default=Path("/opt/dek-publisher/app"))
@@ -246,18 +319,10 @@ def main(argv=None):
             except (OSError,ValueError,KeyError):
                 pass
         if status=="pushed":
-            prepared=approved/decision["decision_id"]
-            approval_meta=json.loads((prepared/"approval.json").read_text(encoding="utf-8"))
-            build=builds/(f'{approval_meta["decision_id"]}-{approval_meta["nonce"]}')
-            approval=json.loads((build/"release.json").read_text(encoding="utf-8"))
-            result={"status":"published","decision_id":decision["decision_id"],"decision_sha256":approval["decision_sha256"],
-                    "nonce":approval["nonce"],"generation":approval["generation"],"origin":approval["origin"],
-                    "commit":approval["commit"],"tree":approval["tree"],"bundle_sha256":approval["bundle_sha256"],
-                    "artifacts":approval["artifacts"]}
-            if "parent_commit" in approval: result["parent_commit"]=approval["parent_commit"]
-            return result
+            return published_result(approved,builds,decision["decision_id"])
         return status
     process_records(valid,worker,write_state)
+    run_sync_release(modules, publisher, valid, approved, builds, state_root, queue, write_state)
     outcomes=Path("/var/lib/dek-activate/outcomes")
     if outcomes.exists():
         ingest_activation_outcomes(outcomes, state_root, state_root/"outcome-quarantine", write_state)
