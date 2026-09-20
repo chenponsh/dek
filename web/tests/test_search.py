@@ -58,6 +58,32 @@ class FuzzySearchTests(unittest.TestCase):
         self.assertEqual(self.run_javascript(f"s.countUndated({documents}, 'wiki')"), 3)
         self.assertEqual(self.run_javascript(f"s.countUndated({documents}, 'source')"), 1)
 
+    def test_page_window_matches_the_review_list_for_every_page_count(self):
+        from web.review import _page_window
+        for pages in range(1, 16):
+            expected = {page: _page_window(page, pages) for page in range(1, pages + 1)}
+            got = self.run_javascript(f"Object.fromEntries(Array.from({{length:{pages}}},(_,i)=>[i+1,s.pageWindow(i+1,{pages})]))")
+            self.assertEqual({int(k): v for k, v in got.items()}, expected, pages)
+
+    def test_pager_markup_is_the_review_lists_pager(self):
+        html = self.run_javascript("s.pagerHtml(5, 12)")
+        self.assertEqual(html, '<nav class="pager" aria-label="分页"><a href="#" data-page="4">上一页</a><a href="#" data-page="1">1</a>'
+                               '<span class="gap">…</span><a href="#" data-page="4">4</a><span class="current" aria-current="page">5</span>'
+                               '<a href="#" data-page="6">6</a><span class="gap">…</span><a href="#" data-page="12">12</a>'
+                               '<a href="#" data-page="6">下一页</a><span class="page-info">第 5/12 页</span></nav>')
+        first = self.run_javascript("s.pagerHtml(1, 1)")
+        self.assertIn('<span class="disabled">上一页</span>', first)
+        self.assertIn('<span class="disabled">下一页</span>', first)
+
+    def test_page_size_defaults_to_15_and_is_held_to_5_through_100(self):
+        self.assertEqual(self.run_javascript("s.PAGE_SIZE"), 15)
+        for value, expected in (("", 15), ("abc", 15), ("3", 5), ("5", 5), ("40", 40), ("100", 100), ("999", 100), (" 20 ", 20)):
+            with self.subTest(value=value):
+                self.assertEqual(self.run_javascript(f"s.clampPageSize({json.dumps(value)})"), expected)
+        box = self.run_javascript("s.pageSizeHtml(15)")
+        self.assertIn('<form class="page-size">每页<input type="number" name="page_size" min="5" max="100" step="1" value="15"', box)
+        self.assertTrue(box.endswith("条</form>"))
+
     def test_result_url_resolves_from_site_root_not_assets_directory(self):
         url = self.run_javascript("s.resultUrl({url:'wiki/中文.html'}, 'https://regkb.chenponai.com/kb/assets/search-index.json')")
         self.assertEqual(url, "https://regkb.chenponai.com/kb/wiki/%E4%B8%AD%E6%96%87.html")

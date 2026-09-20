@@ -349,17 +349,53 @@
     // The 无日期 tab lists the documents that carry no date; every other choice is a date range.
     let undatedOnly = false;
 
-    function renderRecentList(docs) {
-      if (!docs.length) {
+    // The list shows one page of `listDocs` at a time; choosing a filter starts again at page 1.
+    const footer = document.querySelector("#recent-footer");
+    let listDocs = [];
+    let page = 1;
+    let pageSize = DEKSearch.PAGE_SIZE;
+
+    function renderPage() {
+      const pages = Math.max(1, Math.ceil(listDocs.length / pageSize));
+      page = Math.min(Math.max(1, page), pages);
+      if (!listDocs.length) {
         recentList.innerHTML = `<div class="muted">${undatedOnly ? "没有无日期的内容" : "该时间段内没有内容"}</div>`;
+        if (footer) footer.hidden = true;
         return;
       }
-      recentList.innerHTML = docs.map(doc => {
+      recentList.innerHTML = listDocs.slice((page - 1) * pageSize, page * pageSize).map(doc => {
         const href = DEKSearch.resultUrl(doc, indexUrl);
-        const dateLabel = doc.date ? `发布于 ${doc.date}` : "无日期";
-        return `<a class="recent-item" href="${href}"><span class="recent-date">${escapeHtml(dateLabel)}</span><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.kind.toUpperCase())} · ${escapeHtml(doc.path)}</small></a>`;
+        const location = `${doc.kind.toUpperCase()} · ${doc.path}`;
+        return `<a class="recent-item" href="${href}"><span class="recent-date">${escapeHtml(doc.date || "")}</span><strong>${escapeHtml(doc.title)}</strong><small title="${escapeHtml(location)}">${escapeHtml(location)}</small></a>`;
       }).join("");
+      if (footer) {
+        footer.innerHTML = DEKSearch.pagerHtml(page, pages) + DEKSearch.pageSizeHtml(pageSize);
+        footer.hidden = false;
+      }
     }
+
+    function renderRecentList(docs) {
+      listDocs = docs;
+      page = 1;
+      renderPage();
+    }
+
+    footer?.addEventListener("click", event => {
+      const link = event.target.closest("a[data-page]");
+      if (!link) return;
+      event.preventDefault();
+      page = Number(link.dataset.page);
+      renderPage();
+      const table = document.querySelector(".recent-table");
+      if (table && table.getBoundingClientRect().top < 0) table.scrollIntoView({ block: "start" });
+    });
+    footer?.addEventListener("change", event => {
+      if (event.target.name !== "page_size") return;
+      pageSize = DEKSearch.clampPageSize(event.target.value);
+      page = 1;
+      renderPage();
+    });
+    footer?.addEventListener("submit", event => event.preventDefault());
 
     const customButton = document.querySelector("#recent-custom");
     const rangeBox = document.querySelector("#recent-range");

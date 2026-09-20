@@ -450,12 +450,25 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn("正在加载信息速览…", homepage)
         self.assertIn("信息速览加载失败", script)
 
-    def test_dates_are_labelled_as_publication_dates(self):
+    def test_list_rows_show_only_the_date_and_leave_it_blank_when_there_is_none(self):
         build_site(self.vault, self.out)
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
-        self.assertIn("发布于 ${doc.date}", script)
-        self.assertIn('"无日期"', script)
-        self.assertNotIn("日期待确认", script)
+        self.assertIn('escapeHtml(doc.date || "")', script)
+        self.assertNotIn("发布于", script)
+        self.assertNotIn('"无日期"', script)          # no placeholder text in the date column
+
+    def test_the_list_has_a_header_row_and_a_pager_footer(self):
+        build_site(self.vault, self.out)
+        homepage = self.home_markup()
+        self.assertIn('<div class="recent-head"><span>日期</span><span>内容</span><span>路径</span></div>', homepage)
+        self.assertLess(homepage.index('class="recent-head"'), homepage.index('id="recent-list"'))
+        self.assertLess(homepage.index('id="recent-list"'), homepage.index('id="recent-footer"'))
+        style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        # header and rows share one grid, so the three columns line up; the path column reads left to right
+        self.assertIn(".recent-head,.recent-item{display:grid;grid-template-columns:7.5rem minmax(0,1fr) minmax(10rem,32%)", style)
+        self.assertIn("text-align:left;overflow:hidden;text-overflow:ellipsis", style)
+        for shared in (".pager a,.pager .current,.pager .disabled{", ".page-size input[type=number]{", ".list-footer{"):
+            self.assertIn(shared, style)
 
     def test_homepage_recent_results_are_the_last_section_but_filters_stay_up_top(self):
         build_site(self.vault, self.out)

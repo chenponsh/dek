@@ -251,8 +251,54 @@
       + '</div>'
       + '<p class="recent-summary" id="recent-summary" aria-live="polite"></p>'
       + '</section>';
-    const recent = `<section class="recent-section"><div id="recent-list" class="recent-list" data-index="${escapeText(indexPath)}">正在加载信息速览…</div></section>`;
+    const recent = '<section class="recent-section"><div class="recent-table">'
+      + '<div class="recent-head"><span>日期</span><span>内容</span><span>路径</span></div>'
+      + `<div id="recent-list" class="recent-list" data-index="${escapeText(indexPath)}">正在加载信息速览…</div></div>`
+      + '<div class="list-footer" id="recent-footer" hidden></div></section>';
     return filters + sections + recent;
+  }
+
+  // ---- Paging (the same pager and page-size box the review list uses) --------
+  const PAGE_SIZE = 15;
+  const MIN_PAGE_SIZE = 5;
+  const MAX_PAGE_SIZE = 100;
+
+  // An empty or unreadable box means the default; anything else is held to 5-100.
+  function clampPageSize(value) {
+    const parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) ? Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, parsed)) : PAGE_SIZE;
+  }
+
+  // Page numbers to show: all of them up to 7 pages, else the first, last and the
+  // current one with its neighbours, `null` marking a gap.
+  function pageWindow(page, pages) {
+    if (pages <= 7) return Array.from({ length: pages }, (_, index) => index + 1);
+    const shown = [...new Set([1, pages, page - 1, page, page + 1])].filter(n => n >= 1 && n <= pages).sort((a, b) => a - b);
+    const window = [];
+    let previous = 0;
+    for (const number of shown) {
+      if (number - previous > 1) window.push(null);
+      window.push(number);
+      previous = number;
+    }
+    return window;
+  }
+
+  function pagerHtml(page, pages) {
+    const link = (number, label) => `<a href="#" data-page="${number}">${label}</a>`;
+    const parts = [page > 1 ? link(page - 1, "上一页") : '<span class="disabled">上一页</span>'];
+    for (const number of pageWindow(page, pages)) {
+      if (number === null) parts.push('<span class="gap">…</span>');
+      else if (number === page) parts.push(`<span class="current" aria-current="page">${number}</span>`);
+      else parts.push(link(number, number));
+    }
+    parts.push(page < pages ? link(page + 1, "下一页") : '<span class="disabled">下一页</span>');
+    parts.push(`<span class="page-info">第 ${page}/${pages} 页</span>`);
+    return `<nav class="pager" aria-label="分页">${parts.join("")}</nav>`;
+  }
+
+  function pageSizeHtml(size) {
+    return `<form class="page-size">每页<input type="number" name="page_size" min="${MIN_PAGE_SIZE}" max="${MAX_PAGE_SIZE}" step="1" value="${size}" inputmode="numeric" aria-label="每页条数">条</form>`;
   }
 
   // Documents with no date at all (directory pages, notes that carry no date), by path.
@@ -270,5 +316,5 @@
     return count;
   }
 
-  return { normalize, scoreDocument, searchDocuments, resultSnippet, highlight, homeHtml, undatedDocuments, countUndated, resultUrl, recentDocuments, recentDocumentsInRange, countInRange };
+  return { normalize, scoreDocument, searchDocuments, resultSnippet, highlight, homeHtml, undatedDocuments, countUndated, PAGE_SIZE, clampPageSize, pageWindow, pagerHtml, pageSizeHtml, resultUrl, recentDocuments, recentDocumentsInRange, countInRange };
 });
