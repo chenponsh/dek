@@ -191,3 +191,12 @@ class PageScriptTests(unittest.TestCase):
         self.assertIn('<main class="document home-page">', html)
         self.assertIn('<article><div id="home-app"></div></article>', html)
         self.assertNotIn("note-properties", html)
+
+    def test_only_the_home_page_goes_without_a_kind_chip(self):
+        home = self.render({**self.BASE, "kind": "home", "title": "DEK 知识库", "crumbs": [{"text": "首页"}]})
+        self.assertNotIn("HOME", home)
+        self.assertNotIn('class="kind"', home)
+        self.assertIn('<div class="breadcrumbs">首页</div><h1>DEK 知识库</h1>', home)
+        for kind in ("wiki", "source"):
+            with self.subTest(kind=kind):
+                self.assertIn(f'<span class="kind">{kind.upper()}</span>', self.render({**self.BASE, "kind": kind}))
