@@ -204,6 +204,15 @@ def _item_title(item) -> str:
     return _question_text(item) or item.title
 
 
+def _reviewer_cell(item) -> str:
+    """Two lines: who decided, and when. Nothing decided yet: a single dash."""
+    when = _display_time(item.decided_at)
+    if not item.reviewer and not when:
+        return "—"
+    line = f'<div class="reviewer-name">{html.escape(item.reviewer or "—")}</div>'
+    return line + (f'<div class="meta reviewer-time">{html.escape(when)}</div>' if when else "")
+
+
 def _content_cell(item, href: str) -> str:
     """The list's content cell, three lines: the question (the link into the item), the
     date, and the draft's file name as a note. Each line wraps when it is long, so nothing is cut off."""
@@ -733,8 +742,9 @@ STYLE = """<style>
 .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
 .table-wrap table{display:table;width:100%;min-width:600px}   /* a narrow screen scrolls the table sideways instead of crushing its columns */
 .col-index{width:60px}
-.col-status{width:7.5rem}.col-reviewer{width:6rem}.col-time{width:9.5rem}
-.table-wrap th,.table-wrap td.status,.table-wrap td.reviewer,.table-wrap td.time{white-space:normal;overflow-wrap:anywhere}
+.col-status{width:7.5rem}.col-reviewer{width:9.5rem}
+.table-wrap th,.table-wrap td.status,.table-wrap td.reviewer{white-space:normal;overflow-wrap:anywhere}
+.reviewer-time{font-size:.85em;margin-top:.15rem}
 th.index,td.index{width:60px;min-width:60px;text-align:center}
 .table-wrap td.content{max-width:0;min-width:240px}
 .content-meta,.content-title{white-space:normal;overflow-wrap:anywhere}.content-title{display:block}
@@ -926,7 +936,7 @@ class ReviewService:
             chips = f'<div class="path-suggestions">系统建议：{buttons}</div>'
         return f"""<article><h2>{html.escape(heading)}</h2><pre>{html.escape(rough_display(rough.content, suggested))}</pre>
 <form method="post" action="{self.path_prefix}/decision{html.escape(action_query)}"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
-<label>Wiki 路径（可搜索，按文件夹名过滤，选中后按需修改末尾编号）<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<label>候选 Wiki Markdown（已预填草稿，可修改，批准发布时提交）<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><div class="decision-actions"><button type="submit" name="action" value="approve">批准</button><button type="submit" name="action" value="reject" class="action-reject">拒绝</button></div></form></article>"""
+<label>Wiki 路径<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<label>候选 Wiki Markdown<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><div class="decision-actions"><button type="submit" name="action" value="approve">批准</button><button type="submit" name="action" value="reject" class="action-reject">拒绝</button></div></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()
@@ -974,14 +984,13 @@ class ReviewService:
             f'<td class="status status-{item.status}">'
             + ('<span class="status-dot" aria-hidden="true"></span>' if item.status == "pending" else '')
             + f'{html.escape(item.status_label)}</td>'
-            f'<td class="reviewer">{html.escape(item.reviewer or "—")}</td>'
-            f'<td class="meta time">{html.escape(_display_time(item.decided_at) or "—")}</td>'
+            f'<td class="reviewer">{_reviewer_cell(item)}</td>'
             "</tr>"
             for number, item in enumerate(shown, start=first + 1)
         )
         table = (
-            '<div class="table-wrap"><table><colgroup><col class="col-index"><col class="col-task"><col class="col-status"><col class="col-reviewer"><col class="col-time"></colgroup><thead><tr><th class="index">序号</th><th>内容</th><th>状态</th><th>审核人</th><th>处理时间</th></tr></thead><tbody>'
-            + (rows or '<tr><td colspan="5">没有符合条件的条目。</td></tr>')
+            '<div class="table-wrap"><table><colgroup><col class="col-index"><col class="col-task"><col class="col-status"><col class="col-reviewer"></colgroup><thead><tr><th class="index">序号</th><th>内容</th><th>状态</th><th>审核人</th></tr></thead><tbody>'
+            + (rows or '<tr><td colspan="4">没有符合条件的条目。</td></tr>')
             + "</tbody></table></div>"
         )
         def page_href(number: int) -> str:

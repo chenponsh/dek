@@ -455,16 +455,17 @@ class ReviewWorkflowTests(unittest.TestCase):
         # referenced via var(...) rather than a second hardcoded palette.
         self.assertIn('.content{margin-left:var(--sidebar-w)}', page)
         self.assertIn('background:var(--accent);color:#fff', page)
-        self.assertIn('<colgroup><col class="col-index"><col class="col-task"><col class="col-status"><col class="col-reviewer"><col class="col-time"></colgroup>', page)
-        self.assertIn('<thead><tr><th class="index">序号</th><th>内容</th><th>状态</th><th>审核人</th><th>处理时间</th></tr></thead>', page)
+        self.assertIn('<colgroup><col class="col-index"><col class="col-task"><col class="col-status"><col class="col-reviewer"></colgroup>', page)
+        self.assertIn('<thead><tr><th class="index">序号</th><th>内容</th><th>状态</th><th>审核人</th></tr></thead>', page)
         self.assertNotIn("<th>待办</th>", page)
         self.assertIn(".col-index{width:60px}", page)
         # Index, status, reviewer and time columns fit their content on one line;
         # the 内容 column takes whatever is left.
-        # 状态 / 审核人 / 处理时间 have room for their usual text and wrap when squeezed, so nothing spills into the next column
-        self.assertIn(".col-status{width:7.5rem}.col-reviewer{width:6rem}.col-time{width:9.5rem}", page)
-        self.assertIn(".table-wrap th,.table-wrap td.status,.table-wrap td.reviewer,.table-wrap td.time{white-space:normal;overflow-wrap:anywhere}", page)
-        self.assertNotIn(".table-wrap td.time{white-space:nowrap}", page)
+        # 状态 / 审核人 have room for their usual text and wrap when squeezed, so nothing spills into the next column
+        self.assertIn(".col-status{width:7.5rem}.col-reviewer{width:9.5rem}", page)
+        self.assertIn(".table-wrap th,.table-wrap td.status,.table-wrap td.reviewer{white-space:normal;overflow-wrap:anywhere}", page)
+        self.assertNotIn("col-time", page)
+        self.assertNotIn("处理时间", page)                                   # the time now sits under the reviewer
         self.assertIn(".table-wrap table{display:table;width:100%;min-width:600px}", page)   # narrow screens scroll it sideways
         self.assertNotIn(".col-task{", page)
         # Below its minimum width the table scrolls instead of squeezing 内容 to nothing.
@@ -474,7 +475,24 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn('>去审核</a>', page)
         self.assertNotIn('>查看</a>', page)
         empty = self.service.render_list("opaque-session", status="approved").decode("utf-8")
-        self.assertIn('<td colspan="5">没有符合条件的条目。</td>', empty)
+        self.assertIn('<td colspan="4">没有符合条件的条目。</td>', empty)
+
+    def test_the_reviewer_column_shows_the_reviewer_then_the_time_on_a_second_line(self):
+        self.decide(action="reject")
+        page = self.service.render_list("opaque-session", status="rejected").decode("utf-8")
+        cell = self.cell_of_reviewer(page)
+        self.assertRegex(cell, r'^<div class="reviewer-name">彭文艳</div><div class="meta reviewer-time">\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?</div>$')
+        self.assertEqual(page.count("<th>"), 3)                            # 内容 / 状态 / 审核人 (序号 is <th class="index">)
+
+    def test_an_undecided_row_has_just_a_dash_in_the_reviewer_column(self):
+        page = self.service.render_list("opaque-session", status="pending").decode("utf-8")
+        cells = re.findall(r'<td class="reviewer">(.*?)</td>', page, re.S)
+        self.assertTrue(cells)
+        self.assertEqual(set(cells), {"—"})
+
+    @staticmethod
+    def cell_of_reviewer(page):
+        return re.search(r'<td class="reviewer">(.*?)</td>', page, re.S).group(1)
 
     def test_review_sidebar_has_no_browse_title_above_the_tree(self):
         # The sidebar is a single group, so a title only cost a line of height.
@@ -592,6 +610,13 @@ class ReviewWorkflowTests(unittest.TestCase):
         detail = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         self.assertIn('<main class="review-shell">', detail)
         self.assertNotIn("review-list", detail.split("</style>", 1)[1])   # the detail page markup is untouched
+
+    def test_the_form_labels_are_plain_without_the_long_hints(self):
+        page = self.item_page("Q")
+        self.assertIn("<label>Wiki 路径<div class=\"combo\">", page)
+        self.assertIn("<label>候选 Wiki Markdown<textarea name=\"candidate_markdown\"", page)
+        for hint in ("可搜索，按文件夹名过滤", "选中后按需修改末尾编号", "已预填草稿，可修改", "批准发布时提交"):
+            self.assertNotIn(hint, page)
 
     def test_item_header_shows_the_source_the_way_the_list_does(self):
         rough = ROUGH.replace('source: "[[source/example]]"', 'source: "[[source/CDE/CDE_共性问题-受理共性问题]]"')
