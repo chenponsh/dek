@@ -350,7 +350,7 @@ class SiteBuildTests(unittest.TestCase):
         build_site(self.vault, self.out)
         homepage = self.home_markup()
         script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
-        for marker in ("最近信息", "7天", "30天", "90天", "全部"):
+        for marker in ("信息速览", "7天", "30天", "90天", "全部"):
             self.assertIn(marker, homepage)
         self.assertIn("recentDocuments", script)
 
@@ -438,6 +438,15 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn('days === "undated"', script)
         self.assertIn("countUndated", script)                                      # cards count only the undated ones there
         self.assertIn("没有无日期的内容", script)
+
+    def test_the_home_section_is_called_信息速览(self):
+        build_site(self.vault, self.out)
+        homepage = self.home_markup()
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("<h2>信息速览</h2>", homepage)
+        self.assertNotIn("最近信息", homepage + script + (self.out / "assets" / "search.js").read_text(encoding="utf-8"))
+        self.assertIn("正在加载信息速览…", homepage)
+        self.assertIn("信息速览加载失败", script)
 
     def test_dates_are_labelled_as_publication_dates(self):
         build_site(self.vault, self.out)

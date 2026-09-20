@@ -236,7 +236,7 @@
       const title = HOME_SECTION_TITLES[root.path] || escapeText(root.name);
       return `<section class="home-section"><h2>${title}${countHtml(root.path, root.count, "section-count", true)}</h2><div class="folder-grid">${cards}</div><p class="section-empty" hidden>该时段内暂无新增内容</p></section>`;
     }).join("");
-    const filters = '<section class="recent-filters"><h2>最近信息</h2>'
+    const filters = '<section class="recent-filters"><h2>信息速览</h2>'
       + '<div class="recent-tabs" role="group" aria-label="按天数快速筛选">'
       + '<button type="button" class="recent-tab" data-days="7">7天</button>'
       + '<button type="button" class="recent-tab" data-days="30">30天</button>'
@@ -251,7 +251,7 @@
       + '</div>'
       + '<p class="recent-summary" id="recent-summary" aria-live="polite"></p>'
       + '</section>';
-    const recent = `<section class="recent-section"><div id="recent-list" class="recent-list" data-index="${escapeText(indexPath)}">正在加载最近信息…</div></section>`;
+    const recent = `<section class="recent-section"><div id="recent-list" class="recent-list" data-index="${escapeText(indexPath)}">正在加载信息速览…</div></section>`;
     return filters + sections + recent;
   }
 

@@ -433,11 +433,11 @@
     }
 
     function loadRecent() {
-      recentList.innerHTML = '<div class="muted">正在加载最近信息…</div>';
+      recentList.innerHTML = '<div class="muted">正在加载信息速览…</div>';
       loadSharedIndex(indexUrl)
         .then(data => { recentDocs = data; applyDays(0); })
         .catch(() => {
-          recentList.innerHTML = '<div class="muted">最近信息加载失败，<button type="button" id="recent-retry">点击重试</button></div>';
+          recentList.innerHTML = '<div class="muted">信息速览加载失败，<button type="button" id="recent-retry">点击重试</button></div>';
           document.querySelector("#recent-retry")?.addEventListener("click", loadRecent);
         });
     }
