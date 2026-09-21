@@ -70,7 +70,12 @@ def base_report(now: datetime, mode: str) -> dict[str, Any]:
     return report
 
 
-def rough_content(source_path: str, rows: list[Any], day: str) -> str:
+def row_source_url(row: Any) -> str:
+    """The official page a row came from: its own `url`, or its article's."""
+    return str(getattr(row, "url", "") or getattr(row, "article_url", "") or "")
+
+
+def rough_content(source_path: str, rows: list[Any], day: str, source_url: str = "") -> str:
     source_link = source_path.removesuffix(".md")
     published_date = max((str(row.date)[:10] for row in rows), default="")
     source_item_key = hashlib.sha256(
@@ -86,7 +91,8 @@ def rough_content(source_path: str, rows: list[Any], day: str) -> str:
         f"published_date: {published_date}\n"
         f"ingested_at: {day}\n"
         f'source: "[[{source_link}]]"\n'
-        "status: pending_review\n"
+        + (f'source_url: "{source_url}"\n' if source_url else "")
+        + "status: pending_review\n"
         f"source_item_key: sha256:{source_item_key}\n"
         "recommended_tags:\n"
         "wiki_target:\n"
@@ -148,7 +154,7 @@ def stage_source_rows(
         rough_path = ROOT / "ingestion" / "rough" / f"{prefix}{number}.md"
         if rough_path.exists():
             raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
-        writes[rough_path] = rough_content(source["path"], [row], day)
+        writes[rough_path] = rough_content(source["path"], [row], day, row_source_url(row))
         rough_relative = str(rough_path.relative_to(ROOT))
         result["rough_created"].append(rough_relative)
         result["rough_sources"][rough_relative] = source["path"]
@@ -179,7 +185,7 @@ def stage_new_notes(
             rough_path = ROOT / "ingestion" / "rough" / f"{prefix}{number}.md"
             if rough_path.exists():
                 raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
-            writes[rough_path] = rough_content(relative, [Row(question, answer, note.date)], day)
+            writes[rough_path] = rough_content(relative, [Row(question, answer, note.date)], day, note.source_url)
             rough_relative = str(rough_path.relative_to(ROOT))
             result["rough_created"].append(rough_relative)
             result["rough_sources"][rough_relative] = relative

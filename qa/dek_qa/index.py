@@ -165,6 +165,16 @@ def _source_catalog(source_root: Path) -> dict[str, dict[str, str]]:
     return catalog
 
 
+def _article_url(fields: dict[str, str]) -> str:
+    """The official page of this very question/article (`source_url` in the entry's own
+    frontmatter). Only a plain http(s) address without blanks is accepted."""
+    url = fields.get("source_url", "")
+    parsed = urlsplit(url)
+    if not url or len(url) > 2000 or any(char.isspace() for char in url) or parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return url
+
+
 def _source_evidence(
     text: str, fields: dict[str, str], catalog: dict[str, dict[str, str]]
 ) -> tuple[list[str], str, list[str], list[str]]:
@@ -218,12 +228,16 @@ def build_index(vault: Path, output: Path) -> dict[str, Any]:
         except ValueError:
             publication_date = ""
         source_urls, source_status, source_names, source_types = _source_evidence(body, fields, catalog)
+        article_url = _article_url(fields)
+        if article_url and source_status != "verified":
+            source_status = "verified"        # the entry names its own official page
         docs.append(
             {
                 "id": hashlib.sha256(relative.encode()).hexdigest()[:24],
                 "path": relative,
                 "title": title,
                 "content": body.strip(),
+                "article_url": article_url,
                 "source_urls": source_urls,
                 "source_names": source_names,
                 "source_types": source_types,
@@ -280,6 +294,8 @@ class KnowledgeBase:
                 doc["source_urls"] = doc.pop("official_urls", [])
                 doc.setdefault("source_names", [])
                 doc.setdefault("source_types", [])
+        for doc in data["documents"]:
+            doc.setdefault("article_url", "")
         self._documents = {doc["id"]: doc for doc in data["documents"]}
 
     def dek_kb_search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
@@ -323,6 +339,7 @@ class KnowledgeBase:
                 "id": doc["id"],
                 "title": doc["title"],
                 "path": doc["path"],
+                "article_url": doc.get("article_url", ""),
                 "source_urls": doc["source_urls"],
                 "source_names": doc["source_names"],
                 "source_types": doc["source_types"],
@@ -366,6 +383,7 @@ class KnowledgeBase:
                 "path": doc["path"],
                 "publication_date": doc.get("publication_date"),
                 "updated_at": doc.get("updated_at"),
+                "article_url": doc.get("article_url", ""),
                 "source_urls": list(doc.get("source_urls") or []),
                 "source_names": list(doc.get("source_names") or []),
                 "source_types": list(doc.get("source_types") or []),

@@ -95,7 +95,7 @@ def fetch_jiangsu(
         if not answer:
             skipped.append({"url": item.url, "reason": "article body is empty (image or attachment only)"})
             continue
-        rows.append(Row(title, answer, date))
+        rows.append(Row(title, answer, date, url=item.url))
     meta: dict[str, Any] = {"remote_count": len(listing), "latest_date": max((i.date for i in listing), default=None)}
     if skipped:
         meta["skipped_items"] = skipped
@@ -354,7 +354,7 @@ def fetch_beijing(
                 filtered += 1
                 continue
             if (normalize(question), item.date) not in known:
-                rows.append(Row(question, answer, item.date))
+                rows.append(Row(question, answer, item.date, url=detail.format(id=item.url)))
         if items[-1].date <= since:
             break
         page_no += 1
@@ -718,7 +718,7 @@ def fetch_jspcc(
                 filtered += 1
                 continue
             if (normalize(question), date) not in known:
-                rows.append(Row(question, answer, date))
+                rows.append(Row(question, answer, date, url=item.url))
         if items[-1].date <= since:
             break
         page_no += 1

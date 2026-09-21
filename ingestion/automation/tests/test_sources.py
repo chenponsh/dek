@@ -523,6 +523,69 @@ class PdfTextTests(unittest.TestCase):
         self.assertEqual(sources.pdf_text(buffer.getvalue()), "")
 
 
+class SourceUrlTests(unittest.TestCase):
+    """Every draft records the official page of its own question when the source has one."""
+
+    def test_jiangsu_rows_carry_the_article_address(self):
+        listing, article = fixture("jiangsu_list_91813.html"), fixture("jiangsu_article.html")
+        rows, _ = sources.fetch_jiangsu({"url": LIST_URL}, set(), "2026-02-28", get=lambda url: listing if url == LIST_URL else article)
+        self.assertTrue(rows)
+        self.assertTrue(all(row.url.startswith("https://da.jiangsu.gov.cn/art/") for row in rows))
+
+    def test_beijing_rows_carry_the_letter_page_address(self):
+        def letter(question, answer):
+            return f'<div class="sino-text-format">{question}</div><div class="sino-text-format">{answer}</div>'
+        listing = "{page: {pageNo:'1', totalCount:'1', totalPages:'1', pageSize:'20'}, result: [{originalId:'AH42', letterTitle:'咨询', finishDateReal:'2026-06-01'}]}"
+        page = letter("药品说明书变更需要备案吗", "网民您好！需要向北京市局备案，并提交相关资料。" * 12)
+        rows, _ = sources.fetch_beijing({"url": "https://yjj.beijing.gov.cn/a/b.html"}, set(), "2026-01-01",
+                                        get=lambda url: listing if "letterList" in url else page)
+        self.assertEqual(rows[0].url, "https://yjj.beijing.gov.cn/a/bjah-index-dept!detail.action?originalId=AH42")
+
+    def test_a_row_url_is_not_part_of_its_identity(self):
+        self.assertEqual(Row("q", "a", "2026-03-01", url="https://x/1"), Row("q", "a", "2026-03-01"))
+        self.assertEqual(Row("q", "a", "2026-03-01", url="https://x/1").key, Row("q", "a", "2026-03-01").key)
+
+    def test_article_rows_still_take_title_and_url_positionally(self):
+        row = sources.ArticleRow("问", "答", "2026-03-01", "文章标题", "https://x/article")
+        self.assertEqual((row.article_title, row.article_url, row.url), ("文章标题", "https://x/article", ""))
+
+    def test_the_draft_gets_a_source_url_line_only_when_there_is_one(self):
+        with_url = cli.rough_content("source/a", [Row("问", "答", "2026-03-01")], "2026-09-21", "https://x/1")
+        without = cli.rough_content("source/a", [Row("问", "答", "2026-03-01")], "2026-09-21")
+        self.assertIn('source_url: "https://x/1"\n', with_url)
+        self.assertNotIn("source_url", without)
+        self.assertLess(with_url.index("source_url"), with_url.index("status: pending_review"))
+
+    def test_staged_drafts_carry_the_row_or_article_address(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "source").mkdir()
+            (root / "ingestion" / "rough").mkdir(parents=True)
+            (root / "source" / "a.md").write_text(TableSourceStagingTests.NOTE, encoding="utf-8")
+            (root / "source" / "b.md").write_text(TableSourceStagingTests.NOTE.replace("## 内容\n", "## 内容\n"), encoding="utf-8")
+            with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value={}):
+                for name, layout, row in (("a", "table", Row("行问题", "答", "2026-05-29", url="https://x/row")),
+                                          ("b", "articles", sources.ArticleRow("文章问题", "答", "2026-05-29", "文章", "https://x/art"))):
+                    config = {"table_sources": [{"path": f"source/{name}.md", "fetcher": "fake", "layout": layout, "auto_classified": True, "auto_ingest": True}]}
+                    with patch.dict(cli.FETCHERS, {"fake": lambda s_, k, since, row=row: ([row], {})}):
+                        result = cli.base_report(datetime(2026, 9, 21, tzinfo=timezone.utc), "dry-run")
+                        writes = {}
+                        cli.stage_table_sources(config, result, writes, datetime(2026, 9, 21, tzinfo=timezone.utc))
+                    draft = writes[root / result["rough_created"][0]]
+                    self.assertIn(f'source_url: "{"https://x/row" if name == "a" else "https://x/art"}"', draft)
+
+    def test_per_article_notes_pass_their_page_address_to_the_draft(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "ingestion" / "rough").mkdir(parents=True)
+            with patch.object(cli, "ROOT", root):
+                result = {"report": {}, "auto_write_paths": [], "rough_created": [], "rough_sources": {}}
+                writes = {}
+                note = sources.NewNote("2026-06-01_a.md", "a", "2026-06-01", "https://www.chp.org.cn/#/newsDetail?id=1", "", "正文")
+                cli.stage_new_notes(result, writes, [note], "source/CPC/专栏", "source/CPC/专栏.md", datetime(2026, 9, 21, tzinfo=timezone.utc))
+                self.assertIn('source_url: "https://www.chp.org.cn/#/newsDetail?id=1"', writes[root / result["rough_created"][0]])
+
+
 class TableSourceStagingTests(unittest.TestCase):
     NOTE = (
         "---\nentity: x\nlast_updated: 2026-02-28\n---\n\n## 内容\n\n"

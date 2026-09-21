@@ -1192,6 +1192,19 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("解答正文：含管道符 | 与换行\n第二段", draft)
         self.assertNotIn("<br>", draft)
 
+    def test_candidate_draft_keeps_a_valid_official_page_address(self):
+        rough = VERIFY_ROUGH.replace('status: pending_review', 'source_url: "https://official.example/a/1.html"\nstatus: pending_review', 1)
+        draft = candidate_draft(rough, "wiki/01_注册申报/0102_注册分类/0102-0001.md")
+        self.assertIn('source_url: "https://official.example/a/1.html"\n', draft)
+        self.assertLess(draft.index("source:"), draft.index("source_url:"))
+        self.assertLess(draft.index("source_url:"), draft.index("tag_pages:"))
+
+    def test_candidate_draft_drops_an_unusable_address_and_adds_none_when_absent(self):
+        self.assertNotIn("source_url", candidate_draft(VERIFY_ROUGH, "wiki/01_注册申报/0102_注册分类/0102-0001.md"))
+        for value in ("javascript:alert(1)", "ftp://x.example/a", "not a url", "https://a.example/has space"):
+            rough = VERIFY_ROUGH.replace('status: pending_review', f'source_url: "{value}"\nstatus: pending_review', 1)
+            self.assertNotIn("source_url", candidate_draft(rough, "wiki/01_注册申报/0102_注册分类/0102-0001.md"), value)
+
     def test_default_wiki_path_rejects_absent_or_unsafe_targets(self):
         self.assertEqual(default_wiki_path('"[[wiki/01_Test/01-0001]]"'), "wiki/01_Test/01-0001.md")
         self.assertEqual(default_wiki_path(""), "")

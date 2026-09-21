@@ -65,6 +65,49 @@ class DekQaTests(unittest.TestCase):
         self.assertNotIn("来源全文", json.dumps(data, ensure_ascii=False))
         self.assertNotIn("excluded.example", json.dumps(data))
 
+    def _add_entry(self, name, frontmatter, body="答案正文。"):
+        path = self.root / "wiki" / "01_注册" / name
+        path.write_text(f"---\n{frontmatter}\n---\n\n{body}", encoding="utf-8")
+        build_index(self.root, self.index)
+        self.kb = KnowledgeBase(self.index)
+        return next(d for d in json.loads(self.index.read_text(encoding="utf-8"))["documents"] if d["path"].endswith(name))
+
+    def test_an_entry_with_its_own_source_url_exposes_it_as_article_url_everywhere(self):
+        doc = self._add_entry("0101-0002.md", "date: 2026-09-06\nquestion: 具体问题？\nsource_url: https://official.example/a/123.html")
+        self.assertEqual(doc["article_url"], "https://official.example/a/123.html")
+        self.assertEqual(doc["source_status"], "verified")
+        hit = next(x for x in self.kb.dek_kb_search("具体问题") if x["id"] == doc["id"])
+        self.assertEqual(hit["article_url"], "https://official.example/a/123.html")
+        self.assertEqual(self.kb.dek_kb_get(doc["id"])["article_url"], "https://official.example/a/123.html")
+        recent = self.kb.dek_kb_recent(days=30, as_of="2026-09-20")
+        item = next(x for x in recent["recent_publications"] if x["id"] == doc["id"])
+        self.assertEqual(item["article_url"], "https://official.example/a/123.html")
+
+    def test_an_entry_without_source_url_keeps_an_empty_article_url_and_its_column_link(self):
+        doc = next(d for d in json.loads(self.index.read_text(encoding="utf-8"))["documents"] if d["path"].endswith("0101-0001.md"))
+        self.assertEqual(doc["article_url"], "")
+        self.assertEqual(doc["source_urls"], ["https://official.example/notice"])
+
+    def test_an_unusable_source_url_is_ignored(self):
+        for value in ("javascript:alert(1)", "ftp://x.example/a", "https://a.example/has space", "not a url", "https://"):
+            doc = self._add_entry("0101-0003.md", f"date: 2026-09-07\nquestion: 坏链接？\nsource_url: {value}")
+            self.assertEqual(doc["article_url"], "", value)
+
+    def test_old_indexes_without_article_url_still_load(self):
+        data = json.loads(self.index.read_text(encoding="utf-8"))
+        for document in data["documents"]:
+            document.pop("article_url", None)
+        self.index.write_text(json.dumps(data), encoding="utf-8")
+        kb = KnowledgeBase(self.index)
+        self.assertEqual(kb.dek_kb_search("药品注册")[0]["article_url"], "")
+
+    def test_the_bot_rules_ask_for_one_link_per_question_not_a_summary_block(self):
+        soul = (Path(__file__).resolve().parents[1] / "config" / "SOUL.md").read_text(encoding="utf-8")
+        self.assertIn("article_url", soul)
+        self.assertIn("紧跟它自己的来源链接", soul)
+        self.assertIn("不得把多个条目合并成末尾一个“信息出处”区", soul)
+        self.assertIn("不显示内部 `wiki/...` 路径", soul)
+
     def test_live_mcp_load_emits_proof_for_exact_loaded_bytes(self):
         proof_path = self.root / "run" / "generation.json"
         kb, loaded = load_knowledge_base(self.index, proof_path, boot_nonce="boot-1", release_sha256="f" * 64, pid=4321)
@@ -650,15 +693,15 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("查看 `knowledge_base_updates`，按正式 wiki 的 Git 更新时间回答", prompt)
         self.assertIn("逐字使用工具返回的 `title`", prompt)
         self.assertIn("不得改写、润色、补充或删减标题", prompt)
-        self.assertIn("每个列出的条目都必须按该条目的来源证据处理", prompt)
-        self.assertIn("展示工具返回的来源名称（若有）和至少一个公开来源链接", prompt)
-        self.assertIn("只有工具结果为 `source_status=verified` 且 `source_urls` 非空时", prompt)
-        self.assertIn("多个条目共享同一已确认来源", prompt)
-        self.assertIn("明确说明适用于哪些条目或全部条目", prompt)
+        self.assertIn("每个列出的条目都必须按该条目自己的来源证据处理", prompt)
+        self.assertIn("并在有 `source_names` 时展示来源名称", prompt)
+        self.assertIn("`source_urls` 非空且 `source_status=verified` 时", prompt)
+        self.assertIn("不得把多个条目合并成末尾一个“信息出处”区", prompt)
+        self.assertIn("article_url", prompt)
         self.assertIn("来源链接尚未确认", prompt)
         self.assertIn("未提供来源链接", prompt)
-        self.assertIn("两者均不得补造链接", prompt)
-        self.assertIn("即使只报告数量和标题，也必须提供上述来源证据", prompt)
+        self.assertIn("不得补造链接", prompt)
+        self.assertIn("即使只报告数量和标题，也必须给出每条自己的来源证据", prompt)
         self.assertIn("数量为 0 必须明确回答 0", prompt)
         self.assertIn("调用失败或结果不可解析属于查询失败，不得表述为 0", prompt)
         self.assertIn("即使用户明确要求内部追溯信息，也不显示内部路径", prompt)

@@ -8,7 +8,7 @@ import re
 import subprocess
 import tempfile
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,6 +23,9 @@ class Row:
     question: str
     answer: str
     date: str
+    # The official page this row was read from, when the source has one per row/article.
+    # Not part of a row's identity: two reads of the same row compare equal.
+    url: str = field(default="", compare=False, kw_only=True)
 
     @property
     def key(self) -> tuple[str, str]:

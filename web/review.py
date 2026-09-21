@@ -376,6 +376,9 @@ def candidate_draft(content: str, wiki_path: str) -> str:
         lines.append("source: %s" % _yaml_scalar(source))
     else:
         lines.append("source:")
+    source_url = str(meta.get("source_url") or "").strip()
+    if re.fullmatch(r"https?://[^\s\"]+", source_url):
+        lines.append('source_url: "%s"' % source_url)      # the official page of this very question
     lines.append("tag_pages:")
     lines.extend("  - %s" % page if page.startswith('"') else "  - %s" % _yaml_scalar(page) for page in tag_pages)
     lines.append("tags:")
