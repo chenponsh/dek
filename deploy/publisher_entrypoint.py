@@ -166,9 +166,24 @@ def published_result(approved_root: Path, builds_root: Path, decision_id: str) -
     return result
 
 
-def process_records(decisions, worker, write_state) -> None:
+# Failures that a retry cannot fix: the approval names a draft that is no longer in origin, or a
+# wiki path that now holds different content. Anything else (network, a busy build) stays retryable.
+PERMANENT_FAILURES = (
+    "rough source is unreadable",
+    "wiki_path already published with different content",
+    "review snapshot is not part of the published history",
+)
+
+
+def process_records(decisions, worker, write_state, read_state=None) -> None:
     for decision in decisions:
         decision_id=decision["decision_id"]
+        if read_state is not None:
+            previous=read_state(decision_id)
+            if previous.get("status")=="failed" and previous.get("retryable") is False:
+                print(f"DEK publish skipped decision={decision_id}: cannot be retried ({previous.get('last_error','')[:160]}); "
+                      f"delete its state file to try again",file=sys.stderr)
+                continue
         try:
             status=worker(decision)
             if status=="pushed": write_state(decision_id,{"status":"published","decision_id":decision_id})
@@ -179,7 +194,9 @@ def process_records(decisions, worker, write_state) -> None:
             # actual cause (a permission bug) behind an apparently-successful
             # oneshot unit exit the first time this pipeline ran for real.
             traceback.print_exc(file=sys.stderr)
-            write_state(decision_id,{"status":"failed","decision_id":decision_id,"error_type":type(exc).__name__,"retryable":True})
+            permanent=any(marker in str(exc) for marker in PERMANENT_FAILURES)
+            write_state(decision_id,{"status":"failed","decision_id":decision_id,"error_type":type(exc).__name__,
+                                     "retryable":not permanent,"last_error":str(exc)[-300:]})
 
 
 def load_approved_decisions(review_module, queue: Path, decision_key: bytes,
@@ -321,7 +338,13 @@ def main(argv=None):
         if status=="pushed":
             return published_result(approved,builds,decision["decision_id"])
         return status
-    process_records(valid,worker,write_state)
+    def read_state(decision_id):
+        try:
+            value=json.loads((state_root/(decision_id+".json")).read_text(encoding="utf-8"))
+            return value if isinstance(value,dict) else {}
+        except (OSError,ValueError):
+            return {}
+    process_records(valid,worker,write_state,read_state)
     run_sync_release(modules, publisher, valid, approved, builds, state_root, queue, write_state)
     outcomes=Path("/var/lib/dek-activate/outcomes")
     if outcomes.exists():

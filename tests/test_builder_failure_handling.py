@@ -117,3 +117,60 @@ class RetryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PublisherPermanentFailureTests(unittest.TestCase):
+    """An approval whose draft no longer exists is retried forever otherwise, with a traceback
+    on every publish that looks like a fresh failure."""
+
+    def setUp(self):
+        from deploy.publisher_entrypoint import process_records
+        self.process_records = process_records
+        self.states = {}
+        self.calls = []
+
+    def write(self, key, value):
+        self.states[key] = value
+
+    def read(self, key):
+        return self.states.get(key, {})
+
+    def run_once(self, error):
+        def worker(decision):
+            self.calls.append(decision["decision_id"])
+            raise error
+        import contextlib
+        import io
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            self.process_records([{"decision_id": "dead-decision-01"}], worker, self.write, self.read)
+        return err.getvalue()
+
+    def test_a_missing_draft_is_marked_not_retryable_and_then_skipped_with_one_line(self):
+        first = self.run_once(release_bundle.BundleError("rough source is unreadable"))
+        self.assertIn("Traceback", first)
+        self.assertIs(self.states["dead-decision-01"]["retryable"], False)
+        self.assertIn("rough source is unreadable", self.states["dead-decision-01"]["last_error"])
+        second = self.run_once(release_bundle.BundleError("rough source is unreadable"))
+        self.assertEqual(self.calls, ["dead-decision-01"])             # the worker was not called again
+        self.assertNotIn("Traceback", second)
+        self.assertIn("cannot be retried", second)
+
+    def test_a_transient_failure_stays_retryable_and_is_tried_again(self):
+        self.run_once(release_bundle.BundleError("fixed command failed"))
+        self.assertIs(self.states["dead-decision-01"]["retryable"], True)
+        self.run_once(release_bundle.BundleError("fixed command failed"))
+        self.assertEqual(len(self.calls), 2)
+
+    def test_deleting_the_state_allows_another_try(self):
+        self.run_once(release_bundle.BundleError("wiki_path already published with different content"))
+        self.states.clear()
+        self.run_once(release_bundle.BundleError("wiki_path already published with different content"))
+        self.assertEqual(len(self.calls), 2)
+
+    def test_without_a_state_reader_every_decision_is_still_tried(self):
+        calls = []
+
+        def worker(decision):
+            calls.append(decision["decision_id"])
+        self.process_records([{"decision_id": "a"}, {"decision_id": "b"}], worker, self.write)
+        self.assertEqual(calls, ["a", "b"])
