@@ -143,7 +143,7 @@ def process_packages(builder, approved: Path, builds: Path, failures: Path) -> N
                 build_atomically(builder, package, target)
                 _clear_failure(failures, package)
         except (Exception, SystemExit) as exc:
-            print(f"DEK build failed package={package.name}: {str(exc)[-1500:]}", file=sys.stderr)
+            print(f"DEK build failed package={package.name}: {type(exc).__name__}: {str(exc)[-1500:]}", file=sys.stderr)
             _record_failure(failures, package, exc)
 
 
