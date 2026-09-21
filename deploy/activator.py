@@ -20,7 +20,7 @@ from deploy.fsutil import atomic_write_json, fsync_dir
 
 ID = re.compile(r"[A-Za-z0-9_-]{2,160}")
 HEX = re.compile(r"[0-9a-f]{40,64}")
-STATIC_SUFFIXES = {".html", ".css", ".js", ".json", ".map", ".txt", ".xml", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2"}
+STATIC_SUFFIXES = {".html", ".css", ".js", ".json", ".map", ".txt", ".xml", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2", ".pdf"}
 
 
 class ActivationError(RuntimeError):

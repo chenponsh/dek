@@ -20,7 +20,7 @@ from deploy.fsutil import atomic_write_bytes
 
 class BundleError(RuntimeError): pass
 
-STATIC_SUFFIXES = {".html", ".css", ".js", ".json", ".map", ".txt", ".xml", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2"}
+STATIC_SUFFIXES = {".html", ".css", ".js", ".json", ".map", ".txt", ".xml", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2", ".pdf"}
 GIT = ("/usr/bin/git", "--no-pager", "-c", "core.hooksPath=/dev/null", "-c", "credential.helper=", "-c", "credential.interactive=never", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "diff.external=", "-c", "protocol.allow=never", "-c", "protocol.https.allow=always")
 APPROVAL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,79}$")
 GENERATION_PATTERN = re.compile(r"^[A-Za-z0-9_-]{17,159}$")

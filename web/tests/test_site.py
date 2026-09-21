@@ -46,6 +46,34 @@ class SiteBuildTests(unittest.TestCase):
         page = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
         self.assertIn('<img alt="插图" src="../_images/entry_pic.png">', page)
 
+    def test_pdf_attachments_are_copied_only_when_they_are_real_small_pdfs(self):
+        folder = self.vault / "wiki" / "_attachments"
+        folder.mkdir()
+        (folder / "good.pdf").write_bytes(b"%PDF-1.4\n%%EOF")
+        (folder / "fake.pdf").write_bytes(b"<html>not a pdf</html>")
+        (folder / "run.sh").write_text("echo hi", encoding="utf-8")
+        (folder / "link.pdf").symlink_to(folder / "good.pdf")
+        (folder / "\u4e2d\u6587.pdf").write_bytes(b"%PDF-1.4")
+        note = self.vault / "wiki" / "01_注册" / "条目.md"
+        note.write_text(note.read_text(encoding="utf-8") + "\n\n[原文 PDF](../_attachments/good.pdf)\n", encoding="utf-8")
+        build_site(self.vault, self.out)
+        self.assertEqual(sorted(p.name for p in (self.out / "wiki" / "_attachments").iterdir()), ["good.pdf"])
+        page = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        self.assertIn('href="../_attachments/good.pdf"', page)
+
+    def test_an_oversized_pdf_is_left_out(self):
+        import web.site as site
+        folder = self.vault / "wiki" / "_attachments"
+        folder.mkdir()
+        (folder / "big.pdf").write_bytes(b"%PDF-" + b"0" * 64)
+        original = site.MAX_ATTACHMENT_BYTES
+        site.MAX_ATTACHMENT_BYTES = 32
+        try:
+            build_site(self.vault, self.out)
+        finally:
+            site.MAX_ATTACHMENT_BYTES = original
+        self.assertFalse((self.out / "wiki" / "_attachments").exists())
+
     def test_a_note_cannot_point_a_picture_at_another_site(self):
         note = self.vault / "wiki" / "01_注册" / "条目.md"
         note.write_text(note.read_text(encoding="utf-8") + "\n\n![x](https://evil.example/a.png)\n", encoding="utf-8")

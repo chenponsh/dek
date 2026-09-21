@@ -396,24 +396,35 @@ def _page(doc: dict, docs: list[dict], rendered: str, backlinks: list[dict], by_
 
 
 _IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
+MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 
-def _copy_note_images(vault: Path, output: Path) -> None:
-    """Pictures used by notes live in `wiki/_images/` and are referenced with a
-    relative path (`../_images/x.png`), which is also what Obsidian resolves. The
-    site keeps the same layout, so the folder is copied as it is: a plain,
-    non-recursive copy of picture files only (names are checked, nothing is followed)."""
-    source = vault / "wiki" / "_images"
-    if not source.is_dir() or source.is_symlink():
-        return
-    target = output / "wiki" / "_images"
-    for path in sorted(source.iterdir()):
-        if path.is_symlink() or not path.is_file() or path.suffix.lower() not in _IMAGE_SUFFIXES:
+def _copy_note_files(vault: Path, output: Path) -> None:
+    """Pictures and PDF attachments used by notes.
+
+    They live in `wiki/_images/` and `wiki/_attachments/` and are referenced with a
+    relative path (`../_images/x.png`, `../_attachments/x.pdf`), which is also what
+    Obsidian resolves. The site keeps the same layout. Only plain files with a safe
+    ASCII name are copied (no links, no other types); a `.pdf` must really start
+    with the PDF signature and stay under a size limit."""
+    for folder, suffixes in (("_images", _IMAGE_SUFFIXES), ("_attachments", frozenset({".pdf"}))):
+        source = vault / "wiki" / folder
+        if not source.is_dir() or source.is_symlink():
             continue
-        if not re.fullmatch(r"[A-Za-z0-9._-]+", path.name):
-            continue
-        target.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target / path.name)
+        target = output / "wiki" / folder
+        for path in sorted(source.iterdir()):
+            if path.is_symlink() or not path.is_file() or path.suffix.lower() not in suffixes:
+                continue
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", path.name):
+                continue
+            if path.suffix.lower() == ".pdf":
+                if path.stat().st_size > MAX_ATTACHMENT_BYTES:
+                    continue
+                with path.open("rb") as handle:
+                    if handle.read(5) != b"%PDF-":
+                        continue
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target / path.name)
 
 
 def build_site(vault: Path, output: Path) -> dict:
@@ -445,7 +456,7 @@ def build_site(vault: Path, output: Path) -> dict:
     shutil.copy2(asset_dir / "app.js", output / "assets" / "app.js")
     shutil.copy2(asset_dir / "search.js", output / "assets" / "search.js")
     shutil.copy2(asset_dir / "page.js", output / "assets" / "page.js")
-    _copy_note_images(vault, output)
+    _copy_note_files(vault, output)
     for doc in docs:
         rendered = _render_body(doc, by_path, by_stem, excluded_stems)
         refs = []
