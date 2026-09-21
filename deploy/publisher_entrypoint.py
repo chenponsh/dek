@@ -277,9 +277,14 @@ def run_sync_release(modules, publisher, decisions, approved, builds, state_root
     try:
         for decision in decisions:
             try:
-                status=json.loads((state_root/(decision["decision_id"]+".json")).read_text(encoding="utf-8")).get("status")
+                state=json.loads((state_root/(decision["decision_id"]+".json")).read_text(encoding="utf-8"))
             except (OSError,ValueError):
-                status=None
+                state={}
+            status=state.get("status")
+            # A decision marked permanently unpublishable (its draft is gone, its wiki path holds
+            # other content) will never publish; waiting for it would block every sync forever.
+            if status=="failed" and state.get("retryable") is False:
+                continue
             if status not in {"published","activated"}:
                 return
         def authorize():

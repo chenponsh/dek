@@ -237,7 +237,7 @@ class SyncEntrypointTests(unittest.TestCase):
     def run_sync(self, decisions, publisher, states=None):
         from deploy.publisher_entrypoint import run_sync_release
         for name, status in (states or {}).items():
-            (self.state / f"{name}.json").write_text(json.dumps({"status": status}))
+            (self.state / f"{name}.json").write_text(json.dumps(status if isinstance(status, dict) else {"status": status}))
         written = {}
         class Review:
             @staticmethod
@@ -264,6 +264,24 @@ class SyncEntrypointTests(unittest.TestCase):
         self.assertIn("prepare", self.calls)
         self.assertEqual(list(written), ["sync-0123456789abcdef"])
         self.assertEqual(written["sync-0123456789abcdef"]["status"], "published")
+
+    def test_a_decision_that_can_never_be_published_does_not_hold_the_sync_back(self):
+        dead = {"status": "failed", "retryable": False, "last_error": "rough source is unreadable"}
+        self.build_done(signed=True)
+        (self.approved / "sync-0123456789abcdef").mkdir()
+        (self.approved / "sync-0123456789abcdef/approval.json").write_text(json.dumps({"decision_id": "sync-0123456789abcdef", "nonce": "sync-0123456789abcdef"}))
+        written = self.run_sync([{"decision_id": "decision-1-0123456789"}, {"decision_id": "decision-2-0123456789"}], self.publisher(),
+                                states={"decision-1-0123456789": dead, "decision-2-0123456789": "published"})
+        self.assertIn("prepare", self.calls)
+        self.assertEqual(list(written), ["sync-0123456789abcdef"])
+
+    def test_a_retryable_failure_or_a_pending_decision_still_holds_the_sync_back(self):
+        for held in ({"status": "failed", "retryable": True}, {"status": "failed"}, {"status": "pending"}):
+            with self.subTest(held=held):
+                self.calls.clear()
+                self.run_sync([{"decision_id": "decision-1-0123456789"}, {"decision_id": "decision-2-0123456789"}], self.publisher(),
+                              states={"decision-1-0123456789": {"status": "failed", "retryable": False}, "decision-2-0123456789": held})
+                self.assertEqual(self.calls, [])
 
     def test_a_failing_sync_never_raises_into_the_decisions_run(self):
         from deploy.release_bundle import BundleError
