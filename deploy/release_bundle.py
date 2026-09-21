@@ -78,8 +78,37 @@ def _run(arguments, *, cwd: Path | None = None, env=None, timeout=120) -> bytes:
     # /root again; vendored a copy to /opt/dek-vendor/python3.11 and put
     # its bin/ on PATH so uv's PATH-based fallback discovery finds it.
     completed = _run_status(arguments, cwd=cwd, env=env, timeout=timeout)
-    if completed.returncode: raise BundleError(completed.stderr.decode("utf-8", "replace").strip() or "fixed command failed")
+    if completed.returncode: raise BundleError(_failure_message(arguments, completed))
     return completed.stdout
+
+
+BUILDER_HOME = Path("/var/empty/dek-builder")
+
+
+def _tail(data: bytes, lines: int = 30, limit: int = 3000) -> str:
+    text = data.decode("utf-8", "replace").strip()
+    return "\n".join(text.splitlines()[-lines:])[-limit:]
+
+
+def _failure_message(arguments, completed) -> str:
+    """What failed, how, and the end of its output (test runners print the verdict last).
+
+    stderr alone is often empty (the audit reports on stdout) or huge (unittest -v), so the
+    old message was either 'fixed command failed' or a wall of passing tests. A non-empty
+    builder HOME is called out because tests look in $HOME/.hermes and a root-created leftover
+    there makes them fail with PermissionError."""
+    command = " ".join(str(part) for part in arguments[:6])
+    parts = [f"{command} exited {completed.returncode}"]
+    for label, data in (("stderr", completed.stderr), ("stdout", completed.stdout)):
+        tail = _tail(data)
+        if tail: parts.append(f"--- {label} (end) ---\n{tail}")
+    try:
+        leftovers = sorted(item.name for item in BUILDER_HOME.iterdir())
+    except OSError:
+        leftovers = []
+    if leftovers:
+        parts.append(f"hint: {BUILDER_HOME} should be empty but holds {leftovers}; something run as root left it there")
+    return "\n".join(parts)
 
 
 def _run_status(arguments, *, cwd: Path | None = None, env=None, timeout=120):

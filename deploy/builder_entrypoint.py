@@ -89,15 +89,42 @@ def _bounded_approval(path: Path) -> dict:
             os.close(descriptor)
 
 
+MAX_BUILD_ATTEMPTS = 3
+
+
+def _failure_path(failures: Path, package: Path) -> Path:
+    return failures / (hashlib.sha256(package.name.encode("utf-8", "surrogateescape")).hexdigest() + ".json")
+
+
+def _read_failure(failures: Path, package: Path) -> dict:
+    try:
+        value = json.loads(_failure_path(failures, package).read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def _record_failure(failures: Path, package: Path, exc: BaseException) -> None:
-    digest = hashlib.sha256(package.name.encode("utf-8", "surrogateescape")).hexdigest()
-    target = failures / (digest + ".json")
-    value = {"status": "isolated", "package": package.name, "error_type": type(exc).__name__}
-    atomic_write_json(target, value, mode=0o600, ensure_parent_mode=0o700)
+    attempts = int(_read_failure(failures, package).get("attempts", 0) or 0) + 1
+    value = {"status": "isolated", "package": package.name, "error_type": type(exc).__name__,
+             "attempts": attempts, "last_error": str(exc)[-600:]}
+    atomic_write_json(_failure_path(failures, package), value, mode=0o600, ensure_parent_mode=0o700)
+
+
+def _clear_failure(failures: Path, package: Path) -> None:
+    try:
+        _failure_path(failures, package).unlink()
+    except OSError:
+        pass
 
 
 def process_packages(builder, approved: Path, builds: Path, failures: Path) -> None:
-    """Isolate a malformed package durably and continue with later siblings."""
+    """Build every approved package that has no build yet.
+
+    A package that fails is recorded and the later ones still run. One that has failed
+    MAX_BUILD_ATTEMPTS times is left alone (one line in the log instead of a full rebuild
+    and traceback on every publish, which buried the real failures); delete its record
+    under builds/.builder-failures to try it again."""
     for package in sorted(approved.iterdir()):
         if not package.is_dir() or package.is_symlink() or package.name.startswith("."):
             continue
@@ -108,9 +135,15 @@ def process_packages(builder, approved: Path, builds: Path, failures: Path) -> N
             generation = approval_generation(decision_id, nonce)
             target = builds / generation
             if not target.exists():
+                previous = _read_failure(failures, package)
+                if int(previous.get("attempts", 0) or 0) >= MAX_BUILD_ATTEMPTS:
+                    print(f"DEK build skipped package={package.name} failed {previous['attempts']} times; "
+                          f"last error: {str(previous.get('last_error', ''))[-200:]!r}", file=sys.stderr)
+                    continue
                 build_atomically(builder, package, target)
+                _clear_failure(failures, package)
         except (Exception, SystemExit) as exc:
-            traceback.print_exc(file=sys.stderr)
+            print(f"DEK build failed package={package.name}: {str(exc)[-1500:]}", file=sys.stderr)
             _record_failure(failures, package, exc)
 
 
