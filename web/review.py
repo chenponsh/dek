@@ -1101,22 +1101,27 @@ class ReviewService:
         return self._request_status(self.publish_state_path, self.PUBLISH_WAIT_SECONDS)
 
     def _snapshot_banner(self) -> str:
-        status = self.ingest_status()
+        """One message for the data's state: how old it is, and what is running that will replace it."""
+        status, publishing = self.ingest_status(), self.publish_status()
         clock = lambda value: datetime.fromtimestamp(value, BEIJING).strftime("%m-%d %H:%M")
-        parts = []
+        snapshot = ""
         if status["snapshot"]:
             minutes = max(0, int((self.clock() - status["snapshot"]) // 60))
             ago = "刚刚" if minutes < 1 else f"{minutes} 分钟前" if minutes < 120 else f"{minutes // 60} 小时前"
-            parts.append(f'<div class="meta snapshot-line">数据快照：{clock(status["snapshot"])}（{ago}）。列表和内容都来自这一时刻。</div>')
+            snapshot = f'数据快照：{clock(status["snapshot"])}（{ago}）。列表和内容都来自这一时刻。'
+        running = []
         if status["in_progress"]:
-            parts.append(f'<div class="notice snapshot-wait">抓取进行中（{clock(status["requested"])} 开始，约需 1～2 分钟）。'
-                         '完成后请刷新页面；进行期间不能批准或拒绝，避免处理到旧列表里已经不存在的内容。</div>')
-        elif status["overdue"]:
-            parts.append(f'<div class="notice">{clock(status["requested"])} 的拉取没有更新数据，可能失败了。请稍后再试，仍不行请联系管理员。</div>')
-        publishing = self.publish_status()
+            running.append(f'抓取进行中（{clock(status["requested"])} 开始，约需 1～2 分钟）。'
+                           '完成后请刷新页面；进行期间不能批准或拒绝，避免处理到旧列表里已经不存在的内容。')
         if publishing["in_progress"]:
-            parts.append(f'<div class="notice snapshot-wait">发布进行中（{clock(publishing["requested"])} 开始，约需 1～2 分钟）。'
-                         '完成后请刷新页面；进行期间发布按钮暂不能再点。</div>')
+            running.append(f'发布进行中（{clock(publishing["requested"])} 开始，约需 1～2 分钟）。'
+                           '完成后请刷新页面；进行期间发布按钮暂不能再点。')
+        if running:
+            return f'<div class="notice snapshot-wait">{"<br>".join(running)}<br><span class="meta">{snapshot}</span></div>' if snapshot \
+                else f'<div class="notice snapshot-wait">{"<br>".join(running)}</div>'
+        parts = [f'<div class="meta snapshot-line">{snapshot}</div>'] if snapshot else []
+        if status["overdue"]:
+            parts.append(f'<div class="notice">{clock(status["requested"])} 的拉取没有更新数据，可能失败了。请稍后再试，仍不行请联系管理员。</div>')
         return "".join(parts)
 
     def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:

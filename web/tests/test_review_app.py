@@ -643,6 +643,23 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/?notice=ingest_already")
         self.assertFalse(self.ingest_trigger.exists())
 
+    def test_while_a_pull_runs_the_state_is_one_message_not_three(self):
+        session = self.busy_app()
+        self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        page = self.call("/", query="notice=ingest_triggered", cookie=session)[2].decode("utf-8")
+        body = page.split("</style>", 1)[1]
+        self.assertEqual(body.count("抓取进行中（"), 1)
+        self.assertEqual(body.count('class="notice'), 1)                  # a single block ...
+        self.assertNotIn("已提交拉取请求", body)                            # ... without the separate "submitted" notice
+        self.assertNotIn('class="meta snapshot-line"', body)               # ... and the snapshot age is inside it
+        self.assertIn("数据快照：", body)
+
+    def test_the_submitted_notice_still_shows_when_nothing_is_running(self):
+        session = self.busy_app()
+        page = self.call("/", query="notice=ingest_triggered", cookie=session)[2].decode("utf-8")
+        self.assertIn("已提交拉取请求", page)
+        self.assertIn('class="meta snapshot-line"', page)
+
     def test_the_buttons_are_normal_when_nothing_is_running(self):
         session = self.busy_app()
         page = self.call("/", cookie=session)[2].decode("utf-8")

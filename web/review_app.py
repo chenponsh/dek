@@ -203,7 +203,7 @@ class ReviewApp:
             query = parse_qs(environ.get("QUERY_STRING", ""))
             search = (query.get("q", [""])[0] or "")[:QUERY_LIMIT]
             status_filter, page, page_size = list_position(query)
-            notice = NOTICES.get(query.get("notice", [""])[0], "")
+            notice = self._notice_text(query.get("notice", [""])[0])
             try:
                 body = self.service.render_list(session_id, query=search, status=status_filter, notice=notice, page=page, page_size=page_size)
             except ReviewError as error:
@@ -220,7 +220,7 @@ class ReviewApp:
             if not is_reviewer:
                 return self._response(start, "403 Forbidden", b"Forbidden")
             query = parse_qs(environ.get("QUERY_STRING", ""))
-            notice = NOTICES.get(query.get("notice", [""])[0], "")
+            notice = self._notice_text(query.get("notice", [""])[0])
             unlocked = query.get("edit", [""])[0] == "1"
             list_status, list_page, list_size = list_position(query)
             try:
@@ -311,6 +311,14 @@ class ReviewApp:
             )
 
         return self._response(start, "404 Not Found", b"Not Found")
+
+    def _notice_text(self, code: str) -> str:
+        """The text for a ?notice= code. "Request submitted" is left out while the page's own
+        in-progress line says the same thing, so one situation is one message."""
+        if code in {"ingest_triggered", "publish_triggered"} and (
+                self.service.ingest_status()["in_progress"] or self.service.publish_status()["in_progress"]):
+            return ""
+        return NOTICES.get(code, "")
 
     def _handle_trigger(self, start, environ, method, authenticated, is_reviewer, user_id, *,
                         trigger_path: Path | None, cooldown_seconds: int,
