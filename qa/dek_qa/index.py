@@ -11,7 +11,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 INDEX_VERSION = 4
 BUILDER_VERSION = "4"
@@ -35,7 +35,15 @@ def _frontmatter(text: str) -> tuple[dict[str, str], str]:
         if ":" not in line or line[:1].isspace():
             continue
         key, value = line.split(":", 1)
-        fields[key.strip()] = value.strip().strip('"\'')
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] == '"':
+            # A YAML double-quoted value: decode \n, \" and friends instead of showing them.
+            try:
+                fields[key.strip()] = json.loads(value)
+                continue
+            except ValueError:
+                pass
+        fields[key.strip()] = value.strip('"\'')
     return fields, text[end + 5 :]
 
 
@@ -275,6 +283,60 @@ def build_index(vault: Path, output: Path) -> dict[str, Any]:
     return payload
 
 
+SITE_BASE = "https://regkb.chenponai.com/"
+_SHORT_TITLE_CHARS = 50
+
+
+def _short_title(title: str) -> tuple[str, int]:
+    """A one-line label for lists: the first line cut to _SHORT_TITLE_CHARS, and how many
+    lines (numbered questions) the full title holds."""
+    lines = [line.strip() for line in title.split("\n") if line.strip()] or [title.strip()]
+    first = lines[0]
+    if len(first) > _SHORT_TITLE_CHARS:
+        first = first[:_SHORT_TITLE_CHARS].rstrip() + "…"
+    if len(lines) > 1:
+        first += f"（共 {len(lines)} 项）"
+    return first, len(lines)
+
+
+def _entry_extras(doc: dict[str, Any]) -> dict[str, Any]:
+    """Fields derived from the path and title, so an older index gets them too."""
+    path = doc["path"]
+    parts = Path(path).parts
+    short, count = _short_title(doc["title"])
+    stem = Path(path).stem
+    return {
+        "entry_no": stem if re.fullmatch(r"\d+-\d+", stem) else "",
+        "category": " / ".join(re.sub(r"^\d+_", "", part) for part in parts[1:-1]),
+        "short_title": short,
+        "question_count": count,
+        "page_url": SITE_BASE + quote(Path(path).with_suffix(".html").as_posix(), safe="/"),
+    }
+
+
+def _dedupe_documents(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The same question with the same answer and date, filed under two source columns,
+    is one item: keep the first and gather the sources of the others onto it."""
+    kept: dict[tuple[str, str, str], dict[str, Any]] = {}
+    result: list[dict[str, Any]] = []
+    for doc in docs:
+        key = (
+            re.sub(r"\s+", "", doc["title"]), re.sub(r"\s+", "", doc.get("content", "")),
+            str(doc.get("publication_date") or ""),
+        )
+        first = kept.get(key)
+        if first is None:
+            kept[key] = doc
+            result.append(doc)
+            continue
+        for field in ("source_urls", "source_names", "source_types"):
+            first[field] = sorted({*first.get(field, []), *doc.get(field, [])})
+        first["article_url"] = first.get("article_url") or doc.get("article_url", "")
+        if doc.get("source_status") == "verified":
+            first["source_status"] = "verified"
+    return result
+
+
 class KnowledgeBase:
     def __init__(self, index_path: Path):
         self._load(json.loads(index_path.read_text(encoding="utf-8")))
@@ -296,7 +358,8 @@ class KnowledgeBase:
                 doc.setdefault("source_types", [])
         for doc in data["documents"]:
             doc.setdefault("article_url", "")
-        self._documents = {doc["id"]: doc for doc in data["documents"]}
+            doc["title"] = doc["title"].replace("\\n", "\n")     # indexes built before the parser decoded escapes
+        self._documents = {doc["id"]: doc for doc in _dedupe_documents(data["documents"])}
 
     def dek_kb_search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         query = query.strip()
@@ -343,6 +406,7 @@ class KnowledgeBase:
                 "source_urls": doc["source_urls"],
                 "source_names": doc["source_names"],
                 "source_types": doc["source_types"],
+                **_entry_extras(doc),
                 "score": score,
             }
             for score, _, doc in scored[: max(1, min(limit, 10))]
@@ -350,13 +414,20 @@ class KnowledgeBase:
 
     def dek_kb_get(self, document_id: str) -> dict[str, Any] | None:
         doc = self._documents.get(document_id)
-        return dict(doc) if doc else None
+        return {**doc, **_entry_extras(doc)} if doc else None
 
     def dek_kb_recent(
-        self, days: int = 7, as_of: str | None = None, limit: int = 20
+        self, days: int = 7, as_of: str | None = None, limit: int = 20,
+        since: str | None = None, until: str | None = None,
     ) -> dict[str, Any]:
-        end = date.fromisoformat(as_of) if as_of else datetime.now().astimezone().date()
-        start = end - timedelta(days=days - 1)
+        """The last `days` days, or the exact date range since..until (inclusive) when given."""
+        if since or until:
+            end = date.fromisoformat(until) if until else (date.fromisoformat(as_of) if as_of else datetime.now().astimezone().date())
+            start = date.fromisoformat(since) if since else date.min
+            days = (end - start).days + 1 if since else None
+        else:
+            end = date.fromisoformat(as_of) if as_of else datetime.now().astimezone().date()
+            start = end - timedelta(days=days - 1)
 
         def in_window(value: str | None) -> bool:
             if not value:
@@ -388,11 +459,12 @@ class KnowledgeBase:
                 "source_names": list(doc.get("source_names") or []),
                 "source_types": list(doc.get("source_types") or []),
                 "source_status": doc.get("source_status", "unknown"),
+                **_entry_extras(doc),
             }
 
         return {
             "as_of": end.isoformat(),
-            "window_start": start.isoformat(),
+            "window_start": "" if start == date.min else start.isoformat(),
             "days": days,
             "knowledge_base_update_count": len(updates),
             "publication_count": len(publications),

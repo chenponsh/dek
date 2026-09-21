@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -42,12 +43,16 @@ TOOLS = [
         "description": (
             "List recent reviewed information: recent_publications is based on source "
             "publication dates, while knowledge_base_updates is based on formal wiki Git "
-            "last-commit timestamps."
+            "last-commit timestamps. Give either days (the last N days) or since and/or until "
+            "(YYYY-MM-DD, inclusive) for an exact date range; the counts are exact, only the "
+            "listed items are capped by limit."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "days": {"type": "integer", "minimum": 1, "maximum": 365},
+                "since": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+                "until": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 50},
             },
             "additionalProperties": False,
@@ -212,8 +217,23 @@ def _validated_tool_call(params: object) -> tuple[str, dict[str, Any]]:
         if not isinstance(document_id, str) or re.fullmatch(r"[0-9a-f]{24}", document_id) is None:
             raise ValueError("invalid document id")
     elif name == "dek_kb_recent":
-        if not set(arguments).issubset({"days", "limit"}):
+        if not set(arguments).issubset({"days", "limit", "since", "until"}):
             raise ValueError("invalid recent arguments")
+        bounds = []
+        for field in ("since", "until"):
+            if field not in arguments:
+                continue
+            value = arguments[field]
+            if not isinstance(value, str) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None:
+                raise ValueError("invalid recent date")
+            try:
+                bounds.append(date.fromisoformat(value))
+            except ValueError:
+                raise ValueError("invalid recent date") from None
+        if bounds and "days" in arguments:
+            raise ValueError("days cannot be combined with since or until")
+        if len(bounds) == 2 and bounds[0] > bounds[1]:
+            raise ValueError("since is after until")
         days = arguments.get("days", 7)
         limit = arguments.get("limit", 20)
         if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 365:
@@ -277,8 +297,9 @@ def _reply(request: object, kb: KnowledgeBase) -> dict[str, Any] | None:
         elif name == "dek_kb_get":
             value = kb.dek_kb_get(arguments.get("document_id", ""))
         elif name == "dek_kb_recent":
+            window = {key: arguments[key] for key in ("since", "until") if key in arguments}
             value = kb.dek_kb_recent(
-                days=arguments.get("days", 7), limit=arguments.get("limit", 20)
+                days=arguments.get("days", 7), limit=arguments.get("limit", 20), **window
             )
         result = {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}], "isError": False}
     else:

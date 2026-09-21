@@ -16,7 +16,7 @@ from pathlib import Path
 
 from qa.dek_qa.access import INSUFFICIENT_EVIDENCE, Message, ReadOnlyQa
 from qa.dek_qa.index import KnowledgeBase, build_index
-from qa.dek_qa.mcp_server import TOOLS, ActiveIndex, _reply, load_knowledge_base
+from qa.dek_qa.mcp_server import TOOLS, ActiveIndex, _reply, _validated_tool_call, load_knowledge_base
 from qa.dek_qa.stream_id_collector import (
     CandidateCollector,
     CollectorLimits,
@@ -100,6 +100,89 @@ class DekQaTests(unittest.TestCase):
         self.index.write_text(json.dumps(data), encoding="utf-8")
         kb = KnowledgeBase(self.index)
         self.assertEqual(kb.dek_kb_search("药品注册")[0]["article_url"], "")
+
+    def test_a_double_quoted_question_shows_its_line_breaks_not_backslash_n(self):
+        doc = self._add_entry("0101-0004.md", 'date: 2026-09-08\nquestion: "1：第一问？\\n2：第二问，含\\"引号\\"？"')
+        self.assertEqual(doc["title"], '1：第一问？\n2：第二问，含"引号"？')
+        self.assertNotIn("\\n", doc["title"])
+
+    def test_an_older_index_with_a_literal_backslash_n_in_a_title_is_shown_with_a_line_break(self):
+        doc = self._add_entry("0101-0004.md", "date: 2026-09-08\nquestion: 甲")
+        data = json.loads(self.index.read_text(encoding="utf-8"))
+        for item in data["documents"]:
+            if item["id"] == doc["id"]:
+                item["title"] = "1：甲？\\n2：乙？"
+        self.index.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(KnowledgeBase(self.index).dek_kb_get(doc["id"])["title"], "1：甲？\n2：乙？")
+
+    def _two_columns(self, second_body="答案正文。", second_date="2026-09-10"):
+        (self.root / "source" / "CPC" / "另一栏目.md").write_text(
+            '---\nsource_url: "https://official.example/other"\nsource_name: 另一栏目\n---\n\n全文', encoding="utf-8")
+        self._add_entry("0101-0010.md", "date: 2026-09-10\nquestion: 同一个问题会出现在两个栏目里吗？\nsource: \"[[source/CPC/官方通知]]\"")
+        return self._add_entry("0101-0011.md", f"date: {second_date}\nquestion: 同一个问题会出现在两个栏目里吗？\nsource: \"[[source/CPC/另一栏目]]\"", second_body)
+
+    def test_the_same_question_and_answer_filed_under_two_columns_is_one_item_with_both_sources(self):
+        self._two_columns()
+        recent = self.kb.dek_kb_recent(days=30, as_of="2026-09-20")
+        items = [x for x in recent["recent_publications"] if "同一个问题" in x["title"]]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["path"], "wiki/01_注册/0101-0010.md")
+        self.assertEqual(sorted(items[0]["source_urls"]), ["https://official.example/notice", "https://official.example/other"])
+        self.assertEqual(recent["publication_count"], 2)         # 0101-0001 + the merged pair
+        self.assertEqual(len([h for h in self.kb.dek_kb_search("同一个问题会出现在两个栏目里吗") if "同一个问题" in h["title"]]), 1)
+
+    def test_a_same_question_with_another_answer_or_date_is_not_merged(self):
+        self._two_columns(second_body="不同的答案。")
+        self.assertEqual(len([x for x in self.kb.dek_kb_recent(days=30, as_of="2026-09-20")["recent_publications"] if "同一个问题" in x["title"]]), 2)
+        self._two_columns(second_date="2026-09-11")
+        self.assertEqual(len([x for x in self.kb.dek_kb_recent(days=30, as_of="2026-09-20")["recent_publications"] if "同一个问题" in x["title"]]), 2)
+
+    def test_list_items_carry_a_number_category_short_title_and_site_page_url(self):
+        long_title = "1：" + "很长的问题" * 20 + "？\\n2：第二问？\\n3：第三问？"
+        doc = self._add_entry("0101-0005.md", f'date: 2026-09-08\nquestion: "{long_title}"')
+        item = next(x for x in self.kb.dek_kb_recent(days=30, as_of="2026-09-20")["recent_publications"] if x["id"] == doc["id"])
+        self.assertEqual(item["entry_no"], "0101-0005")
+        self.assertEqual(item["category"], "注册")
+        self.assertEqual(item["question_count"], 3)
+        self.assertTrue(item["short_title"].startswith("1：很长的问题"))
+        self.assertTrue(item["short_title"].endswith("…（共 3 项）"))
+        self.assertLess(len(item["short_title"]), 70)
+        self.assertEqual(item["page_url"], "https://regkb.chenponai.com/wiki/01_%E6%B3%A8%E5%86%8C/0101-0005.html")
+        hit = next(x for x in self.kb.dek_kb_search("很长的问题") if x["id"] == doc["id"])
+        self.assertEqual(hit["short_title"], item["short_title"])
+        self.assertEqual(self.kb.dek_kb_get(doc["id"])["page_url"], item["page_url"])
+        self.assertIn("第二问", self.kb.dek_kb_get(doc["id"])["title"])       # the full title is untouched
+
+    def test_a_short_one_line_title_is_left_alone(self):
+        item = self.kb.dek_kb_recent(days=30, as_of="2026-09-20")["recent_publications"][0]
+        self.assertEqual(item["short_title"], "药品注册如何申报？")
+        self.assertEqual(item["question_count"], 1)
+
+    def test_recent_takes_an_exact_date_range_and_reports_exact_counts(self):
+        self._add_entry("0101-0006.md", "date: 2026-03-30\nquestion: 三月的问题在范围内吗？")
+        self._add_entry("0101-0007.md", "date: 2026-02-27\nquestion: 二月的问题在范围外吗？")
+        result = self.kb.dek_kb_recent(since="2026-03-01", until="2026-09-21", limit=1)
+        self.assertEqual(result["window_start"], "2026-03-01")
+        self.assertEqual(result["as_of"], "2026-09-21")
+        self.assertEqual(result["publication_count"], 2)             # 0101-0001 (09-05) and the March one
+        self.assertEqual(len(result["recent_publications"]), 1)      # only the listing is capped
+        only_since = self.kb.dek_kb_recent(since="2026-03-01", as_of="2026-09-21")
+        self.assertEqual(only_since["publication_count"], 2)
+
+    def test_mcp_recent_validates_since_and_until(self):
+        good = {"name": "dek_kb_recent", "arguments": {"since": "2026-03-01", "until": "2026-09-21"}}
+        self.assertEqual(_validated_tool_call(good)[0], "dek_kb_recent")
+        for arguments in (
+            {"since": "2026-3-1"}, {"since": "2026-02-30"}, {"until": 20260921}, {"since": "2026-09-21", "until": "2026-03-01"},
+            {"days": 30, "since": "2026-03-01"}, {"since": "2026-03-01", "extra": 1},
+        ):
+            with self.subTest(arguments=arguments), self.assertRaises(ValueError):
+                _validated_tool_call({"name": "dek_kb_recent", "arguments": arguments})
+
+    def test_the_rules_tell_the_bot_to_pass_dates_use_the_exact_count_and_shorten_lists(self):
+        soul = (Path(__file__).resolve().parents[1] / "config" / "SOUL.md").read_text(encoding="utf-8")
+        for phrase in ("`since`/`until`", "`publication_count`", "`short_title`", "`page_url`", "仅统计已审核发布的内容", "序号. 编号 · 分类 · 标题"):
+            self.assertIn(phrase, soul)
 
     def test_the_bot_rules_ask_for_one_link_per_question_not_a_summary_block(self):
         soul = (Path(__file__).resolve().parents[1] / "config" / "SOUL.md").read_text(encoding="utf-8")
@@ -444,7 +527,7 @@ class DekQaTests(unittest.TestCase):
         response = _reply({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.kb)
         self.assertEqual(len(response["result"]["tools"]), 3)
         recent = next(tool for tool in TOOLS if tool["name"] == "dek_kb_recent")
-        self.assertEqual(set(recent["inputSchema"]["properties"]), {"days", "limit"})
+        self.assertEqual(set(recent["inputSchema"]["properties"]), {"days", "limit", "since", "until"})
         self.assertFalse(recent["inputSchema"]["additionalProperties"])
 
     def test_mcp_client_sdk_is_installed_for_runtime_discovery(self):
@@ -691,8 +774,9 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("最近几天/一周/月新增或更新了什么", prompt)
         self.assertIn("默认查看 `recent_publications`，按来源发布日期回答", prompt)
         self.assertIn("查看 `knowledge_base_updates`，按正式 wiki 的 Git 更新时间回答", prompt)
-        self.assertIn("逐字使用工具返回的 `title`", prompt)
-        self.assertIn("不得改写、润色、补充或删减标题", prompt)
+        self.assertIn("逐字使用工具返回的 `short_title`", prompt)
+        self.assertIn("不得自行改写、润色、补充或再删减", prompt)
+        self.assertIn("才逐字使用完整的 `title`", prompt)
         self.assertIn("每个列出的条目都必须按该条目自己的来源证据处理", prompt)
         self.assertIn("并在有 `source_names` 时展示来源名称", prompt)
         self.assertIn("`source_urls` 非空且 `source_status=verified` 时", prompt)
