@@ -196,9 +196,13 @@ def audit_history(root: Path, today: date | None = None) -> dict[str, Any]:
             covered_sources = {source for rough_path, source in rough_sources.items() if rough_path in rough}
             also_sources = payload.get("rough_also_sources") if isinstance(payload.get("rough_also_sources"), dict) else {}
             for rough_path, sources in also_sources.items():
-                # Counted only when the draft really names that source on its `source:` line.
-                if rough_path not in rough or rough_path not in rough_sources or not (root / rough_path).is_file():
+                if rough_path not in rough or rough_path not in rough_sources:
                     continue
+                if not (root / rough_path).is_file():
+                    # the draft was removed later (a data reset): the report's claim stands, as for a draft's own source
+                    covered_sources.update(sources)
+                    continue
+                # while the draft exists it must really name that source on its `source:` line
                 named = {name for _, name in _rough_identities(root / rough_path)}
                 covered_sources.update(source for source in sources if source in named)
         else:

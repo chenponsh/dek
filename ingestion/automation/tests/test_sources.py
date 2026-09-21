@@ -809,6 +809,17 @@ class DuplicateAcrossColumnsTests(unittest.TestCase):
         self.assertEqual(audit["missing_rough_events"], 1)
         self.assertEqual(audit["backlog"][0]["source"], "source/b.md")
 
+    def test_the_audit_still_accepts_a_second_source_after_its_draft_was_removed_by_a_reset(self):
+        from ingestion.automation.audit import audit_history
+        row = Row("同一个问题会出现两次吗", "同一个解答", "2026-06-01")
+        result, writes = self.stage([row], [row])
+        logs = self.root / "ingestion" / "logs"; logs.mkdir(parents=True)
+        payload = {"date": "2026-09-20", "report": result["report"], "rough_created": result["rough_created"],
+                   "rough_sources": result["rough_sources"], "rough_also_sources": result["rough_also_sources"]}
+        (logs / "source_ingest_2026-09-20_report.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        self.assertFalse((self.root / result["rough_created"][0]).exists())          # never written / already deleted
+        self.assertEqual(audit_history(self.root)["missing_rough_events"], 0)
+
     def test_the_audit_rejects_a_malformed_also_sources_entry(self):
         from ingestion.automation.audit import audit_history
         logs = self.root / "ingestion" / "logs"; logs.mkdir(parents=True)
