@@ -32,6 +32,31 @@ class SiteBuildTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_note_pictures_are_copied_and_render_with_a_relative_src(self):
+        images = self.vault / "wiki" / "_images"
+        images.mkdir()
+        (images / "条目_pic.png").write_bytes(b"x")          # non-ASCII name: skipped
+        (images / "entry_pic.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (images / "notes.txt").write_text("not a picture", encoding="utf-8")
+        (images / "outside.png").symlink_to(self.vault / "_raw" / "secret.md")
+        note = self.vault / "wiki" / "01_注册" / "条目.md"
+        note.write_text(note.read_text(encoding="utf-8") + "\n\n![插图](../_images/entry_pic.png)\n", encoding="utf-8")
+        build_site(self.vault, self.out)
+        self.assertEqual(sorted(p.name for p in (self.out / "wiki" / "_images").iterdir()), ["entry_pic.png"])
+        page = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        self.assertIn('<img alt="插图" src="../_images/entry_pic.png">', page)
+
+    def test_a_note_cannot_point_a_picture_at_another_site(self):
+        note = self.vault / "wiki" / "01_注册" / "条目.md"
+        note.write_text(note.read_text(encoding="utf-8") + "\n\n![x](https://evil.example/a.png)\n", encoding="utf-8")
+        build_site(self.vault, self.out)
+        page = (self.out / "wiki" / "01_注册" / "条目.html").read_text(encoding="utf-8")
+        self.assertNotIn("evil.example", page)
+
+    def test_no_images_folder_is_fine(self):
+        build_site(self.vault, self.out)
+        self.assertFalse((self.out / "wiki" / "_images").exists())
+
     def test_only_wiki_and_source_without_excluded_paths_are_published(self):
         build_site(self.vault, self.out)
         manifest = json.loads((self.out / "manifest.json").read_text(encoding="utf-8"))

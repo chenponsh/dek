@@ -395,6 +395,27 @@ def _page(doc: dict, docs: list[dict], rendered: str, backlinks: list[dict], by_
     )
 
 
+_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
+
+
+def _copy_note_images(vault: Path, output: Path) -> None:
+    """Pictures used by notes live in `wiki/_images/` and are referenced with a
+    relative path (`../_images/x.png`), which is also what Obsidian resolves. The
+    site keeps the same layout, so the folder is copied as it is: a plain,
+    non-recursive copy of picture files only (names are checked, nothing is followed)."""
+    source = vault / "wiki" / "_images"
+    if not source.is_dir() or source.is_symlink():
+        return
+    target = output / "wiki" / "_images"
+    for path in sorted(source.iterdir()):
+        if path.is_symlink() or not path.is_file() or path.suffix.lower() not in _IMAGE_SUFFIXES:
+            continue
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", path.name):
+            continue
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target / path.name)
+
+
 def build_site(vault: Path, output: Path) -> dict:
     vault, output = Path(vault), Path(output)
     docs = []
@@ -424,6 +445,7 @@ def build_site(vault: Path, output: Path) -> dict:
     shutil.copy2(asset_dir / "app.js", output / "assets" / "app.js")
     shutil.copy2(asset_dir / "search.js", output / "assets" / "search.js")
     shutil.copy2(asset_dir / "page.js", output / "assets" / "page.js")
+    _copy_note_images(vault, output)
     for doc in docs:
         rendered = _render_body(doc, by_path, by_stem, excluded_stems)
         refs = []
