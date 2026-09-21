@@ -52,3 +52,8 @@ button.folder-card-link:hover{background:transparent}
 .brand-logo{display:block;flex:none;height:28px;width:auto}
 .brand-logo+strong{padding-left:14px;border-left:1px solid var(--line)}
 .review-header-menu{margin-left:auto}
+/* A button whose action is running (or was just asked for): greyed, spinner, not clickable */
+button[type=submit].is-busy,button[type=submit].is-busy:hover{opacity:.65;cursor:progress;pointer-events:none;filter:none}
+button.is-busy::after{content:"";display:inline-block;width:.85em;height:.85em;margin-left:.5em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-.1em;animation:dek-spin .8s linear infinite}
+@keyframes dek-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){button.is-busy::after{animation-duration:2.4s}}

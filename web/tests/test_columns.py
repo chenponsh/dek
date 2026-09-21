@@ -73,6 +73,16 @@ class ResizerWiringTests(unittest.TestCase):
         self.assertIn(".brand-logo{display:block;flex:none;height:28px;width:auto}", self.style)
         self.assertIn("header>strong,.brand-logo{display:none}", self.style)
 
+    def test_a_posting_form_is_greyed_out_and_answers_only_once(self):
+        for phrase in ('document.querySelectorAll("form[method=post]")', 'if (form.dataset.busy === "1") { event.preventDefault(); return; }',
+                       'button.classList.add("is-busy")', "event.submitter?.dataset.busyLabel", "setTimeout(() => buttons.forEach(button => { button.disabled = true; }), 0);"):
+            self.assertIn(phrase, self.script)
+        # disabled only after the form was read: a disabled button would drop the chosen action
+        self.assertLess(self.script.index("event.submitter?.dataset.busyLabel"), self.script.index("button.disabled = true"))
+        self.assertIn("button[type=submit].is-busy,button[type=submit].is-busy:hover{opacity:.65;cursor:progress;pointer-events:none;filter:none}", self.style)
+        self.assertIn("button.is-busy::after{content:\"\";", self.style)
+        self.assertIn("@keyframes dek-spin", self.style)
+
     def test_the_review_pages_load_the_shared_script_and_styles(self):
         review = (Path(__file__).parents[1] / "review.py").read_text(encoding="utf-8")
         self.assertIn('<link rel="stylesheet" href="/assets/style.css">', review)

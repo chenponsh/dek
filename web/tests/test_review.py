@@ -369,8 +369,8 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         self.assertNotIn('name="comment"', page)
         self.assertNotIn("审核意见", page)
-        self.assertIn('name="action" value="approve">批准</button>', page)
-        self.assertIn('name="action" value="reject" class="action-reject">拒绝</button>', page)
+        self.assertIn('name="action" value="approve" data-busy-label="提交中…">批准</button>', page)
+        self.assertIn('name="action" value="reject" class="action-reject" data-busy-label="提交中…">拒绝</button>', page)
         self.decide(action="reject")
         history = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         self.assertIn("<th>决定</th><th>审核人</th><th>时间</th></tr>", history)
@@ -799,7 +799,7 @@ class ReviewWorkflowTests(unittest.TestCase):
     def test_list_offers_a_manual_ingest_trigger_button(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertIn('<form method="post" action="/trigger-ingest" class="ingest-trigger-form">', page)
-        self.assertIn('<button type="submit">立即拉取最新源</button>', page)
+        self.assertIn('<button type="submit" data-busy-label="已提交…">立即拉取最新源</button>', page)
 
     def test_list_action_buttons_sit_together_on_the_right_ingest_then_publish(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
@@ -822,19 +822,19 @@ class ReviewWorkflowTests(unittest.TestCase):
     def test_list_offers_a_manual_publish_button_with_approved_count(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertIn('<form method="post" action="/publish" class="publish-trigger-form">', page)
-        self.assertIn('<button type="submit">发布已批准内容（0）</button>', page)
+        self.assertIn('<button type="submit" data-busy-label="已提交…">发布已批准内容（0）</button>', page)
 
         self.decide(action="approve")
         page = self.service.render_list("opaque-session").decode("utf-8")
-        self.assertIn('<button type="submit">发布已批准内容（1）</button>', page)
+        self.assertIn('<button type="submit" data-busy-label="已提交…">发布已批准内容（1）</button>', page)
 
     def test_detail_page_shows_content_and_issues_its_own_nonce(self):
         identity = self.service.list_items()[0].identity
         page = self.service.render_item("opaque-session", identity).decode("utf-8")
         self.assertIn('name="form_nonce"', page)
         self.assertIn("ingestion/rough/", page)
-        self.assertIn('<button type="submit" name="action" value="approve">批准</button>', page)
-        self.assertIn('<button type="submit" name="action" value="reject" class="action-reject">拒绝</button>', page)
+        self.assertIn('<button type="submit" name="action" value="approve" data-busy-label="提交中…">批准</button>', page)
+        self.assertIn('<button type="submit" name="action" value="reject" class="action-reject" data-busy-label="提交中…">拒绝</button>', page)
         self.assertNotIn('value="return"', page)
         self.assertNotIn("退回</button>", page)
         self.assertLess(page.index('value="approve"'), page.index('value="reject"'))

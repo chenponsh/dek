@@ -56,6 +56,8 @@ NOTICES = {
     "decided": "决定已记录。",
     "ingest_triggered": "已提交拉取请求，新的来源会在后台抓取，稍后刷新查看。",
     "ingest_cooldown": "刚触发过一次拉取，请稍等几分钟再试。",
+    "ingest_already": "抓取已经在进行，请等它完成并刷新页面后再试。",
+    "publish_already": "发布已经在进行，请等它完成并刷新页面后再试。",
     "ingest_running": "抓取正在进行，完成并刷新页面后才能批准或拒绝，避免处理到旧列表里已经不存在的内容。这次没有记录任何决定。",
     "publish_triggered": "已提交发布请求，已批准的内容会在后台构建并发布，稍后刷新查看。",
     "publish_cooldown": "刚触发过一次发布，请稍等片刻再试。",
@@ -296,6 +298,7 @@ class ReviewApp:
                 trigger_path=self.ingest_trigger_path, cooldown_seconds=self.ingest_cooldown_seconds,
                 log_label="review_trigger_ingest", triggered_notice="ingest_triggered", cooldown_notice="ingest_cooldown",
                 on_triggered=self.service.record_ingest_request,
+                busy=lambda: self.service.ingest_status()["in_progress"], busy_notice="ingest_already",
             )
 
         if path == "/publish":
@@ -303,13 +306,16 @@ class ReviewApp:
                 start, environ, method, authenticated, is_reviewer, user_id,
                 trigger_path=self.publish_trigger_path, cooldown_seconds=self.publish_cooldown_seconds,
                 log_label="review_trigger_publish", triggered_notice="publish_triggered", cooldown_notice="publish_cooldown",
+                on_triggered=self.service.record_publish_request,
+                busy=lambda: self.service.publish_status()["in_progress"], busy_notice="publish_already",
             )
 
         return self._response(start, "404 Not Found", b"Not Found")
 
     def _handle_trigger(self, start, environ, method, authenticated, is_reviewer, user_id, *,
                         trigger_path: Path | None, cooldown_seconds: int,
-                        log_label: str, triggered_notice: str, cooldown_notice: str, on_triggered=None):
+                        log_label: str, triggered_notice: str, cooldown_notice: str, on_triggered=None,
+                        busy=None, busy_notice: str = ""):
         """Shared body for every reviewer-initiated, cooldown-protected marker write.
 
         The marker itself does the work: a privileged systemd .path unit watches
@@ -336,6 +342,10 @@ class ReviewApp:
             return self._response(start, "404 Not Found", b"Not Found")
         now = self.clock()
         cooling_down = False
+        if busy is not None and busy():
+            # the same action is still running: a second request would only queue another run
+            auth_logger.warning("%s ignored_already_running user=%s", log_label, user_id)
+            return self._response(start, "303 See Other", headers=(("Location", "%s/?notice=%s" % (REVIEW_PREFIX, busy_notice)),))
         try:
             _, _, last_requested = trigger_path.read_text(encoding="utf-8").strip().rpartition(" ")
             cooling_down = (now - float(last_requested)) < cooldown_seconds
@@ -442,6 +452,7 @@ def main() -> None:
         path_prefix=REVIEW_PREFIX,
         suggestions_path=args.suggestions,
         ingest_state_path=args.ingest_trigger.with_name("ingest-requested-at") if args.ingest_trigger else None,
+        publish_state_path=args.publish_trigger.with_name("publish-requested-at") if args.publish_trigger else None,
     )
     serve_unix(
         args.socket, ReviewApp(service, claim_secret, reviewers,

@@ -206,7 +206,7 @@ class ReviewAppTests(unittest.TestCase):
         # direct app tests exercise the corresponding internal route.
         status, _, detail = self.call("/item/" + identity, cookie=session)
         self.assertEqual(status, "200 OK")
-        self.assertIn('<button type="submit" name="action" value="approve">批准</button>', detail.decode("utf-8"))
+        self.assertIn('<button type="submit" name="action" value="approve" data-busy-label="提交中…">批准</button>', detail.decode("utf-8"))
 
         status, headers, _ = self.call("/item/" + identity)
         self.assertEqual(status, "302 Found")
@@ -585,6 +585,74 @@ class ReviewAppTests(unittest.TestCase):
         self.assertNotIn("抓取进行中", page)
         self.assertNotIn("可能失败", page)
 
+
+    # --- buttons of an action that is still running ---------------------------------------------
+    def busy_app(self):
+        """The app with ingest and publish state files, publish and ingest triggers, and a snapshot 10 minutes old."""
+        self.service.ingest_state_path = self.root / "state" / "ingest-requested-at"
+        self.service.publish_state_path = self.root / "state" / "publish-requested-at"
+        self.snapshot_time = self.clock_value - 600
+        self.service.snapshot_time = lambda: self.snapshot_time
+        self.ingest_trigger = self.root / "state" / "ingest-trigger-requested"
+        self.publish_trigger = self.root / "state" / "publish-trigger-requested"
+        self.app = ReviewApp(self.service, CLAIM_SECRET, ("reviewer-1",), expected_origin=REVIEW_ORIGIN, clock=self.clock,
+                             ingest_trigger_path=self.ingest_trigger, publish_trigger_path=self.publish_trigger)
+        return self.authenticate()
+
+    def test_a_publish_in_progress_greys_the_publish_button_and_refuses_a_second_request(self):
+        session = self.busy_app()
+        self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        self.assertEqual((self.root / "state" / "publish-requested-at").read_text().strip(), str(self.clock_value))
+        page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertIn('<button type="submit" class="is-busy" disabled aria-busy="true">发布中…</button>', page)
+        self.assertIn("发布进行中", page)
+        self.assertNotIn("发布已批准内容", page)
+        self.publish_trigger.unlink()                                    # the privileged unit picked the marker up
+        self.clock_value += 120                                           # past the cooldown, but still running
+        status, headers, _ = self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        self.assertEqual((status, dict(headers)["Location"]), ("303 See Other", REVIEW_PREFIX + "/?notice=publish_already"))
+        self.assertFalse(self.publish_trigger.exists())                  # nothing was queued
+
+    def test_the_publish_button_is_back_once_the_data_was_refreshed_after_the_publish(self):
+        session = self.busy_app()
+        self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        self.snapshot_time = self.clock_value + 90                       # the chain's last step rewrote the review data
+        self.clock_value += 100
+        page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertNotIn("发布中…", page)
+        self.assertIn("发布已批准内容", page)
+
+    def test_a_publish_that_never_refreshed_the_data_stops_blocking_after_fifteen_minutes(self):
+        session = self.busy_app()
+        self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        self.clock_value += 901
+        self.assertIn("发布已批准内容", self.call("/", cookie=session)[2].decode("utf-8"))
+
+    def test_a_pull_in_progress_greys_the_pull_button_and_the_decision_buttons_and_refuses_a_second_pull(self):
+        session = self.busy_app()
+        self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertIn('<button type="submit" class="is-busy" disabled aria-busy="true">抓取中…</button>', page)
+        identity = re.search(r'/review/item/([0-9a-f]{16})', page).group(1)
+        detail = self.call("/item/" + identity, cookie=session)[2].decode("utf-8")
+        self.assertIn('class="is-busy" disabled aria-busy="true">抓取中，暂不能批准</button>', detail)
+        self.assertNotIn('name="action" value="approve"', detail)
+        self.ingest_trigger.unlink()
+        self.clock_value += 5                                             # the pull is still running
+        status, headers, _ = self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/?notice=ingest_already")
+        self.assertFalse(self.ingest_trigger.exists())
+
+    def test_the_buttons_are_normal_when_nothing_is_running(self):
+        session = self.busy_app()
+        page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertIn('data-busy-label="已提交…">立即拉取最新源</button>', page)
+        self.assertNotIn("is-busy", page.split("</style>", 1)[1])
+
+    def test_the_new_notices_have_text(self):
+        from web.review_app import NOTICES
+        self.assertIn("已经在进行", NOTICES["ingest_already"])
+        self.assertIn("已经在进行", NOTICES["publish_already"])
 
     def test_publish_is_404_when_not_configured(self):
         session = self.authenticate()

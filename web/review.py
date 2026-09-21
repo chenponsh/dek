@@ -838,6 +838,7 @@ class ReviewService:
         path_prefix: str = "",
         suggestions_path: Path | None = None,
         ingest_state_path: Path | None = None,
+        publish_state_path: Path | None = None,
     ):
         if len(audit_key) < 16 or len(queue_key) < 16:
             raise ValueError("review secrets must be at least 16 bytes")
@@ -845,6 +846,7 @@ class ReviewService:
             raise ValueError("review path prefix must be an absolute, non-trailing-slash path")
         self.repository_source = repo_root
         self.ingest_state_path = Path(ingest_state_path) if ingest_state_path else None
+        self.publish_state_path = Path(publish_state_path) if publish_state_path else None
         self.root = Path(repo_root).resolve() if isinstance(repo_root,Path) else None
         self.queue_path = Path(os.path.abspath(queue_path))
         self.audit_key, self.queue_key, self.nonces, self.clock = audit_key, queue_key, nonces, clock
@@ -1011,6 +1013,13 @@ class ReviewService:
     def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None, action_query: str = "", heading: str = "原文", suggested: str = "", alternatives: list[tuple[str, str]] | None = None, taken: frozenset[str] = frozenset()) -> str:
         candidates = wiki_folder_candidates(root, taken) if root else []
         options_json = json.dumps([[label, path] for label, path in candidates], ensure_ascii=False)
+        if self.ingest_status()["in_progress"]:
+            # a decision now would be made on a list the pull is about to replace
+            decision_buttons = ('<button type="submit" class="is-busy" disabled aria-busy="true">抓取中，暂不能批准</button>'
+                                '<button type="submit" class="action-reject is-busy" disabled aria-busy="true">拒绝</button>')
+        else:
+            decision_buttons = ('<button type="submit" name="action" value="approve" data-busy-label="提交中…">批准</button>'
+                                '<button type="submit" name="action" value="reject" class="action-reject" data-busy-label="提交中…">拒绝</button>')
         chips = ""
         if alternatives:
             buttons = "".join(f'<button type="button" class="suggestion-chip" data-path="{html.escape(path, quote=True)}">{html.escape(label)}</button>'
@@ -1018,7 +1027,7 @@ class ReviewService:
             chips = f'<div class="path-suggestions">系统建议：{buttons}</div>'
         return f"""<article><h2>{html.escape(heading)}</h2><pre>{html.escape(rough_display(rough.content, suggested))}</pre>
 <form method="post" action="{self.path_prefix}/decision{html.escape(action_query)}"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
-<label>Wiki 路径<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<label>候选 Wiki Markdown<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><div class="decision-actions"><button type="submit" name="action" value="approve">批准</button><button type="submit" name="action" value="reject" class="action-reject">拒绝</button></div></form></article>"""
+<label>Wiki 路径<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<label>候选 Wiki Markdown<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><div class="decision-actions">{decision_buttons}</div></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()
@@ -1041,6 +1050,7 @@ class ReviewService:
 
     # --- how fresh the list is, and whether a pull is on its way -------------------------
     INGEST_WAIT_SECONDS = 600
+    PUBLISH_WAIT_SECONDS = 900
 
     def snapshot_time(self) -> float | None:
         """When the data behind the list was produced (the review bundle's write time)."""
@@ -1050,31 +1060,45 @@ class ReviewService:
         except OSError:
             return None
 
-    def record_ingest_request(self, when: float) -> None:
-        """Remember that a pull was asked for (the trigger marker is removed as soon as it is picked up)."""
-        if self.ingest_state_path is None:
+    def _record_request(self, path: Path | None, when: float) -> None:
+        if path is None:
             return
         try:
-            self.ingest_state_path.parent.mkdir(parents=True, exist_ok=True)
-            self.ingest_state_path.write_text(f"{int(when)}\n", encoding="utf-8")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"{int(when)}\n", encoding="utf-8")
         except OSError:
             pass
 
-    def ingest_status(self) -> dict:
-        """`in_progress`: a pull was requested after the current snapshot and is younger than
-        INGEST_WAIT_SECONDS. `overdue`: the same, but older: the pull did not refresh the data."""
+    def record_ingest_request(self, when: float) -> None:
+        """Remember that a pull was asked for (the trigger marker is removed as soon as it is picked up)."""
+        self._record_request(self.ingest_state_path, when)
+
+    def record_publish_request(self, when: float) -> None:
+        self._record_request(self.publish_state_path, when)
+
+    def _request_status(self, path: Path | None, wait: int) -> dict:
+        """`in_progress`: something was requested after the current snapshot and is younger than
+        `wait` seconds. `overdue`: the same, but older: it did not refresh the data."""
         snapshot = self.snapshot_time()
         requested = None
-        if self.ingest_state_path is not None:
+        if path is not None:
             try:
-                requested = float(self.ingest_state_path.read_text(encoding="utf-8").strip())
+                requested = float(path.read_text(encoding="utf-8").strip())
             except (OSError, ValueError):
                 requested = None
         pending = requested is not None and (snapshot is None or requested > snapshot)
         age = self.clock() - requested if requested is not None else 0
         return {"snapshot": snapshot, "requested": requested,
-                "in_progress": bool(pending and 0 <= age < self.INGEST_WAIT_SECONDS),
-                "overdue": bool(pending and age >= self.INGEST_WAIT_SECONDS)}
+                "in_progress": bool(pending and 0 <= age < wait),
+                "overdue": bool(pending and age >= wait)}
+
+    def ingest_status(self) -> dict:
+        """A pull is `in_progress` until the review data is rewritten (the snapshot moves past the request)."""
+        return self._request_status(self.ingest_state_path, self.INGEST_WAIT_SECONDS)
+
+    def publish_status(self) -> dict:
+        """A publish is `in_progress` until its last step refreshes the review data."""
+        return self._request_status(self.publish_state_path, self.PUBLISH_WAIT_SECONDS)
 
     def _snapshot_banner(self) -> str:
         status = self.ingest_status()
@@ -1089,6 +1113,10 @@ class ReviewService:
                          '完成后请刷新页面；进行期间不能批准或拒绝，避免处理到旧列表里已经不存在的内容。</div>')
         elif status["overdue"]:
             parts.append(f'<div class="notice">{clock(status["requested"])} 的拉取没有更新数据，可能失败了。请稍后再试，仍不行请联系管理员。</div>')
+        publishing = self.publish_status()
+        if publishing["in_progress"]:
+            parts.append(f'<div class="notice snapshot-wait">发布进行中（{clock(publishing["requested"])} 开始，约需 1～2 分钟）。'
+                         '完成后请刷新页面；进行期间发布按钮暂不能再点。</div>')
         return "".join(parts)
 
     def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:
@@ -1144,13 +1172,18 @@ class ReviewService:
                          for name, value in (("status", status), ("q", query)) if value)
         size_nav = (f'<form method="get" action="{self.path_prefix}/" class="page-size">每页{hidden}'
                     f'<input type="number" name="page_size" min="5" max="100" step="1" value="{size}" inputmode="numeric" aria-label="每页条数">条</form>')
+        pulling, publishing = self.ingest_status()["in_progress"], self.publish_status()["in_progress"]
         ingest_button = (
             f'<form method="post" action="{self.path_prefix}/trigger-ingest" class="ingest-trigger-form">'
-            '<button type="submit">立即拉取最新源</button></form>'
+            + ('<button type="submit" class="is-busy" disabled aria-busy="true">抓取中…</button>' if pulling
+               else '<button type="submit" data-busy-label="已提交…">立即拉取最新源</button>')
+            + '</form>'
         )
         publish_button = (
             f'<form method="post" action="{self.path_prefix}/publish" class="publish-trigger-form">'
-            f'<button type="submit">发布已批准内容（{status_counts["approved"]}）</button></form>'
+            + ('<button type="submit" class="is-busy" disabled aria-busy="true">发布中…</button>' if publishing
+               else f'<button type="submit" data-busy-label="已提交…">发布已批准内容（{status_counts["approved"]}）</button>')
+            + '</form>'
         )
         body = (
             self._header() + self._sidebar()

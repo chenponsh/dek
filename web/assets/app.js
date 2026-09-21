@@ -229,6 +229,22 @@
     });
   }
 
+  // A posting form (the review page's decision and trigger buttons): once submitted, grey the
+  // buttons out with a spinner and ignore further clicks, so a slow answer is never asked for twice.
+  document.querySelectorAll("form[method=post]").forEach(form => {
+    form.addEventListener("submit", event => {
+      if (form.dataset.busy === "1") { event.preventDefault(); return; }
+      form.dataset.busy = "1";
+      const buttons = [...form.querySelectorAll("button[type=submit]")];
+      buttons.forEach(button => { button.classList.add("is-busy"); button.setAttribute("aria-busy", "true"); });
+      const label = event.submitter?.dataset.busyLabel;
+      if (label) event.submitter.textContent = label;
+      // disabled only after the browser has read the form: a disabled button is not submitted
+      setTimeout(() => buttons.forEach(button => { button.disabled = true; }), 0);
+    });
+  });
+  window.addEventListener("pageshow", event => { if (event.persisted && document.querySelector("form[data-busy='1']")) location.reload(); });
+
   const userMenu = document.querySelector(".user-menu");
   if (userMenu) {
     fetch(userMenu.dataset.authMe, { credentials: "same-origin", cache: "no-store" })
