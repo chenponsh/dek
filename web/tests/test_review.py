@@ -611,7 +611,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         self.assertIn("<h1>pending.md</h1>", page)
 
-    def test_the_list_is_as_wide_as_the_knowledge_base_home_and_the_item_page_keeps_its_narrow_column(self):
+    def test_the_list_and_the_item_page_are_as_wide_as_the_knowledge_base_home(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertIn('<main class="review-shell review-list">', page)
         self.assertIn(".review-shell.review-list{max-width:1440px;margin:0;padding-left:64px;padding-right:64px}", page)
@@ -623,8 +623,8 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn(".review-shell.review-list{padding:82px 20px 70px}}", page)
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         detail = self.service.render_item("opaque-session", item.identity).decode("utf-8")
-        self.assertIn('<main class="review-shell">', detail)
-        self.assertNotIn("review-list", detail.split("</style>", 1)[1])   # the detail page markup is untouched
+        self.assertIn('<main class="review-shell review-list">', detail)    # the same wide column as the list
+        self.assertNotIn('<main class="review-shell">', detail)
 
     def test_the_form_labels_are_plain_without_the_long_hints(self):
         page = self.item_page("Q")

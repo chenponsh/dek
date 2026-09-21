@@ -1229,7 +1229,7 @@ class ReviewService:
         body = (
             self._header() + self._sidebar()
             + '<div class="content">'
-            + f'<main class="review-shell"><p><a href="{self.path_prefix}/{html.escape(position)}">← 返回列表</a></p><h1>{html.escape(_item_title(item))}</h1><div class="meta">{html.escape(meta)}</div>'
+            + f'<main class="review-shell review-list"><p><a href="{self.path_prefix}/{html.escape(position)}">← 返回列表</a></p><h1>{html.escape(_item_title(item))}</h1><div class="meta">{html.escape(meta)}</div>'
             + self._snapshot_banner()
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + links_block + form + history_block + '</main>'
