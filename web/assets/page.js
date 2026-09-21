@@ -72,7 +72,7 @@
     const home = data.kind === "home" ? " home-page" : "";
     // The home page's breadcrumb already says 首页, so it gets no HOME chip.
     const kind = data.kind === "home" ? "" : `<span class="kind">${e(String(data.kind).toUpperCase())}</span>`;
-    return `<header><button id="menu-toggle" aria-label="打开目录">☰</button><strong>DEK 知识库</strong>`
+    return `<header><button id="menu-toggle" aria-label="打开目录">☰</button><img class="brand-logo" src="${e(root)}assets/logo.png" alt="臣邦医药" width="150" height="28"><strong>DEK 知识库</strong>`
       + `<div class="search-wrap"><div class="search-box"><input type="search" id="global-search" data-index="${e(root)}assets/search-index.json" placeholder="输入关键词…" autocomplete="off"><button type="button" id="search-button" disabled>加载中…</button></div><span id="search-status" aria-live="polite"></span><div id="search-results"></div></div>`
       + `<div class="user-menu" data-auth-me="${e(root)}auth/me"><a class="review-entry" href="/review/">知识审核</a><span id="user-name">正在读取…</span><a href="${e(root)}auth/logout">退出</a></div>`
       + `<button id="theme-toggle" aria-label="切换主题">◐</button></header>`

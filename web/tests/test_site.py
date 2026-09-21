@@ -551,15 +551,33 @@ class SiteBuildTests(unittest.TestCase):
         for rule in (".folder-card.selected{", "button.folder-card-link{", ".folder-card-link:focus-visible{", ".link-button{"):
             self.assertIn(rule, style)
 
+    def test_every_list_row_starts_with_a_running_number_that_continues_across_pages(self):
+        build_site(self.vault, self.out)
+        script = (self.out / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("const firstNumber = (page - 1) * pageSize + 1;", script)
+        self.assertIn("(doc, offset) =>", script)
+        row = script[script.index('<a class="recent-item"'):][:200]
+        self.assertLess(row.index('class="recent-index">${firstNumber + offset}'), row.index('class="recent-date"'))
+        style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        self.assertIn(".recent-index{font-size:12px;font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}", style)
+
+    def test_on_a_narrow_screen_the_number_and_path_columns_are_hidden_as_before(self):
+        build_site(self.vault, self.out)
+        style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
+        narrow = style[style.index(".recent-head,.recent-item{grid-template-columns:6rem minmax(0,1fr)}"):][:220]
+        self.assertIn(".recent-index{display:none}", narrow)
+        self.assertIn(".recent-head span:nth-child(4){display:none}", narrow)
+
+
     def test_the_list_has_a_header_row_and_a_pager_footer(self):
         build_site(self.vault, self.out)
         homepage = self.home_markup()
-        self.assertIn('<div class="recent-head"><span>日期</span><span>内容</span><span>路径</span></div>', homepage)
+        self.assertIn('<div class="recent-head"><span class="recent-index">序号</span><span>日期</span><span>内容</span><span>路径</span></div>', homepage)
         self.assertLess(homepage.index('class="recent-head"'), homepage.index('id="recent-list"'))
         self.assertLess(homepage.index('id="recent-list"'), homepage.index('id="recent-footer"'))
         style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
-        # header and rows share one grid, so the three columns line up; the path column reads left to right
-        self.assertIn(".recent-head,.recent-item{display:grid;grid-template-columns:var(--recent-cols,7.5rem minmax(0,1fr) minmax(10rem,32%))", style)   # the columns a user drags to override the default
+        # header and rows share one grid, so the four columns line up; the path column reads left to right
+        self.assertIn(".recent-head,.recent-item{display:grid;grid-template-columns:var(--recent-cols,52px 7.5rem minmax(0,1fr) minmax(10rem,32%))", style)   # the columns a user drags to override the default
         self.assertIn(".recent-item small{color:var(--muted);font-size:11px;line-height:1.5;text-align:left;white-space:normal;overflow-wrap:anywhere}", style)
         small_rule = style.split(".recent-item small{color", 1)[1].split("}", 1)[0]
         self.assertNotIn("nowrap", small_rule)                 # the path wraps and is shown in full ...

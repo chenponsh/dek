@@ -432,7 +432,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_list("opaque-session", status="pending").decode("utf-8")
         self.assertIn('<link rel="stylesheet" href="/assets/style.css">', page)
         self.assertNotIn('data:image/', page)
-        self.assertNotIn('class="brand-logo"', page)
+        self.assertIn('<img class="brand-logo" src="/assets/logo.png" alt="臣邦医药" width="150" height="28"><strong role="heading" aria-level="1">知识审核</strong>', page)
         self.assertIn('<header><button id="menu-toggle" aria-label="打开目录">☰</button>', page)
         self.assertIn('<strong role="heading" aria-level="1">知识审核</strong>', page)
         # The sidebar's 首页 entry already leads back to the knowledge base.

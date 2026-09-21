@@ -446,23 +446,24 @@
     ));
   }
 
-  // The home list: 日期 and 路径 are fixed widths, 内容 takes the rest.
+  // The home list: 序号 is a fixed narrow column; 日期 and 路径 can be dragged; 内容 takes the rest.
+  const HOME_INDEX_WIDTH = 52;
   function makeGridResizable(box) {
     const head = box?.querySelector(".recent-head");
     if (!head || head.dataset.resizable) return;
     head.dataset.resizable = "1";
-    const spans = [...head.children];
+    const spans = [...head.children];                    // 序号, 日期, 内容, 路径
     const key = "dek-cols:home-list";
-    const setColumns = (first, last) => box.style.setProperty("--recent-cols", `${first}px minmax(0,1fr) ${last}px`);
-    const current = () => [spans[0], spans[2]].map(cell => clampColumnWidth(cell.getBoundingClientRect().width));
-    const room = (first, last) => head.clientWidth - first - last >= 240;   // keep 内容 readable
+    const setColumns = (first, last) => box.style.setProperty("--recent-cols", `${HOME_INDEX_WIDTH}px ${first}px minmax(0,1fr) ${last}px`);
+    const current = () => [spans[1], spans[3]].map(cell => clampColumnWidth(cell.getBoundingClientRect().width));
+    const room = (first, last) => head.clientWidth - HOME_INDEX_WIDTH - first - last >= 240;   // keep 内容 readable
     const saved = readStoredWidths(storedWidths(key), 2);
     if (saved && room(...saved)) setColumns(...saved);
     const move = (i, start, dx) => {
       const next = i === 0 ? [clampColumnWidth(start[0] + dx), start[1]] : [start[0], clampColumnWidth(start[1] - dx)];
       if (room(...next)) setColumns(...next);
     };
-    spans.slice(0, 2).forEach((span, i) => addHandle(
+    spans.slice(1, 3).forEach((span, i) => addHandle(
       span, "拖拽调整列宽（双击恢复自动）",
       () => { const start = current(); return dx => move(i, start, dx); },
       delta => { move(i, current(), delta); storeWidths(key, current()); },
@@ -529,11 +530,12 @@
         if (footer) footer.hidden = true;
         return;
       }
-      recentList.innerHTML = listDocs.slice((page - 1) * pageSize, page * pageSize).map(doc => {
+      const firstNumber = (page - 1) * pageSize + 1;      // 序号 keeps counting across pages
+      recentList.innerHTML = listDocs.slice((page - 1) * pageSize, page * pageSize).map((doc, offset) => {
         const href = DEKSearch.resultUrl(doc, indexUrl);
         // The whole path, wrapping at its slashes rather than cut off.
         const location = `${doc.kind.toUpperCase()} · ${doc.path}`;
-        return `<a class="recent-item" href="${href}"><span class="recent-date">${escapeHtml(doc.date || "")}</span><strong>${escapeHtml(doc.title)}</strong><small title="${escapeHtml(location)}">${escapeHtml(location).replace(/\//g, "/<wbr>")}</small></a>`;
+        return `<a class="recent-item" href="${href}"><span class="recent-index">${firstNumber + offset}</span><span class="recent-date">${escapeHtml(doc.date || "")}</span><strong>${escapeHtml(doc.title)}</strong><small title="${escapeHtml(location)}">${escapeHtml(location).replace(/\//g, "/<wbr>")}</small></a>`;
       }).join("");
       if (footer) {
         footer.innerHTML = DEKSearch.pagerHtml(page, pages) + `<div class="list-tools">${DEKSearch.pageJumpHtml(pages)}${DEKSearch.pageSizeHtml(pageSize)}</div>`;

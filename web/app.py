@@ -95,7 +95,7 @@ class _PinnedResponse(list):
 
 
 FRONTEND_ASSET_DIR=Path(__file__).resolve().parent/"assets"
-FRONTEND_ASSETS=frozenset({"/assets/style.css","/assets/app.js","/assets/search.js","/assets/page.js"})
+FRONTEND_ASSETS=frozenset({"/assets/style.css","/assets/app.js","/assets/search.js","/assets/page.js","/assets/logo.png"})
 
 
 class KnowledgeApp:

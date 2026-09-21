@@ -246,7 +246,7 @@
       + '<p class="recent-summary" id="recent-summary" aria-live="polite"></p>'
       + '</section>';
     const recent = '<section class="recent-section"><div class="recent-table">'
-      + '<div class="recent-head"><span>日期</span><span>内容</span><span>路径</span></div>'
+      + '<div class="recent-head"><span class="recent-index">序号</span><span>日期</span><span>内容</span><span>路径</span></div>'
       + `<div id="recent-list" class="recent-list" data-index="${escapeText(indexPath)}">正在加载信息速览…</div></div>`
       + '<div class="list-footer" id="recent-footer" hidden></div></section>';
     return filters + sections + recent;

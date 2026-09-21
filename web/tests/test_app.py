@@ -162,6 +162,18 @@ class AppTests(unittest.TestCase):
         status, _, body = self.call("/assets/search-index.json", cookie=cookie)
         self.assertEqual((status, body), ("200 OK", b"{}"))
 
+    def test_the_company_logo_is_served_from_installed_code_as_a_png(self):
+        (self.app.root / "assets").mkdir()
+        (self.app.root / "assets" / "logo.png").write_bytes(b"RELEASE COPY")
+        code = Path(__file__).resolve().parents[1] / "assets" / "logo.png"
+        self.assertTrue(code.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
+        status, headers, body = self.call("/assets/logo.png", cookie="dek_session=" + self.token)
+        self.assertEqual(status, "200 OK")
+        self.assertEqual(body, code.read_bytes())
+        self.assertEqual(headers["Content-Type"], "image/png")
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(self.call("/assets/logo.png")[0], "302 Found")   # still behind login
+
     def test_frontend_assets_still_require_login(self):
         status, headers, _ = self.call("/assets/style.css")
         self.assertEqual(status, "302 Found")

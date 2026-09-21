@@ -31,6 +31,11 @@ class ResizerWiringTests(unittest.TestCase):
     def test_every_table_with_a_header_row_is_made_resizable_and_the_home_list_too(self):
         self.assertIn('document.querySelectorAll("table").forEach((table, index) => makeTableResizable(table, index));', self.script)
         self.assertIn('makeGridResizable(document.querySelector(".recent-table"));', self.script)
+        # 序号 is a fixed first column; the draggable ones are 日期 (2nd) and 路径 (4th)
+        self.assertIn("const HOME_INDEX_WIDTH = 52;", self.script)
+        self.assertIn("[spans[1], spans[3]].map", self.script)
+        self.assertIn("spans.slice(1, 3).forEach", self.script)
+        self.assertIn("${HOME_INDEX_WIDTH}px ${first}px minmax(0,1fr) ${last}px", self.script)
 
     def test_tables_the_handles_cannot_serve_are_left_alone(self):
         self.assertIn("heads.length < 2 || heads.some(cell => cell.colSpan > 1) || table.dataset.resizable", self.script)
@@ -61,6 +66,12 @@ class ResizerWiringTests(unittest.TestCase):
         self.assertNotIn("background:transparent", rule)
         self.assertIn("handle.title = label;", self.script)
         self.assertIn("拖拽调整列宽（双击恢复自动）", self.script)
+
+    def test_the_site_header_carries_the_company_logo_and_hides_it_on_phones(self):
+        page = (Path(__file__).parents[1] / "assets" / "page.js").read_text(encoding="utf-8")
+        self.assertIn('<img class="brand-logo" src="${e(root)}assets/logo.png" alt="臣邦医药" width="150" height="28"><strong>DEK 知识库</strong>', page)
+        self.assertIn(".brand-logo{display:block;flex:none;height:28px;width:auto}", self.style)
+        self.assertIn("header>strong,.brand-logo{display:none}", self.style)
 
     def test_the_review_pages_load_the_shared_script_and_styles(self):
         review = (Path(__file__).parents[1] / "review.py").read_text(encoding="utf-8")
