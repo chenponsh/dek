@@ -105,6 +105,21 @@ def rough_content(source_path: str, rows: list[Any], day: str, source_url: str =
     )
 
 
+def used_draft_numbers(prefix: str) -> list[int]:
+    """Numbers already used for drafts named `prefix`N.md: files still in rough/, and names
+    that earlier runs recorded in their reports. A name once used may have a review decision
+    bound to it, so it must not come back after the draft was deleted (a reset)."""
+    names = [path.name for path in (ROOT / "ingestion" / "rough").glob(prefix + "*.md")]
+    for report in (ROOT / "ingestion" / "logs").glob("source_ingest_*_report.json"):
+        try:
+            payload = json.loads(report.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            continue
+        created = payload.get("rough_created") if isinstance(payload, dict) else None
+        names += [Path(item).name for item in created or [] if isinstance(item, str)]
+    return [int(m.group(1)) for name in names if (m := re.fullmatch(re.escape(prefix) + r"(\d+)\.md", name))]
+
+
 def find_staged_duplicate(writes: dict[Path, str], row: Any) -> Path | None:
     """A draft already planned in this run for the very same question and answer (the same
     item listed under two columns of one site), or None."""
@@ -165,8 +180,7 @@ def stage_source_rows(
     # One draft per question: the review page turns one rough into one wiki
     # page, so a batched table could never be approved as-is.
     prefix = f"{now:%Y%m%d}_{path.stem}_增量_"
-    taken = [int(m.group(1)) for existing in (ROOT / "ingestion" / "rough").glob(prefix + "*.md")
-             if (m := re.fullmatch(re.escape(prefix) + r"(\d+)\.md", existing.name))]
+    taken = used_draft_numbers(prefix)
     auto = source.get("auto_classified") is True and source.get("auto_ingest") is True
     if auto:
         result["auto_write_paths"].append(source["path"])
@@ -215,7 +229,7 @@ def stage_new_notes(
         result["auto_write_paths"].append(relative)
         prefix = f"{now:%Y%m%d}_{path.stem}_增量_"
         # One draft per question, like table rows.
-        for number, (question, answer) in enumerate(note.rows, start=1):
+        for number, (question, answer) in enumerate(note.rows, start=max(used_draft_numbers(prefix), default=0) + 1):
             rough_path = ROOT / "ingestion" / "rough" / f"{prefix}{number}.md"
             if rough_path.exists():
                 raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")

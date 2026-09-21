@@ -784,6 +784,14 @@ class DuplicateAcrossColumnsTests(unittest.TestCase):
         self.assertEqual(names, ["20260920_a_增量_1.md", "20260920_b_增量_1.md"])
         self.assertEqual(sum(1 for text in writes.values() if "[[source/a]] [[source/b]]" in text), 1)
 
+    def test_a_draft_name_used_by_an_earlier_run_is_not_reused_after_the_draft_was_deleted(self):
+        logs = self.root / "ingestion" / "logs"; logs.mkdir(parents=True)
+        used = ["ingestion/rough/20260920_a_增量_1.md", "ingestion/rough/20260920_a_增量_4.md", "ingestion/rough/20260920_b_增量_9.md"]
+        (logs / "source_ingest_20260920_1000_report.json").write_text(json.dumps({"rough_created": used}), encoding="utf-8")
+        (logs / "source_ingest_broken_report.json").write_text("{not json", encoding="utf-8")
+        result, writes = self.stage([Row("第一个新问题会从五号开始编号吗", "答一", "2026-06-01")], [Row("另一个来源的新问题", "答二", "2026-06-02")])
+        self.assertEqual(sorted(Path(p).name for p in result["rough_created"]), ["20260920_a_增量_5.md", "20260920_b_增量_10.md"])
+
     def test_the_audit_counts_a_second_source_only_when_the_draft_names_it(self):
         from ingestion.automation.audit import audit_history
         row = Row("同一个问题会出现两次吗", "同一个解答", "2026-06-01")
