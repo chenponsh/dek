@@ -785,6 +785,8 @@ button[type=submit]:hover{filter:brightness(.94)}
 .decision-actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem}
 .decision-actions button{margin-top:0}
 .decision-actions .action-reject{background:#b3261e}
+.snapshot-line{margin:.2rem 0 .4rem}
+.snapshot-wait{border-left-color:#d97706}
 .notice{border-left:4px solid var(--accent);background:var(--panel);padding:.65rem .85rem;margin:1rem 0;border-radius:0 8px 8px 0}
 .combo{position:relative}
 .path-suggestions{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:-.4rem 0 1rem;color:var(--muted);font-size:.85rem}
@@ -813,12 +815,14 @@ class ReviewService:
         labels: ReviewerLabelStore | None = None,
         path_prefix: str = "",
         suggestions_path: Path | None = None,
+        ingest_state_path: Path | None = None,
     ):
         if len(audit_key) < 16 or len(queue_key) < 16:
             raise ValueError("review secrets must be at least 16 bytes")
         if path_prefix and not re.fullmatch(r"/[A-Za-z0-9._~\-/]*[A-Za-z0-9._~\-]", path_prefix):
             raise ValueError("review path prefix must be an absolute, non-trailing-slash path")
         self.repository_source = repo_root
+        self.ingest_state_path = Path(ingest_state_path) if ingest_state_path else None
         self.root = Path(repo_root).resolve() if isinstance(repo_root,Path) else None
         self.queue_path = Path(os.path.abspath(queue_path))
         self.audit_key, self.queue_key, self.nonces, self.clock = audit_key, queue_key, nonces, clock
@@ -1000,6 +1004,58 @@ class ReviewService:
             '<nav id="nav-tree" data-manifest="/manifest.json" data-current=""></nav></aside>'
         )
 
+    # --- how fresh the list is, and whether a pull is on its way -------------------------
+    INGEST_WAIT_SECONDS = 600
+
+    def snapshot_time(self) -> float | None:
+        """When the data behind the list was produced (the review bundle's write time)."""
+        bundle = getattr(self.repository_source, "bundle", None)
+        try:
+            return os.stat(bundle).st_mtime if bundle else None
+        except OSError:
+            return None
+
+    def record_ingest_request(self, when: float) -> None:
+        """Remember that a pull was asked for (the trigger marker is removed as soon as it is picked up)."""
+        if self.ingest_state_path is None:
+            return
+        try:
+            self.ingest_state_path.parent.mkdir(parents=True, exist_ok=True)
+            self.ingest_state_path.write_text(f"{int(when)}\n", encoding="utf-8")
+        except OSError:
+            pass
+
+    def ingest_status(self) -> dict:
+        """`in_progress`: a pull was requested after the current snapshot and is younger than
+        INGEST_WAIT_SECONDS. `overdue`: the same, but older: the pull did not refresh the data."""
+        snapshot = self.snapshot_time()
+        requested = None
+        if self.ingest_state_path is not None:
+            try:
+                requested = float(self.ingest_state_path.read_text(encoding="utf-8").strip())
+            except (OSError, ValueError):
+                requested = None
+        pending = requested is not None and (snapshot is None or requested > snapshot)
+        age = self.clock() - requested if requested is not None else 0
+        return {"snapshot": snapshot, "requested": requested,
+                "in_progress": bool(pending and 0 <= age < self.INGEST_WAIT_SECONDS),
+                "overdue": bool(pending and age >= self.INGEST_WAIT_SECONDS)}
+
+    def _snapshot_banner(self) -> str:
+        status = self.ingest_status()
+        clock = lambda value: datetime.fromtimestamp(value, BEIJING).strftime("%m-%d %H:%M")
+        parts = []
+        if status["snapshot"]:
+            minutes = max(0, int((self.clock() - status["snapshot"]) // 60))
+            ago = "刚刚" if minutes < 1 else f"{minutes} 分钟前" if minutes < 120 else f"{minutes // 60} 小时前"
+            parts.append(f'<div class="meta snapshot-line">数据快照：{clock(status["snapshot"])}（{ago}）。列表和内容都来自这一时刻。</div>')
+        if status["in_progress"]:
+            parts.append(f'<div class="notice snapshot-wait">抓取进行中（{clock(status["requested"])} 开始，约需 1～2 分钟）。'
+                         '完成后请刷新页面；进行期间不能批准或拒绝，避免处理到旧列表里已经不存在的内容。</div>')
+        elif status["overdue"]:
+            parts.append(f'<div class="notice">{clock(status["requested"])} 的拉取没有更新数据，可能失败了。请稍后再试，仍不行请联系管理员。</div>')
+        return "".join(parts)
+
     def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:
         all_items = self.list_items(query=query)
         status_counts = {key: sum(item.status == key for item in all_items) for key in STATUS_LABELS}
@@ -1066,6 +1122,7 @@ class ReviewService:
             + '<div class="content">'
             + '<main class="review-shell review-list">'
             + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions">{ingest_button}{publish_button}</div></div>'
+            + self._snapshot_banner()
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + f'<nav class="status-tabs" aria-label="审核状态筛选">{filters}</nav>'
             + table + f'<div class="list-footer">{pager}{size_nav}</div>' + '</main>'
@@ -1138,6 +1195,7 @@ class ReviewService:
             self._header() + self._sidebar()
             + '<div class="content">'
             + f'<main class="review-shell"><p><a href="{self.path_prefix}/{html.escape(position)}">← 返回列表</a></p><h1>{html.escape(_item_title(item))}</h1><div class="meta">{html.escape(meta)}</div>'
+            + self._snapshot_banner()
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + links_block + form + history_block + '</main>'
             + '</div>'
@@ -1147,6 +1205,8 @@ class ReviewService:
     def submit_form(self, body: bytes, *, session_id: str, user_id: str, reviewer_label: str = "") -> str:
         if len(body) > MAX_DECISION_BYTES:
             raise ReviewError("request too large", "413 Payload Too Large")
+        if self.ingest_status()["in_progress"]:
+            raise ReviewError("ingest in progress", "409 Conflict")
         try:
             values = parse_qs(body.decode("utf-8"), keep_blank_values=True, strict_parsing=True, max_num_fields=12)
         except (UnicodeDecodeError, ValueError) as exc:

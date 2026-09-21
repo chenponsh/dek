@@ -494,6 +494,89 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/?notice=ingest_triggered")
         self.assertNotEqual(trigger_path.read_text(), first_content)
 
+    # --- snapshot time and "a pull is running" -------------------------------------------------
+    def snapshot_app(self, snapshot_age_seconds=300):
+        """The app with an ingest state file and a fixed snapshot time `snapshot_age_seconds` ago."""
+        state = self.root / "state" / "ingest-requested-at"
+        trigger = self.root / "state" / "ingest-trigger-requested"
+        self.service.ingest_state_path = state
+        self.snapshot_time = self.clock_value - snapshot_age_seconds
+        self.service.snapshot_time = lambda: self.snapshot_time
+        self.app = ReviewApp(self.service, CLAIM_SECRET, ("reviewer-1",), expected_origin=REVIEW_ORIGIN,
+                             clock=self.clock, ingest_trigger_path=trigger)
+        return state
+
+    def decision_form(self, session):
+        _, _, body = self.call("/", cookie=session)
+        identity = re.search(r'/review/item/([0-9a-f]{16})', body.decode("utf-8")).group(1)
+        _, _, detail = self.call("/item/" + identity, cookie=session)
+        nonce = re.search('name="form_nonce" value="([^"]+)"', detail.decode("utf-8")).group(1)
+        binding = rough_binding(self.rough)
+        return identity, {"form_nonce": nonce, "rough_path": "ingestion/rough/pending.md", "rough_sha256": binding.sha256,
+                          "rough_version": binding.version, "action": "reject", "wiki_path": "", "candidate_markdown": ""}
+
+    def test_the_list_and_the_item_page_show_how_old_the_data_is(self):
+        self.snapshot_app(snapshot_age_seconds=300)
+        session = self.authenticate()
+        list_page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertIn("数据快照：", list_page)
+        self.assertIn("5 分钟前", list_page)
+        identity = re.search(r'/review/item/([0-9a-f]{16})', list_page).group(1)
+        self.assertIn("数据快照：", self.call("/item/" + identity, cookie=session)[2].decode("utf-8"))
+        self.assertNotIn("抓取进行中", list_page)
+
+    def test_clicking_pull_records_the_time_and_the_pages_say_a_pull_is_running(self):
+        state = self.snapshot_app(snapshot_age_seconds=300)
+        session = self.authenticate()
+        self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        self.assertEqual(state.read_text().strip(), str(self.clock_value))
+        page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertIn("抓取进行中", page)
+        self.assertIn("不能批准或拒绝", page)
+
+    def test_a_decision_made_while_the_pull_runs_is_refused_with_a_notice_and_nothing_is_recorded(self):
+        self.snapshot_app()
+        session = self.authenticate()
+        identity, form = self.decision_form(session)
+        self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        self.clock_value += 9                                    # nine seconds later, the very case seen in production
+        status, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
+        self.assertEqual(status, "303 See Other")
+        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=ingest_running")
+        self.assertFalse((self.root / "state" / "decisions.jsonl").exists() and (self.root / "state" / "decisions.jsonl").read_text().strip())
+        notice = self.call("/item/" + identity, query="notice=ingest_running", cookie=session)[2].decode("utf-8")
+        self.assertIn("这次没有记录任何决定", notice)
+
+    def test_once_the_data_is_refreshed_decisions_work_again(self):
+        self.snapshot_app()
+        session = self.authenticate()
+        identity, form = self.decision_form(session)
+        self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        self.clock_value += 60
+        self.snapshot_time = self.clock_value                     # the pull finished and wrote a new snapshot
+        status, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
+        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected")
+        self.assertNotIn("抓取进行中", self.call("/", cookie=session)[2].decode("utf-8"))
+
+    def test_a_pull_that_never_refreshed_the_data_stops_blocking_and_says_so(self):
+        self.snapshot_app()
+        session = self.authenticate()
+        identity, form = self.decision_form(session)
+        self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        self.clock_value += ReviewService.INGEST_WAIT_SECONDS + 5
+        page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertIn("可能失败", page)
+        self.assertNotIn("抓取进行中", page)
+        status, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
+        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected")
+
+    def test_without_an_ingest_state_file_nothing_changes(self):
+        session = self.authenticate()
+        page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertNotIn("抓取进行中", page)
+        self.assertNotIn("可能失败", page)
+
+
     def test_publish_is_404_when_not_configured(self):
         session = self.authenticate()
         self.assertEqual(self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)[0], "404 Not Found")
