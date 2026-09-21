@@ -913,6 +913,9 @@ class ReviewService:
             for path, record in latest.items()
             if path != except_rough and record.get("action") == "approve" and record.get("wiki_path")
             and not (root / str(record["wiki_path"])).exists()
+            # only an approval whose draft is still waiting to be published reserves its number;
+            # one whose draft was deleted (a data reset) can never publish, so the number is free
+            and self._rough_status(root, path) not in ("", "promoted")
         )
 
     def _duplicate_notice(self, root: Path, item) -> str:

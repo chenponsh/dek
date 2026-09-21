@@ -454,6 +454,12 @@ def _row_date(line: str) -> tuple[list[str], str]:
     return cells, max(dates) if dates else ""
 
 
+def _source_note_date(doc: dict) -> str:
+    """A source note's own date: its `date`, else the YYYY-MM-DD its file name starts with."""
+    named = re.match(r"(\d{4}-\d{2}-\d{2})_", PurePosixPath(doc["key"]).name)
+    return _iso_date(doc["meta"].get("date")) or (named.group(1) if named else "")
+
+
 def _hold_back_unapproved_source(docs: list[dict]) -> tuple[list[dict], frozenset[str]]:
     """Drop source material dated from SOURCE_APPROVAL_FLOOR on that no approved wiki entry
     stands on. Wiki entries are in the tree only once approved, so a wiki entry dated from
@@ -475,7 +481,7 @@ def _hold_back_unapproved_source(docs: list[dict]) -> tuple[list[dict], frozense
     for doc in docs:
         if doc["kind"] != "source":
             kept.append(doc); continue
-        if (_iso_date(doc["meta"].get("date")) or "") >= SOURCE_APPROVAL_FLOOR:
+        if _source_note_date(doc) >= SOURCE_APPROVAL_FLOOR:
             if doc["key"] in approved:
                 kept.append(doc)
             else:

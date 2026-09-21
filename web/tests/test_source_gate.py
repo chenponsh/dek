@@ -65,6 +65,12 @@ class SourceApprovalGateTests(unittest.TestCase):
         paths, _ = self.build()
         self.assertIn("source/CPC/专栏/2026-06-17_已批准文章.md", paths)
 
+    def test_a_source_note_with_no_date_field_is_judged_by_the_date_in_its_file_name(self):
+        self.write("source/CPC/专栏/2026-07-01_没有日期字段.md", "---\nentity: x\n---\n\n## 内容\n\n没有日期字段的正文。\n")
+        paths, search = self.build()
+        self.assertNotIn("source/CPC/专栏/2026-07-01_没有日期字段.md", paths)
+        self.assertNotIn("没有日期字段的正文", search)
+
     def test_notes_before_the_floor_are_untouched(self):
         paths, search = self.build()
         self.assertIn("source/CPC/专栏/2025-06-18_旧文章.md", paths)

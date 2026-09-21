@@ -1086,6 +1086,17 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('data-path="wiki/05_药学研究/0507_溶出曲线/0507-0005.md"', page)                           # chips agree
         self.assertIn("0507-0005.md", page.split("data-options=", 1)[1].split(">", 1)[0])                         # and so does the dropdown
 
+    def test_a_number_reserved_by_an_approval_whose_draft_was_deleted_is_offered_again(self):
+        # After a data reset the same items come back; their old numbers must not stay reserved.
+        self.add_filed_entries()
+        first = self.rough_about("溶出曲线f2相似性因子怎么算", "比较溶出曲线时使用相似性因子f2，选择合适的溶出介质。")
+        promised = "wiki/05_药学研究/0507_溶出曲线/0507-0004.md"
+        self.decide(action="approve", wiki_path=promised)
+        (self.root / "repo/ingestion/rough/pending.md").unlink()                # the reset removed the draft (and never published)
+        second = self.second_draft()
+        page = self.service.render_item("opaque-session", second.identity).decode("utf-8")
+        self.assertRegex(page, r'class="wiki-path-input"[^>]*value="' + promised.replace(".", r"\.") + '"')
+
     def test_editing_an_approved_draft_again_may_keep_its_own_promised_number(self):
         self.add_filed_entries()
         first = self.rough_about("溶出曲线f2相似性因子怎么算", "比较溶出曲线时使用相似性因子f2，选择合适的溶出介质。")
