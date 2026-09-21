@@ -11,7 +11,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 INDEX_VERSION = 4
 BUILDER_VERSION = "4"
@@ -283,7 +283,6 @@ def build_index(vault: Path, output: Path) -> dict[str, Any]:
     return payload
 
 
-SITE_BASE = "https://regkb.chenponai.com/"
 _SHORT_TITLE_CHARS = 50
 
 
@@ -299,6 +298,36 @@ def _short_title(title: str) -> tuple[str, int]:
     return first, len(lines)
 
 
+def _source_line(doc: dict[str, Any]) -> str:
+    """The finished "来源：" line for one item, so the answer never depends on the model picking the
+    right address: the item's own official page, else the source's column page (marked as such),
+    else a plain statement that no link is known. Never a knowledge-base address."""
+    names = "、".join(doc.get("source_names") or [])
+    article = doc.get("article_url") or ""
+    urls = doc.get("source_urls") or []
+    if article:
+        note, url = names, article
+    elif urls and doc.get("source_status") == "verified":
+        note, url = "；".join(part for part in (names, "栏目页，非具体文章") if part), urls[0]
+    else:
+        return "未提供来源链接" if doc.get("source_status") == "none" else "来源链接尚未确认"
+    return f"来源：{url}" + (f"（{note}）" if note else "")
+
+
+def _list_text(items: list[dict[str, Any]], total: int) -> str:
+    """The list of an answer, finished: number, entry number, category, short title, source line,
+    and the closing count."""
+    lines = []
+    for number, item in enumerate(items, start=1):
+        label = " · ".join(part for part in (item.get("entry_no"), item.get("category"), item["short_title"]) if part)
+        lines.append(f"{number}. {label}\n{item['source_line']}")
+    closing = f"共 {total} 条（仅统计已审核发布的内容）"
+    if total > len(items):
+        closing += f"，以上只列出前 {len(items)} 条"
+    lines.append(closing)
+    return "\n".join(lines)
+
+
 def _entry_extras(doc: dict[str, Any]) -> dict[str, Any]:
     """Fields derived from the path and title, so an older index gets them too."""
     path = doc["path"]
@@ -310,7 +339,7 @@ def _entry_extras(doc: dict[str, Any]) -> dict[str, Any]:
         "category": " / ".join(re.sub(r"^\d+_", "", part) for part in parts[1:-1]),
         "short_title": short,
         "question_count": count,
-        "page_url": SITE_BASE + quote(Path(path).with_suffix(".html").as_posix(), safe="/"),
+        "source_line": _source_line(doc),
     }
 
 
@@ -470,6 +499,7 @@ class KnowledgeBase:
             "publication_count": len(publications),
             "knowledge_base_updates": [summary(doc) for doc in updates[:limit]],
             "recent_publications": [summary(doc) for doc in publications[:limit]],
+            "publications_text": _list_text([summary(doc) for doc in publications[:limit]], len(publications)),
             "definitions": {
                 "knowledge_base_updates": "正式 wiki 笔记的 Git 最后提交日期位于时间窗口内",
                 "recent_publications": "正式 wiki 笔记 frontmatter 的来源发布日期位于时间窗口内",

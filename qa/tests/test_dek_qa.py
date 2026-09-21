@@ -147,11 +147,35 @@ class DekQaTests(unittest.TestCase):
         self.assertTrue(item["short_title"].startswith("1：很长的问题"))
         self.assertTrue(item["short_title"].endswith("…（共 3 项）"))
         self.assertLess(len(item["short_title"]), 70)
-        self.assertEqual(item["page_url"], "https://regkb.chenponai.com/wiki/01_%E6%B3%A8%E5%86%8C/0101-0005.html")
+        self.assertNotIn("page_url", item)                      # a knowledge-base address is never handed to the model
         hit = next(x for x in self.kb.dek_kb_search("很长的问题") if x["id"] == doc["id"])
         self.assertEqual(hit["short_title"], item["short_title"])
-        self.assertEqual(self.kb.dek_kb_get(doc["id"])["page_url"], item["page_url"])
+        self.assertEqual(hit["source_line"], item["source_line"])
+        self.assertNotIn("regkb.chenponai.com", json.dumps(self.kb.dek_kb_get(doc["id"]), ensure_ascii=False))
         self.assertIn("第二问", self.kb.dek_kb_get(doc["id"])["title"])       # the full title is untouched
+
+    def test_the_source_line_is_the_official_address_and_never_a_knowledge_base_address(self):
+        own = self._add_entry("0101-0020.md", "date: 2026-09-11\nquestion: 有自己官网页面的问题吗\nsource_url: https://official.example/a/9.html\nsource: \"[[source/CPC/官方通知]]\"")
+        column = next(x for x in self.kb.dek_kb_search("药品注册如何申报") if x["path"].endswith("0101-0001.md"))
+        got = self.kb.dek_kb_get(own["id"])
+        self.assertEqual(got["source_line"], "来源：https://official.example/a/9.html（测试材料）")
+        self.assertEqual(column["source_line"], "来源：https://official.example/notice（测试材料；栏目页，非具体文章）")
+        for line in (got["source_line"], column["source_line"]):
+            self.assertNotIn("regkb", line)
+
+    def test_an_entry_with_no_known_link_says_so_instead_of_inventing_one(self):
+        doc = self._add_entry("0101-0021.md", "date: 2026-09-12\nquestion: 没有任何来源链接的问题吗")
+        self.assertEqual(self.kb.dek_kb_get(doc["id"])["source_line"], "未提供来源链接")
+
+    def test_the_recent_answer_text_is_finished_numbered_sourced_and_counted(self):
+        own = self._add_entry("0101-0022.md", "date: 2026-09-13\nquestion: 第二条有官网页面吗\nsource_url: https://official.example/a/10.html")
+        result = self.kb.dek_kb_recent(since="2026-09-01", until="2026-09-30", limit=1)
+        text = result["publications_text"]
+        self.assertEqual(text.splitlines()[0], "1. 0101-0022 · 注册 · 第二条有官网页面吗")
+        self.assertEqual(text.splitlines()[1], "来源：https://official.example/a/10.html")
+        self.assertEqual(text.splitlines()[-1], "共 2 条（仅统计已审核发布的内容），以上只列出前 1 条")
+        self.assertNotIn("regkb", text)
+        self.assertEqual(self.kb.dek_kb_recent(since="2030-01-01")["publications_text"], "共 0 条（仅统计已审核发布的内容）")
 
     def test_a_short_one_line_title_is_left_alone(self):
         item = self.kb.dek_kb_recent(days=30, as_of="2026-09-20")["recent_publications"][0]
@@ -181,7 +205,7 @@ class DekQaTests(unittest.TestCase):
 
     def test_the_rules_tell_the_bot_to_pass_dates_use_the_exact_count_and_shorten_lists(self):
         soul = (Path(__file__).resolve().parents[1] / "config" / "SOUL.md").read_text(encoding="utf-8")
-        for phrase in ("`since`/`until`", "`publication_count`", "`short_title`", "`page_url`", "仅统计已审核发布的内容", "序号. 编号 · 分类 · 标题"):
+        for phrase in ("`since`/`until`", "`publication_count`", "`short_title`", "`source_line`", "`publications_text`", "仅统计已审核发布的内容", "序号. 编号 · 分类 · 标题"):
             self.assertIn(phrase, soul)
 
     def test_the_bot_rules_ask_for_one_link_per_question_not_a_summary_block(self):
