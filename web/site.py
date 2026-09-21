@@ -427,6 +427,72 @@ def _copy_note_files(vault: Path, output: Path) -> None:
             shutil.copy2(path, target / path.name)
 
 
+# Material dated on or after this day is only public once a reviewer approved it. The ingest
+# pushes every pulled source note and table row straight into the repository, but a reviewer
+# only approves the wiki entry made from it, so the site holds the raw source back until then.
+# Must equal `earliest_date` in ingestion/automation/config.json (a test keeps them together).
+SOURCE_APPROVAL_FLOOR = "2026-03-01"
+_TABLE_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
+_MIN_QUESTION_CHARS = 8
+
+
+def _question_key(text: object) -> str:
+    text = re.sub(r"<br\s*/?>", "", str(text or ""))
+    return re.sub(r"^问[:：]", "", re.sub(r"\s+", "", text)).replace("：", "").replace(":", "")
+
+
+def _same_question(row_key: str, wiki_key: str) -> bool:
+    if min(len(row_key), len(wiki_key)) < _MIN_QUESTION_CHARS:
+        return False
+    return row_key == wiki_key or row_key.startswith(wiki_key) or wiki_key.startswith(row_key)
+
+
+def _row_date(line: str) -> tuple[list[str], str]:
+    cells = [cell.strip() for cell in _UNESCAPED_PIPE.split(line.strip()[1:-1])]
+    dates = [cell for cell in cells if _TABLE_DATE.fullmatch(cell)]
+    return cells, max(dates) if dates else ""
+
+
+def _hold_back_unapproved_source(docs: list[dict]) -> tuple[list[dict], frozenset[str]]:
+    """Drop source material dated from SOURCE_APPROVAL_FLOOR on that no approved wiki entry
+    stands on. Wiki entries are in the tree only once approved, so a wiki entry dated from
+    the floor on is the approval. Returns the remaining docs (source table rows edited in
+    place on copies) and the names of the whole notes that were held back."""
+    by_path = {d["key"]: d for d in docs}
+    by_stem: dict[str, list[dict]] = {}
+    for d in docs: by_stem.setdefault(PurePosixPath(d["key"]).name, []).append(d)
+    approved: dict[str, list[str]] = {}
+    for doc in docs:
+        if doc["kind"] != "wiki" or (_iso_date(doc["meta"].get("date")) or "") < SOURCE_APPROVAL_FLOOR:
+            continue
+        question = _question_key(doc["meta"].get("question") or doc["title"])
+        for match in WIKILINK.finditer(str(doc["meta"].get("source") or "")):
+            target = _resolve(match.group(2), by_path, by_stem)
+            if target and target["kind"] == "source":
+                approved.setdefault(target["key"], []).append(question)
+    kept, held = [], set()
+    for doc in docs:
+        if doc["kind"] != "source":
+            kept.append(doc); continue
+        if (_iso_date(doc["meta"].get("date")) or "") >= SOURCE_APPROVAL_FLOOR:
+            if doc["key"] in approved:
+                kept.append(doc)
+            else:
+                held.add(PurePosixPath(doc["key"]).name)
+            continue
+        questions = approved.get(doc["key"], [])
+        lines = []
+        for line in doc["body"].split("\n"):
+            if line.startswith("|"):
+                cells, day = _row_date(line)
+                if day >= SOURCE_APPROVAL_FLOOR and not any(_same_question(_question_key(cells[0]), q) for q in questions):
+                    continue
+            lines.append(line)
+        kept.append({**doc, "body": "\n".join(lines)})
+    return kept, frozenset(held)
+
+
 def build_site(vault: Path, output: Path) -> dict:
     vault, output = Path(vault), Path(output)
     docs = []
@@ -438,7 +504,8 @@ def build_site(vault: Path, output: Path) -> dict:
             meta, body = _split_note(path.read_text(encoding="utf-8"))
             key = rel.with_suffix("").as_posix()
             docs.append({"path": rel.as_posix(), "key": key, "kind": rel.parts[0], "meta": meta, "body": body, "title": _title(meta, path, body), "output": PurePosixPath(rel.with_suffix(".html").as_posix())})
-    excluded_stems = frozenset(
+    docs, held_stems = _hold_back_unapproved_source(docs)
+    excluded_stems = held_stems | frozenset(
         path.stem for area in (vault / "wiki", vault / "source") if area.exists() for path in area.rglob("*.md")
         if any("排除" in part for part in path.relative_to(vault).parts))
     by_path = {d["key"]: d for d in docs}
