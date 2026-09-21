@@ -249,18 +249,18 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(SafetyStop, "unexpected baseline workspace"):
                 assert_cpc_baseline_workspace_safe(root)
 
-    def inspect_cpc(self, article_exists=True, remote_hash=None, hash_error=False):
+    def inspect_cpc(self, article_exists=True, remote_hash=None, hash_error=False, earliest=None, article_date="2026-01-01"):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         note = "---\nlast_updated: 2025-01-01\n---\n\n## 内容\n\n| 问题 | 解答 | 发布日期 |\n| --- | --- | --- |\n"
         (root / "shanghai.md").write_text(note, encoding="utf-8")
         (root / "included").mkdir(); (root / "excluded").mkdir()
-        article = CPCArticle("id", "标题", "2026-01-01", "2026-01-01_标题.md")
+        article = CPCArticle("id", "标题", article_date, f"{article_date}_标题.md")
         baseline = "sha256:" + "a" * 64
         if article_exists:
             (root / "included" / article.filename).write_text(f'---\nsource_content_hash: "{baseline}"\n---\n', encoding="utf-8")
-        config = {"no_fetch_rule": [], "known_unautomated": [], "table_sources": [{"path": "shanghai.md", "fetcher": "shanghai", "url": "x", "auto_classified": True, "auto_ingest": True}], "cpc": {"list_url": "x", "detail_url": "x/{news_id}", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"url": "x", "sources": []}}
+        config = {"no_fetch_rule": [], "known_unautomated": [], "table_sources": [{"path": "shanghai.md", "fetcher": "shanghai", "url": "x", "auto_classified": True, "auto_ingest": True}], "cpc": {"list_url": "x", "detail_url": "x/{news_id}", "path": "cpc.md", "included_dir": "included", "excluded_dir": "excluded"}, "cde": {"url": "x", "sources": []}, **({"earliest_date": earliest} if earliest else {})}
         detail_effect = SafetyStop("unavailable") if hash_error else None
         with patch.object(cli, "ROOT", root), patch.object(cli, "repo_fingerprint", return_value="x"), patch.dict(cli.FETCHERS, {"shanghai": lambda source, known, since: ([], {"remote_count": 0})}), patch.object(cli, "fetch_cpc", return_value=([article], {"remote_count": 1})), patch.object(cli, "fetch_cpc_content_hash", return_value=remote_hash or baseline, side_effect=detail_effect), patch.object(cli, "fetch_cde", return_value=({}, {})):
             return cli.inspect(config, datetime.now())[0]
@@ -744,6 +744,19 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report["report"]["cpc.md"]["status"], "new_articles_staged")
         self.assertEqual(report["report"]["included/2026-01-01_标题.md"]["status"], "updated_with_new")
         self.assertEqual(len(report["rough_created"]), 1)
+
+    def test_cpc_articles_before_the_earliest_date_are_not_staged(self):
+        old = self.inspect_cpc(article_exists=False, earliest="2026-03-01", article_date="2026-02-27")
+        self.assertEqual(old["report"]["cpc.md"]["status"], "no_change")
+        self.assertEqual(old["rough_created"], [])
+
+    def test_cpc_articles_from_the_earliest_date_on_are_still_staged(self):
+        from ingestion.automation.sources import NewNote
+        notes = [NewNote("2026-03-01_标题.md", "标题", "2026-03-01", "https://u", "", "正文")]
+        with patch.object(cli, "fetch_cpc_notes", return_value=(notes, {})):
+            new = self.inspect_cpc(article_exists=False, earliest="2026-03-01", article_date="2026-03-01")
+        self.assertEqual(new["report"]["cpc.md"]["status"], "new_articles_staged")
+
 
     def test_cpc_existing_content_unchanged(self):
         report = self.inspect_cpc(remote_hash="sha256:" + "a" * 64)

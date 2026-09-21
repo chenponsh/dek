@@ -36,6 +36,22 @@ def approval_scope_hash(report: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(scope, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def earliest_date(config: dict[str, Any]) -> str:
+    """Items published before this day are never fetched: the knowledge base was initialised
+    from the reviewed Word collection up to 2026-02-28, and that stays the authority."""
+    return str(config.get("earliest_date") or "")
+
+
+def effective_since(config: dict[str, Any], note_text: str) -> str:
+    """The note's `last_updated`, but never earlier than the day before `earliest_date`
+    (adapters take items with a date strictly after this)."""
+    since = last_updated(note_text)
+    floor = earliest_date(config)
+    if floor:
+        since = max(since, (datetime.strptime(floor, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d"))
+    return since
+
+
 def load_config() -> dict[str, Any]:
     return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
@@ -85,13 +101,17 @@ def rough_content(source_path: str, rows: list[Any], day: str) -> str:
 
 def stage_source_rows(
     result: dict[str, Any], writes: dict[Path, str], source: dict[str, Any],
-    rows: list[Any], meta: dict[str, Any], now: datetime, *, revisions_block: bool,
+    rows: list[Any], meta: dict[str, Any], now: datetime, *, revisions_block: bool, earliest: str = "",
 ) -> None:
     """Compare fetched rows with a source note; plan the note update and one
     rough draft per new row. Nothing is written here, only planned."""
     day = now.strftime("%Y-%m-%d")
     path = ROOT / source["path"]
     note = path.read_text(encoding="utf-8")
+    if earliest:
+        # Older rows belong to the initialised collection: they are neither added nor
+        # compared (a changed old answer must not block today's new items).
+        rows = [row for row in rows if row.date[:10] >= earliest]
     additions, revisions = compare_rows(parse_table(note), rows)
     additions = [row for row in additions if row.date[:10] > last_updated(note)]
     entry = {**meta, "new_count": len(additions), "revision_count": len(revisions)}
@@ -174,7 +194,7 @@ def stage_file_sources(config: dict[str, Any], result: dict[str, Any], writes: d
             known = set()
             for folder in [source["dir"], *source.get("known_dirs", [])]:
                 known |= {p.name for p in (ROOT / folder).glob("*.md")}
-            since = last_updated((ROOT / source["note"]).read_text(encoding="utf-8"))
+            since = effective_since(config, (ROOT / source["note"]).read_text(encoding="utf-8"))
             notes, meta = FILE_FETCHERS[source["fetcher"]](source, known, since)
             if len(notes) > MAX_NEW_PER_SOURCE:
                 raise SafetyStop(f"一次新增 {len(notes)} 篇，超过 {MAX_NEW_PER_SOURCE} 篇上限，疑似页面结构变化")
@@ -194,8 +214,8 @@ def stage_table_sources(config: dict[str, Any], result: dict[str, Any], writes: 
             known: set[Any] = {row.key for row in parse_table(note)}
             if source.get("layout") == "articles":
                 known |= note_urls(note)
-            rows, meta = FETCHERS[source["fetcher"]](source, known, last_updated(note))
-            stage_source_rows(result, writes, source, rows, meta, now, revisions_block=False)
+            rows, meta = FETCHERS[source["fetcher"]](source, known, effective_since(config, note))
+            stage_source_rows(result, writes, source, rows, meta, now, revisions_block=False, earliest=earliest_date(config))
         except Exception as exc:
             result["report"][source["path"]] = {"status": "failed", "reason": str(exc)}
             result["alerts"].append(f"source failure: {source['path']}: {exc}")
@@ -215,6 +235,8 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
 
     try:
         articles, meta = fetch_cpc(config["cpc"]["list_url"])
+        if earliest_date(config):
+            articles = [article for article in articles if article.date >= earliest_date(config)]
         existing: dict[str, Path] = {}
         for key in ("included_dir", "excluded_dir"):
             for existing_path in (ROOT / config["cpc"][key]).glob("*.md"):
@@ -277,7 +299,7 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
             result["cde_diagnostics"] = diagnostics
             for source in cde_config:
                 rows, meta = remote[source["type"]]
-                stage_source_rows(result, writes, source, rows, meta, now, revisions_block=True)
+                stage_source_rows(result, writes, source, rows, meta, now, revisions_block=True, earliest=earliest_date(config))
         except CDEBrowserUnavailable as exc:
             diagnostics = exc.diagnostics
             result["cde_diagnostics"] = diagnostics

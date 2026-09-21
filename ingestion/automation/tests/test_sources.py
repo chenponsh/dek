@@ -595,6 +595,53 @@ class TableSourceStagingTests(unittest.TestCase):
         self.assertEqual(text.count("### [新文章](https://x/new.html)（2026-06-01）"), 1)
         self.assertLess(text.index("新文章"), text.index("### [旧]"))
 
+    def test_rows_before_the_earliest_date_are_ignored_even_when_the_watermark_is_older(self):
+        (self.root / "source" / "a.md").write_text(self.NOTE.replace("2026-02-28", "2026-01-01"), encoding="utf-8")
+        self.config["earliest_date"] = "2026-03-01"
+        seen = {}
+
+        def fetch(source, known, since):
+            seen["since"] = since
+            return [Row("二月的问题", "答", "2026-02-10"), Row("三月的问题", "答", "2026-03-05")], {}
+        result, writes = self.run_stage(fetch)
+        self.assertEqual(seen["since"], "2026-02-28")            # never earlier than the day before the floor
+        note = writes[self.root / "source" / "a.md"]
+        self.assertIn("三月的问题", note)
+        self.assertNotIn("二月的问题", note)
+        self.assertEqual(len(result["rough_created"]), 1)
+
+    def test_a_later_watermark_still_wins_over_the_floor(self):
+        (self.root / "source" / "a.md").write_text(self.NOTE.replace("2026-02-28", "2026-07-14"), encoding="utf-8")
+        self.config["earliest_date"] = "2026-03-01"
+        seen = {}
+
+        def fetch(source, known, since):
+            seen["since"] = since
+            return [], {}
+        self.run_stage(fetch)
+        self.assertEqual(seen["since"], "2026-07-14")
+
+    def test_a_changed_old_answer_does_not_block_or_get_reported_once_the_floor_is_set(self):
+        self.config["earliest_date"] = "2026-03-01"
+        for blocks in (False, True):
+            result = cli.base_report(self.now, "dry-run")
+            writes = {}
+            cli.stage_source_rows(result, writes, self.config["table_sources"][0],
+                                  [Row("旧问题", "改过的答案", "2026-01-05")], {}, self.now,
+                                  revisions_block=blocks, earliest="2026-03-01")
+            self.assertFalse(result["blocking"])
+            self.assertEqual(result["report"]["source/a.md"]["status"], "no_change")
+            self.assertEqual(writes, {})
+
+    def test_without_a_floor_a_changed_old_answer_still_blocks_when_asked_to(self):
+        result = cli.base_report(self.now, "dry-run")
+        cli.stage_source_rows(result, {}, self.config["table_sources"][0],
+                              [Row("旧问题", "改过的答案", "2026-01-05")], {}, self.now, revisions_block=True)
+        self.assertTrue(result["blocking"])
+
+    def test_the_shipped_config_sets_the_floor(self):
+        self.assertEqual(cli.earliest_date(cli.load_config()), "2026-03-01")
+
     def test_table_sources_are_on_the_automatic_write_allowlist(self):
         config = {"cde": {"sources": []}, **self.config}
         self.assertEqual(cli.automatic_write_allowlist(config), {"source/a.md"})
