@@ -392,8 +392,14 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         self.assertIn("退回澄清", page)
 
+    def publish_page(self, wiki_path="wiki/01_Test/01-0001.md"):
+        page = self.root / "repo" / wiki_path
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_text(CANDIDATE, encoding="utf-8")
+
     def test_approve_of_a_vanished_rough_reports_published(self):
         self.decide(action="approve")
+        self.publish_page()
         self.rough.unlink()
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         self.assertEqual(item.status, "published")
@@ -880,11 +886,27 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(self.service.render_list("opaque-session", status="published").decode("utf-8").count("备注：pending.md"), 1)
         self.assertNotIn("备注：pending.md", self.service.render_list("opaque-session", status="approved").decode("utf-8"))
 
-    def test_an_approval_is_still_published_when_its_draft_file_is_gone(self):
+    def test_an_approval_is_still_published_when_its_draft_file_is_gone_but_its_page_exists(self):
         self.decide(action="approve")
+        self.publish_page()
         (self.root / "repo/ingestion/rough/pending.md").unlink()
         self.assertEqual(self.status_of(), "published")
         self.assertEqual(self.approved_count()[0], 0)
+
+    def test_an_approval_whose_draft_and_page_are_both_gone_is_not_listed_as_published(self):
+        # A data reset removed the draft and the page it was to become: nothing was published.
+        self.decide(action="approve")
+        (self.root / "repo/ingestion/rough/pending.md").unlink()
+        self.assertNotIn("ingestion/rough/pending.md", [item.path for item in self.service.list_items()])
+        page = self.service.render_list("opaque-session", status="published").decode("utf-8")
+        self.assertNotIn("备注：pending.md", page)
+        self.assertEqual(self.approved_count()[0], 0)
+        record = json.loads(self.queue.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(record["action"], "approve")                # the decision itself stays on record
+
+    def test_a_pending_draft_that_reuses_the_path_of_a_deleted_approval_is_still_shown_pending_or_approved(self):
+        self.decide(action="approve")
+        self.assertEqual(self.status_of(), "approved")               # draft present, page absent: waiting to be published
 
     def test_only_the_approvals_that_are_not_yet_published_are_counted(self):
         second = self.root / "repo/ingestion/rough/second.md"

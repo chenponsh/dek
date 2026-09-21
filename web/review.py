@@ -963,8 +963,15 @@ class ReviewService:
             derived = ACTION_STATUS.get(action, "pending")
             # An approval is published once its draft is gone from the snapshot or the draft
             # itself says so (publishing keeps the file and marks it `promoted`).
-            if action == "approve" and self._rough_status(root, path) in ("", "promoted"):
-                derived = "published"
+            if action == "approve":
+                draft_status = self._rough_status(root, path)
+                wiki_path = str(record.get("wiki_path") or "")
+                if draft_status == "" and wiki_path and not (root / wiki_path).exists() and path not in items:
+                    # The draft is gone and so is the page it was to become (a data reset removed
+                    # both): this approval published nothing, so it is not listed as published.
+                    continue
+                if draft_status in ("", "promoted"):
+                    derived = "published"
             existing = items.get(path)
             reviewer = labels.get(record.get("decision_id", ""), "")
             items[path] = ReviewItem(
