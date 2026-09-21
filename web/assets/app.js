@@ -350,7 +350,9 @@
       const homeActive = current === "首页.md" ? " active" : "";
       const homeHref = new URL("index.html", manifestUrl).href;
       const homeLink = `<a role="treeitem" class="tree-link home-link${homeActive}" href="${homeHref}"><span class="tree-file-icon">⌂</span><span class="tree-label">首页</span></a>`;
-      nav.innerHTML = homeLink + `<div role="tree" aria-label="知识库目录">${tree.map(node => renderNode(node)).join("")}</div>`;
+      // 来源列表 is the reviewers' page (the server refuses anyone else): first entry after 首页
+      const sourcesLink = `<a role="treeitem" class="tree-link sources-link${current === "review:sources" ? " active" : ""}" href="/review/sources"><span class="tree-file-icon">▦</span><span class="tree-label">来源列表</span></a>`;
+      nav.innerHTML = homeLink + sourcesLink + `<div role="tree" aria-label="知识库目录">${tree.map(node => renderNode(node)).join("")}</div>`;
       nav.querySelectorAll("details[data-path]").forEach(folder => {
         folder.addEventListener("toggle", () => {
           const path = folder.dataset.path;

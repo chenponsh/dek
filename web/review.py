@@ -793,8 +793,6 @@ STYLE = """<style>
 .summary-row .summary{margin-bottom:0}
 .summary-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-left:auto}
 .ingest-trigger-form,.publish-trigger-form{margin:0}
-.summary-link{color:var(--accent);text-decoration:none;font-weight:600;font-size:.92rem}
-.summary-link:hover{text-decoration:underline}
 .source-table td.source-date{white-space:nowrap}
 .source-table .col-source{width:24rem}.source-table .col-date{width:10rem}
 .source-table td.source-url{overflow-wrap:anywhere}
@@ -988,7 +986,7 @@ class ReviewService:
             + f'<td class="source-date">{html.escape(item["latest"]) if item["latest"] else "—"}</td></tr>'
             for number, item in enumerate(self.source_overview(), start=1))
         body = (
-            self._header() + self._sidebar()
+            self._header() + self._sidebar("review:sources")
             + '<div class="content"><main class="review-shell review-list">'
             + f'<p><a href="{self.path_prefix}/">← 返回列表</a></p><h1>来源列表</h1>'
             + '<div class="meta">按来源统计，不是按 wiki：这里是每个来源网址上已经抓到的内容里最新的发布日期（含还没审核的）。'
@@ -1137,10 +1135,10 @@ class ReviewService:
             '</header>'
         )
 
-    def _sidebar(self) -> str:
+    def _sidebar(self, current: str = "") -> str:
         return (
             '<aside class="sidebar">'
-            '<nav id="nav-tree" data-manifest="/manifest.json" data-current=""></nav></aside>'
+            f'<nav id="nav-tree" data-manifest="/manifest.json" data-current="{html.escape(current)}"></nav></aside>'
         )
 
     # --- how fresh the list is, and whether a pull is on its way -------------------------
@@ -1289,7 +1287,7 @@ class ReviewService:
             self._header() + self._sidebar()
             + '<div class="content">'
             + '<main class="review-shell review-list">'
-            + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions"><a class="summary-link" href="{self.path_prefix}/sources">来源列表</a>{ingest_button}{publish_button}</div></div>'
+            + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions">{ingest_button}{publish_button}</div></div>'
             + self._snapshot_banner()
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + f'<nav class="status-tabs" aria-label="审核状态筛选">{filters}</nav>'

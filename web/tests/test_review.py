@@ -672,9 +672,13 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(self.service.source_overview(), [])
         self.assertIn("来源列表", self.service.render_sources("opaque-session").decode("utf-8"))
 
-    def test_the_list_page_links_to_the_source_list(self):
-        page = self.service.render_list("opaque-session").decode("utf-8")
-        self.assertIn('<a class="summary-link" href="/sources">来源列表</a>', page)
+    def test_the_source_list_lives_in_the_directory_after_home_not_among_the_list_buttons(self):
+        script = (Path(__file__).parents[1] / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertLess(script.index("nav.innerHTML = homeLink + sourcesLink"), script.index('role="tree" aria-label="知识库目录"'))
+        self.assertIn('href="/review/sources"', script)
+        self.assertIn('current === "review:sources"', script)
+        self.assertIn('data-current="review:sources"', self.service.render_sources("opaque-session").decode("utf-8"))
+        self.assertNotIn("来源列表", self.service.render_list("opaque-session").decode("utf-8").split("</style>", 1)[1])
 
     def test_the_form_labels_are_plain_without_the_long_hints(self):
         page = self.item_page("Q")
