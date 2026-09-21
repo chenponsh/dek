@@ -62,7 +62,7 @@ def base_report(now: datetime, mode: str) -> dict[str, Any]:
         "generated_at": now.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
         "baseline": repo_fingerprint(ROOT, CONFIG_PATH),
         "report": {}, "rough_created": [], "planned_writes": [],
-        "blocking": False, "alerts": [], "auto_write_paths": [], "rough_sources": {},
+        "blocking": False, "alerts": [], "auto_write_paths": [], "rough_sources": {}, "rough_also_sources": {},
     }
     run_nonce = os.environ.get("DEK_INGEST_RUN_NONCE")
     if run_nonce:
@@ -103,6 +103,26 @@ def rough_content(source_path: str, rows: list[Any], day: str, source_url: str =
         "| --- | --- | --- |\n"
         f"{rendered}"
     )
+
+
+def find_staged_duplicate(writes: dict[Path, str], row: Any) -> Path | None:
+    """A draft already planned in this run for the very same question and answer (the same
+    item listed under two columns of one site), or None."""
+    cells = f"| {markdown_cell(row.question)} | {markdown_cell(row.answer)} |"
+    rough_dir = ROOT / "ingestion" / "rough"
+    for path, text in writes.items():
+        if path.parent == rough_dir and not path.exists() and cells in text:
+            return path
+    return None
+
+
+def add_source_to_draft(text: str, source_path: str) -> str:
+    """Name one more source note on a planned draft's `source:` line."""
+    link = f"[[{source_path.removesuffix('.md')}]]"
+    updated, count = re.subn(r'(?m)^(source: ")([^"\n]*)(")$', lambda m: f"{m.group(1)}{m.group(2)} {link}{m.group(3)}", text, count=1)
+    if count != 1:
+        raise SafetyStop("planned draft has no source line to extend")
+    return updated
 
 
 def stage_source_rows(
@@ -150,7 +170,21 @@ def stage_source_rows(
     auto = source.get("auto_classified") is True and source.get("auto_ingest") is True
     if auto:
         result["auto_write_paths"].append(source["path"])
-    for number, row in enumerate(additions, start=max(taken, default=0) + 1):
+    number = max(taken, default=0)
+    for row in additions:
+        duplicate = find_staged_duplicate(writes, row) if auto else None
+        if duplicate is not None and result["rough_sources"].get(str(duplicate.relative_to(ROOT))) == source["path"]:
+            duplicate = None          # twice in the same column: keep both, as before
+        if duplicate is not None:
+            # The same item under another column: one draft for the reviewer, naming both
+            # sources, and the report says which draft covers this source too.
+            duplicate_relative = str(duplicate.relative_to(ROOT))
+            writes[duplicate] = add_source_to_draft(writes[duplicate], source["path"])
+            also = result.setdefault("rough_also_sources", {}).setdefault(duplicate_relative, [])
+            if source["path"] not in also:
+                also.append(source["path"])
+            continue
+        number += 1
         rough_path = ROOT / "ingestion" / "rough" / f"{prefix}{number}.md"
         if rough_path.exists():
             raise SafetyStop(f"rough draft already exists: {rough_path.relative_to(ROOT)}")
@@ -334,6 +368,9 @@ def validate_report_invariants(report: dict[str, Any]) -> None:
     rough_created = set(report.get("rough_created", []) or [])
     rough_sources = report.get("rough_sources", {}) or {}
     covered = {source for rough, source in rough_sources.items() if rough in rough_created}
+    for rough, sources in (report.get("rough_also_sources", {}) or {}).items():
+        if rough in rough_created and rough in rough_sources:
+            covered.update(sources)
     missing = updated - covered
     if missing:
         raise SafetyStop(f"updated_with_new requires rough draft: {sorted(missing)}")
@@ -388,8 +425,12 @@ def validate_automatic_plan(config: dict[str, Any], report: dict[str, Any], writ
     if outside or planned != source_paths | rough_paths:
         raise SafetyStop("scheduled plan contains a non-allowlisted path")
     rough_sources = report.get("rough_sources", {})
+    also_sources = report.get("rough_also_sources", {})
+    paired = {rough_sources.get(path) for path in rough_paths}
+    for path in rough_paths:
+        paired.update(also_sources.get(path, []))
     if (rough_paths != set(report.get("rough_created", []))
-            or {rough_sources.get(path) for path in rough_paths} != source_paths):
+            or paired != source_paths):
         raise SafetyStop("scheduled source and rough writes are not paired")
     if any(report.get("report", {}).get(path, {}).get("status") != "updated_with_new" for path in source_paths):
         raise SafetyStop("scheduled source is not explicitly marked updated_with_new")

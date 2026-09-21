@@ -105,6 +105,17 @@ class SourceApprovalGateTests(unittest.TestCase):
         page = (self.out / "source" / "北京" / "咨询.html").read_text(encoding="utf-8")
         self.assertNotIn("待审的解答", page)
 
+    def test_an_entry_naming_two_source_notes_releases_the_row_in_both(self):
+        row = "| {q} | 两处都有的解答 | 2026-08-04 |\n"
+        question = "同一个问题被列在两个栏目里的时候两处都要放行"
+        for name in ("甲", "乙"):
+            self.write(f"source/北京/{name}.md", "---\nlast_updated: 2026-09-21\n---\n\n| 问题 | 解答 | 发布日期 |\n| --- | --- | --- |\n" + row.format(q=question))
+        self.write("wiki/01_注册/0101-0006.md",
+                   f"---\nno: 6\ndate: 2026-08-04\nquestion: \"{question}\"\nsource: \"[[source/北京/甲]] [[source/北京/乙]]\"\ntags:\n  - 注册\n---\n\n两处都有的解答\n")
+        self.build()
+        for name in ("甲", "乙"):
+            self.assertIn(question, (self.out / "source" / "北京" / f"{name}.html").read_text(encoding="utf-8"))
+
     def test_a_short_question_never_releases_a_row_by_accident(self):
         self.write("source/北京/短.md",
                    "---\nlast_updated: 2026-09-21\n---\n\n| 问题 | 解答 | 发布日期 |\n| --- | --- | --- |\n| 是 | 短问题的解答 | 2026-08-01 |\n")

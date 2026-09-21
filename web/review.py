@@ -138,8 +138,15 @@ def list_state_query(status: str = "", page: int = 1, query: str = "", size: int
     return "?" + urlencode(params) if params else ""
 
 
+_WIKILINK_NAME = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
+
+
 def _short_source(source: str) -> str:
-    """"[[source/CDE/CDE_x|alias]]" -> "CDE_x": the note's own name is enough in a table cell."""
+    """"[[source/CDE/CDE_x|alias]]" -> "CDE_x": the note's own name is enough in a table cell.
+    An item listed under two columns names both notes: "CDE_x、CDE_y"."""
+    names = _WIKILINK_NAME.findall(source)
+    if len(names) > 1:
+        return "、".join(name.strip().rstrip("/").rsplit("/", 1)[-1] for name in names)
     name = source.strip().strip("[]").split("|", 1)[0].rstrip("/")
     return name.rsplit("/", 1)[-1] or source
 
@@ -390,10 +397,24 @@ def candidate_draft(content: str, wiki_path: str) -> str:
     return "\n".join(lines)
 
 
+def _wikilink_names(value: object) -> list[str]:
+    """Every source note a draft names ("[[a]] [[b]]"), or its one bare name."""
+    if not isinstance(value, str):
+        return []
+    found = [name.strip() for name in _WIKILINK_NAME.findall(value)]
+    if found:
+        return found
+    name = _wikilink_name(value)
+    return [name] if name else []
+
+
 def _wikilink_name(value: object) -> str:
     if not isinstance(value, str):
         return ""
     raw = value.strip().strip('"').strip("'").strip()
+    first = _WIKILINK_NAME.search(raw)
+    if first:
+        return first.group(1).strip()
     if raw.startswith("[[") and raw.endswith("]]"):
         raw = raw[2:-2].strip()
     return raw
@@ -458,11 +479,12 @@ def source_urls(content: str, root: Path) -> list[dict]:
                 add(item, link_name or "来源")
         else:
             add(value, link_name or "来源")
-    note, note_meta = _source_note(root, link_name)
-    if note is not None:
-        label = str(note_meta.get("entity") or note_meta.get("entity_alias") or link_name or "来源").strip()
-        for field in ("source_url", "url"):
-            add(note_meta.get(field), label)
+    for name in _wikilink_names(meta.get("source")) or [link_name]:
+        note, note_meta = _source_note(root, name)
+        if note is not None:
+            label = str(note_meta.get("entity") or note_meta.get("entity_alias") or name or "来源").strip()
+            for field in ("source_url", "url"):
+                add(note_meta.get(field), label)
     _, body = _split_body(content)
     for url in _http_urls(body):
         add(url, link_name or "正文链接")

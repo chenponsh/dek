@@ -67,17 +67,24 @@ def _rough_text(path: Path) -> str:
     return path.read_text(encoding="utf-8-sig", errors="replace")
 
 
-def _rough_identity(path: Path) -> tuple[str, str] | None:
-    """Legacy identity: (ingested_at, source_path)."""
+def _rough_identities(path: Path) -> list[tuple[str, str]]:
+    """Legacy identities: (ingested_at, source_path), one per source note the draft names.
+    A draft for an item listed under two columns names both notes on its `source:` line."""
     text = _rough_text(path)
     ingested = re.search(r"(?m)^ingested_at:\s*(\d{4}-\d{2}-\d{2})\s*$", text)
-    source = re.search(r'(?m)^source:\s*["\']?\[\[([^]]+)\]\]["\']?\s*$', text)
-    if not ingested or not source:
-        return None
-    source_path = source.group(1)
-    if not source_path.endswith(".md"):
-        source_path += ".md"
-    return ingested.group(1), source_path
+    line = re.search(r'(?m)^source:[ \t]*(.*)$', text)
+    if not ingested or not line:
+        return []
+    identities = []
+    for name in re.findall(r"\[\[([^]]+)\]\]", line.group(1)):
+        identities.append((ingested.group(1), name if name.endswith(".md") else name + ".md"))
+    return identities
+
+
+def _rough_identity(path: Path) -> tuple[str, str] | None:
+    """The first identity of a draft, or None."""
+    identities = _rough_identities(path)
+    return identities[0] if identities else None
 
 
 def _rough_source_item_key(path: Path) -> str | None:
@@ -107,6 +114,12 @@ def _payload_errors(payload: Any, relative: str) -> list[dict[str, str]]:
         or any(not isinstance(k, str) or not isinstance(v, str) for k, v in rough_sources.items())
     ):
         errors.append({"report": relative, "reason": "'rough_sources' must be a string-keyed mapping"})
+    also = payload.get("rough_also_sources")
+    if also is not None and (
+        not isinstance(also, dict)
+        or any(not isinstance(k, str) or not isinstance(v, list) or any(not isinstance(i, str) for i in v) for k, v in also.items())
+    ):
+        errors.append({"report": relative, "reason": "'rough_also_sources' must map a draft to a list of source paths"})
     return errors
 
 
@@ -150,9 +163,7 @@ def audit_history(root: Path, today: date | None = None) -> dict[str, Any]:
         item_key = _rough_source_item_key(path)
         if item_key:
             reconciled_keys.add(item_key)
-        identity = _rough_identity(path)
-        if identity:
-            reconciled_legacy.add(identity)
+        reconciled_legacy.update(_rough_identities(path))
 
     exclusions, exclusion_errors = _load_exclusions(root)
     errors: list[dict[str, str]] = list(exclusion_errors)
@@ -183,6 +194,13 @@ def audit_history(root: Path, today: date | None = None) -> dict[str, Any]:
 
         if rough_sources is not None:
             covered_sources = {source for rough_path, source in rough_sources.items() if rough_path in rough}
+            also_sources = payload.get("rough_also_sources") if isinstance(payload.get("rough_also_sources"), dict) else {}
+            for rough_path, sources in also_sources.items():
+                # Counted only when the draft really names that source on its `source:` line.
+                if rough_path not in rough or rough_path not in rough_sources or not (root / rough_path).is_file():
+                    continue
+                named = {name for _, name in _rough_identities(root / rough_path)}
+                covered_sources.update(source for source in sources if source in named)
         else:
             # Legacy reports predate ``rough_sources``: a non-empty
             # ``rough_created`` covered the whole report at the time.

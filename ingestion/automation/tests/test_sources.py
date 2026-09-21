@@ -710,6 +710,105 @@ class TableSourceStagingTests(unittest.TestCase):
         self.assertEqual(cli.automatic_write_allowlist(config), {"source/a.md"})
 
 
+class DuplicateAcrossColumnsTests(unittest.TestCase):
+    """The same item listed under two columns of one site becomes one draft that names both."""
+    NOTE = "---\nentity: x\nlast_updated: 2026-02-28\n---\n\n## 内容\n\n| 问题 | 解答 | 发布日期 |\n| --- | --- | --- |\n"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "source").mkdir()
+        (self.root / "ingestion" / "rough").mkdir(parents=True)
+        for name in ("a", "b"):
+            (self.root / "source" / f"{name}.md").write_text(self.NOTE, encoding="utf-8")
+        self.enterContext(patch.object(cli, "ROOT", self.root))
+        self.enterContext(patch.object(cli, "repo_fingerprint", return_value={}))
+        self.now = datetime(2026, 9, 20, 10, 0, tzinfo=timezone.utc)
+        self.config = {"cde": {"sources": []}, "table_sources": [
+            {"path": f"source/{name}.md", "fetcher": f"fake_{name}", "auto_classified": True, "auto_ingest": True} for name in ("a", "b")]}
+
+    def stage(self, rows_a, rows_b):
+        fetchers = {"fake_a": lambda s, k, since: (rows_a, {}), "fake_b": lambda s, k, since: (rows_b, {})}
+        self.enterContext(patch.dict(cli.FETCHERS, fetchers))
+        result = cli.base_report(self.now, "dry-run")
+        writes: dict = {}
+        cli.stage_table_sources(self.config, result, writes, self.now)
+        result["planned_writes"] = sorted(str(p.relative_to(self.root)) for p in writes)
+        return result, writes
+
+    def test_the_same_question_and_answer_in_two_notes_makes_one_draft_naming_both(self):
+        row = Row("同一个问题会出现两次吗", "同一个解答", "2026-06-01")
+        result, writes = self.stage([row], [row])
+        self.assertEqual(len(result["rough_created"]), 1)
+        draft = writes[self.root / result["rough_created"][0]]
+        self.assertIn('source: "[[source/a]] [[source/b]]"', draft)
+        self.assertEqual(result["rough_also_sources"], {result["rough_created"][0]: ["source/b.md"]})
+        for name in ("a", "b"):                       # both notes still get the row and are marked updated
+            self.assertIn("同一个问题会出现两次吗", writes[self.root / "source" / f"{name}.md"])
+            self.assertEqual(result["report"][f"source/{name}.md"]["status"], "updated_with_new")
+        cli.validate_report_invariants(result)
+        self.assertEqual(len(writes), 3)
+
+    def test_the_automatic_plan_accepts_the_merged_pair(self):
+        row = Row("同一个问题会出现两次吗", "同一个解答", "2026-06-01")
+        result, writes = self.stage([row], [row])
+        result["auto_write_paths"] = sorted(result["planned_writes"])
+        self.assertEqual(cli.validate_automatic_plan(self.config, result, writes), set(result["planned_writes"]))
+
+    def test_the_automatic_plan_still_refuses_an_unpaired_source(self):
+        row = Row("同一个问题会出现两次吗", "同一个解答", "2026-06-01")
+        result, writes = self.stage([row], [row])
+        result["auto_write_paths"] = sorted(result["planned_writes"])
+        result["rough_also_sources"] = {}
+        with self.assertRaises(SafetyStop):
+            cli.validate_automatic_plan(self.config, result, writes)
+        with self.assertRaises(SafetyStop):
+            cli.validate_report_invariants(result)
+
+    def test_a_different_answer_or_question_keeps_two_drafts(self):
+        result, _ = self.stage([Row("同一个问题会出现两次吗", "解答甲", "2026-06-01")], [Row("同一个问题会出现两次吗", "解答乙", "2026-06-01")])
+        self.assertEqual(len(result["rough_created"]), 2)
+        self.assertEqual(result["rough_also_sources"], {})
+
+    def test_the_same_item_twice_in_one_column_is_not_merged(self):
+        row = Row("同一个问题会出现两次吗", "同一个解答", "2026-06-01")
+        result, _ = self.stage([row, row], [])
+        self.assertEqual(len(result["rough_created"]), 2)
+
+    def test_only_the_repeated_row_is_merged_when_a_column_has_other_new_rows(self):
+        shared = Row("同一个问题会出现两次吗", "同一个解答", "2026-06-01")
+        result, writes = self.stage([shared], [Row("只在第二栏目出现的问题", "另一个解答", "2026-06-02"), shared])
+        self.assertEqual(len(result["rough_created"]), 2)
+        names = sorted(path.name for path in writes if path.parent.name == "rough")
+        self.assertEqual(names, ["20260920_a_增量_1.md", "20260920_b_增量_1.md"])
+        self.assertEqual(sum(1 for text in writes.values() if "[[source/a]] [[source/b]]" in text), 1)
+
+    def test_the_audit_counts_a_second_source_only_when_the_draft_names_it(self):
+        from ingestion.automation.audit import audit_history
+        row = Row("同一个问题会出现两次吗", "同一个解答", "2026-06-01")
+        result, writes = self.stage([row], [row])
+        logs = self.root / "ingestion" / "logs"; logs.mkdir(parents=True)
+        rough = result["rough_created"][0]
+        (self.root / rough).write_text(writes[self.root / rough], encoding="utf-8")
+        payload = {"date": "2026-09-20", "report": result["report"], "rough_created": result["rough_created"],
+                   "rough_sources": result["rough_sources"], "rough_also_sources": result["rough_also_sources"]}
+        (logs / "source_ingest_2026-09-20_report.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(audit_history(self.root)["missing_rough_events"], 0)
+        text = (self.root / rough).read_text(encoding="utf-8").replace(' [[source/b]]', "")
+        (self.root / rough).write_text(text, encoding="utf-8")
+        audit = audit_history(self.root)
+        self.assertEqual(audit["missing_rough_events"], 1)
+        self.assertEqual(audit["backlog"][0]["source"], "source/b.md")
+
+    def test_the_audit_rejects_a_malformed_also_sources_entry(self):
+        from ingestion.automation.audit import audit_history
+        logs = self.root / "ingestion" / "logs"; logs.mkdir(parents=True)
+        (logs / "source_ingest_2026-09-20_report.json").write_text(
+            json.dumps({"date": "2026-09-20", "report": {}, "rough_also_sources": {"x": "source/b.md"}}), encoding="utf-8")
+        self.assertEqual(len(audit_history(self.root)["report_errors"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
 

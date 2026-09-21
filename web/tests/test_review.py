@@ -11,6 +11,7 @@ from unittest.mock import patch
 import os
 
 from web.review import (
+    _short_source,
     MemoryFormNonceStore,
     ReviewerLabelStore,
     ReviewError,
@@ -1259,6 +1260,18 @@ class ReviewWorkflowTests(unittest.TestCase):
         )
         links = source_urls(content, self.root / "repo")
         self.assertEqual(links, [{"label": "source/国家药监局/2017-10-10_解读", "url": "https://www.nmpa.gov.cn/directory/web/nmpa/xxgk/zhcjd/20171010214301421.html"}])
+
+    def test_a_draft_that_names_two_source_notes_shows_both_and_their_addresses(self):
+        root = self.root / "repo"
+        (root / "source/CDE").mkdir(parents=True, exist_ok=True)
+        for name, url in (("甲栏目", "https://www.cde.org.cn/a"), ("乙栏目", "https://www.cde.org.cn/b")):
+            (root / "source/CDE" / f"{name}.md").write_text(f"---\nentity: {name}实体\nurl: {url}\n---\n\n正文\n", encoding="utf-8")
+        content = '---\nsource: "[[source/CDE/甲栏目]] [[source/CDE/乙栏目]]"\n---\n\n正文\n'
+        links = source_urls(content, root)
+        self.assertEqual(links, [{"label": "甲栏目实体", "url": "https://www.cde.org.cn/a"}, {"label": "乙栏目实体", "url": "https://www.cde.org.cn/b"}])
+        self.assertEqual(_short_source('[[source/CDE/甲栏目]] [[source/CDE/乙栏目]]'), "甲栏目、乙栏目")
+        self.assertEqual(_short_source("[[source/CDE/甲栏目]]"), "甲栏目")
+        self.assertEqual(_short_source("[[source/CDE/甲栏目|别名]]"), "甲栏目")
 
     def test_source_urls_ignore_non_http_values_and_unknown_sources(self):
         content = '---\nsource: "[[missing-note]]"\nsource_url: ftp://example.test/x\n---\n\n无链接\n'
