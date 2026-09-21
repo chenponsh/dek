@@ -465,6 +465,16 @@ class ReviewAppTests(unittest.TestCase):
         _, headers, _ = self.call("/", extra={"HTTP_ACCESS_CONTROL_REQUEST_METHOD": "POST"})
         self.assertFalse(any(name.lower().startswith("access-control-") for name, _ in headers))
 
+    def test_the_source_list_is_for_reviewers_only(self):
+        status, headers, body = self.call("/sources", cookie=self.authenticate())
+        self.assertEqual(status, "200 OK")
+        self.assertIn("来源列表".encode(), body)
+        self.assertEqual(self.call("/sources", cookie=self.authenticate("someone-else"))[0], "403 Forbidden")
+        self.assertEqual(self.call("/sources", method="POST", cookie=self.authenticate())[0], "405 Method Not Allowed")
+        status, headers, _ = self.call("/sources")
+        self.assertEqual(status, "302 Found")                              # not signed in: sent to log in, nothing shown
+        self.assertNotIn(b"sjcx", self.call("/sources")[2])
+
     def test_trigger_ingest_is_404_when_not_configured(self):
         session = self.authenticate()
         self.assertEqual(self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)[0], "404 Not Found")

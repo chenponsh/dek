@@ -191,6 +191,21 @@ class ReviewApp:
         display_name = sanitize_nickname(decision.display_name) if is_reviewer else ""
         session_id = hashlib.sha256(morsel.value.encode("utf-8")).hexdigest() if is_reviewer and morsel else ""
 
+        if path == "/sources":
+            if method != "GET":
+                return self._response(start, "405 Method Not Allowed", b"Method Not Allowed", (("Allow", "GET"),))
+            if not self.reviewers:
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            if not authenticated:
+                return self._begin_login(start, REVIEW_PREFIX + "/sources")
+            if not is_reviewer:
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            try:
+                body = self.service.render_sources(session_id)
+            except ReviewError as error:
+                return self._render_failure(start, error)
+            return self._response(start, "200 OK", body, (("Content-Type", "text/html; charset=utf-8"),))
+
         if path == "/":
             if method != "GET":
                 return self._response(start, "405 Method Not Allowed", b"Method Not Allowed", (("Allow", "GET"),))

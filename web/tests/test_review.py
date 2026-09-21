@@ -626,6 +626,56 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('<main class="review-shell review-list">', detail)    # the same wide column as the list
         self.assertNotIn('<main class="review-shell">', detail)
 
+    def make_sources(self):
+        root = self.root / "repo"
+        (root / "ingestion/automation").mkdir(parents=True, exist_ok=True)
+        (root / "source/北京").mkdir(parents=True, exist_ok=True)
+        (root / "source/CPC/专栏").mkdir(parents=True, exist_ok=True)
+        (root / "ingestion/automation/config.json").write_text(json.dumps({
+            "cde": {"sources": []}, "cpc": {"path": "source/CPC/专栏.md"},
+            "table_sources": [{"path": "source/北京/咨询.md"}, {"path": "source/北京/空.md"}, {"path": "source/北京/无网址.md"}, {"path": "../etc/passwd"}],
+            "file_sources": []}), encoding="utf-8")
+        (root / "source/北京/咨询.md").write_text(
+            "---\nurl: https://example.org/consult\n---\n\n说明里提到 2030-01-01 不算。\n\n| 问题 | 解答 | 发布日期 |\n| --- | --- | --- |\n"
+            "| 甲 | 解答里写了 2031-12-31 也不算 | 2026-08-03 |\n| 乙 | 答 | 2026-05-08 |\n", encoding="utf-8")
+        (root / "source/北京/空.md").write_text("---\nurl: https://example.org/empty\n---\n\n没有表格\n", encoding="utf-8")
+        (root / "source/北京/无网址.md").write_text("---\nurl: javascript:alert(1)\n---\n\n| 标题 | 日期 |\n| --- | --- |\n| 丙 | 2026-01-02 |\n", encoding="utf-8")
+        (root / "source/CPC/专栏.md").write_text("---\nurl: https://example.org/cpc?a=1&b=2\n---\n\n没有表格\n", encoding="utf-8")
+        (root / "source/CPC/专栏/2026-06-17_文章甲.md").write_text("x", encoding="utf-8")
+        (root / "source/CPC/专栏/2026-06-02_文章乙.md").write_text("x", encoding="utf-8")
+        (root / "source/CPC/专栏/没有日期.md").write_text("x", encoding="utf-8")
+
+    def test_the_source_list_gives_each_source_its_address_and_latest_fetched_publication_date(self):
+        self.make_sources()
+        overview = {item["name"]: item for item in self.service.source_overview()}
+        self.assertEqual(list(overview), ["专栏", "咨询", "空", "无网址"])          # the unsafe path is skipped, the rest keep the config order
+        self.assertEqual(overview["咨询"]["latest"], "2026-08-03")                # the 发布日期 column, not a date in an answer
+        self.assertEqual(overview["专栏"]["latest"], "2026-06-17")                # per-article notes count by their file-name date
+        self.assertEqual(overview["空"]["latest"], "")
+        self.assertEqual(overview["无网址"]["latest"], "2026-01-02")             # the column headed 日期 is used
+        self.assertEqual(overview["无网址"]["url"], "")                            # only http(s) addresses are kept
+
+    def test_the_source_list_page_numbers_the_rows_and_links_the_addresses(self):
+        self.make_sources()
+        page = self.service.render_sources("opaque-session").decode("utf-8")
+        self.assertIn("<th>序号</th>", page.replace('<th class="index">', "<th>"))
+        self.assertIn("<th>最新发布日期</th>", page)
+        self.assertIn('<td class="meta index">1</td><td>专栏</td>', page)
+        self.assertIn('<td class="meta index">4</td><td>无网址</td>', page)
+        self.assertIn('<a href="https://example.org/cpc?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">https://example.org/cpc?a=1&amp;b=2</a>', page)
+        self.assertIn('<td class="source-date">2026-08-03</td>', page)
+        self.assertIn('<td class="source-date">—</td>', page)
+        self.assertNotIn("javascript:", page)
+        self.assertIn("按来源统计，不是按 wiki", page)
+
+    def test_the_source_list_is_empty_but_renders_when_the_snapshot_has_no_config(self):
+        self.assertEqual(self.service.source_overview(), [])
+        self.assertIn("来源列表", self.service.render_sources("opaque-session").decode("utf-8"))
+
+    def test_the_list_page_links_to_the_source_list(self):
+        page = self.service.render_list("opaque-session").decode("utf-8")
+        self.assertIn('<a class="summary-link" href="/sources">来源列表</a>', page)
+
     def test_the_form_labels_are_plain_without_the_long_hints(self):
         page = self.item_page("Q")
         self.assertIn("<label>Wiki 路径<div class=\"combo\">", page)

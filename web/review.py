@@ -420,6 +420,33 @@ def _wikilink_name(value: object) -> str:
     return raw
 
 
+SOURCE_OVERVIEW_MAX_BYTES = 2 * 1024 * 1024
+MAX_PER_ARTICLE_NOTES = 5000
+_ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _table_dates(text: str) -> list[str]:
+    """The publication dates in a note's tables: the cell under the 日期 column of each table
+    (the last cell when a table has no such heading), never a date that only occurs in an answer."""
+    dates: list[str] = []
+    column: int | None = None
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            column = None
+            continue
+        cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
+        if not cells or re.fullmatch(r"[\s:|-]*", "".join(cells)):
+            continue
+        if any("日期" in cell for cell in cells) and not any(_ISO_DAY.match(cell) for cell in cells):
+            column = next(index for index, cell in enumerate(cells) if "日期" in cell)
+            continue
+        cell = cells[column] if column is not None and column < len(cells) else cells[-1]
+        found = _ISO_DAY.match(cell)
+        if found:
+            dates.append(found.group(0))
+    return dates
+
+
 URL_PATTERN = re.compile(r"https?://[^\s)\]<>\"'，。；]+")
 MAX_SOURCE_URLS = 5
 MAX_SOURCE_NOTE_BYTES = 262144
@@ -766,6 +793,11 @@ STYLE = """<style>
 .summary-row .summary{margin-bottom:0}
 .summary-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-left:auto}
 .ingest-trigger-form,.publish-trigger-form{margin:0}
+.summary-link{color:var(--accent);text-decoration:none;font-weight:600;font-size:.92rem}
+.summary-link:hover{text-decoration:underline}
+.source-table td.source-date{white-space:nowrap}
+.source-table .col-source{width:24rem}.source-table .col-date{width:10rem}
+.source-table td.source-url{overflow-wrap:anywhere}
 .status-tabs{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center;margin:0 0 1.2rem}
 .status-tab{position:relative;display:inline-flex;align-items:center;padding:.4rem .75rem;border-radius:999px;color:var(--muted);text-decoration:none;font-weight:600;font-size:.88rem}
 .status-tab:hover{background:var(--hover);color:var(--text)}
@@ -903,6 +935,69 @@ class ReviewService:
             for record in self._decisions()
             if record.get("rough_path") == relative
         ]
+
+    def source_overview(self, root=None) -> list[dict]:
+        """Every source the pull takes, with its address and the latest publication date found in
+        what was fetched from it so far (source notes only, approved or not; not the wiki)."""
+        root = self._snapshot_root(root)
+        try:
+            config = json.loads((root / "ingestion/automation/config.json").read_text(encoding="utf-8-sig"))
+            entries = [(c["path"], c.get("type", "")) for c in config.get("cde", {}).get("sources", [])]
+            entries.append((config["cpc"]["path"], "")) if config.get("cpc") else None
+            entries += [(c["path"], "") for c in config.get("table_sources", [])]
+            entries += [(c["note"], "") for c in config.get("file_sources", [])]
+        except (OSError, ValueError, KeyError, TypeError):
+            return []
+        overview = []
+        for relative, _ in entries:
+            try:
+                path = validate_relative_path(relative, PurePosixPath("source"))
+            except ReviewError:
+                continue
+            note = root / path
+            try:
+                with note.open("rb") as handle:
+                    text = handle.read(SOURCE_OVERVIEW_MAX_BYTES).decode("utf-8-sig", errors="replace")
+            except OSError:
+                overview.append({"name": path.stem, "url": "", "latest": "", "path": str(path)})
+                continue
+            try:
+                meta = _frontmatter(text)
+            except ReviewError:
+                meta = {}
+            dates = _table_dates(text)
+            folder = note.with_suffix("")          # per-article notes live in a folder named like the note
+            if folder.is_dir() and not folder.is_symlink():
+                with os.scandir(folder) as scan:
+                    for count, entry in enumerate(scan):
+                        if count >= MAX_PER_ARTICLE_NOTES:
+                            break
+                        named = _ISO_DAY.match(entry.name)
+                        if named and entry.name.endswith(".md"):
+                            dates.append(named.group(0))
+            url = str(meta.get("url") or meta.get("source_url") or "").strip()
+            overview.append({"name": path.stem, "url": url if re.fullmatch(r"https?://[^\s\"<>]+", url) else "",
+                             "latest": max(dates) if dates else "", "path": str(path)})
+        return overview
+
+    def render_sources(self, session_id: str) -> bytes:
+        rows = "".join(
+            f'<tr><td class="meta index">{number}</td><td>{html.escape(item["name"])}</td>'
+            + (f'<td class="source-url"><a href="{html.escape(item["url"], quote=True)}" target="_blank" rel="noopener noreferrer">{html.escape(item["url"])}</a></td>'
+               if item["url"] else '<td class="meta source-url">—</td>')
+            + f'<td class="source-date">{html.escape(item["latest"]) if item["latest"] else "—"}</td></tr>'
+            for number, item in enumerate(self.source_overview(), start=1))
+        body = (
+            self._header() + self._sidebar()
+            + '<div class="content"><main class="review-shell review-list">'
+            + f'<p><a href="{self.path_prefix}/">← 返回列表</a></p><h1>来源列表</h1>'
+            + '<div class="meta">按来源统计，不是按 wiki：这里是每个来源网址上已经抓到的内容里最新的发布日期（含还没审核的）。'
+              '“—”表示还没有抓到带日期的内容。</div>'
+            + '<div class="table-wrap"><table class="source-table"><colgroup><col class="col-index"><col class="col-source"><col><col class="col-date"></colgroup>'
+            + '<thead><tr><th class="index">序号</th><th>来源</th><th>网址</th><th>最新发布日期</th></tr></thead>'
+            + f'<tbody>{rows}</tbody></table></div></main></div>'
+        )
+        return self._page("来源列表", body)
 
     def _promised_wiki_paths(self, root: Path, except_rough: str = "") -> frozenset[str]:
         """Wiki paths that approved drafts (other than `except_rough`) are waiting to be published at."""
@@ -1194,7 +1289,7 @@ class ReviewService:
             self._header() + self._sidebar()
             + '<div class="content">'
             + '<main class="review-shell review-list">'
-            + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions">{ingest_button}{publish_button}</div></div>'
+            + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions"><a class="summary-link" href="{self.path_prefix}/sources">来源列表</a>{ingest_button}{publish_button}</div></div>'
             + self._snapshot_banner()
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
             + f'<nav class="status-tabs" aria-label="审核状态筛选">{filters}</nav>'
