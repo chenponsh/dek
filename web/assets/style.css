@@ -51,3 +51,4 @@ button.folder-card-link:hover{background:transparent}
 /* Chenpon brand: company logo, then a hairline divider before the site name */
 .brand-logo{display:block;flex:none;height:28px;width:auto}
 .brand-logo+strong{padding-left:14px;border-left:1px solid var(--line)}
+.review-header-menu{margin-left:auto}

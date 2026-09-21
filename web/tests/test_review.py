@@ -429,6 +429,14 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('>已拒绝</a>', page)
         self.assertNotIn('<sup class="filter-count">0</sup>', page)
 
+    def test_review_pages_show_the_signed_in_name_and_a_sign_out_link_like_the_knowledge_base(self):
+        list_page = self.service.render_list("opaque-session", status="pending").decode("utf-8")
+        item = self.service.list_items()[0]
+        item_page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
+        for page in (list_page, item_page):
+            self.assertIn('<div class="user-menu review-header-menu" data-auth-me="/auth/me"><span id="user-name">正在读取…</span><a href="/auth/logout">退出</a></div></header>', page)
+            self.assertIn('<script src="/assets/app.js" defer></script>', page)      # the script that fills in the name
+
     def test_list_reuses_the_knowledge_base_chrome_with_a_resizable_sidebar(self):
         page = self.service.render_list("opaque-session", status="pending").decode("utf-8")
         self.assertIn('<link rel="stylesheet" href="/assets/style.css">', page)
@@ -439,7 +447,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         # The sidebar's 首页 entry already leads back to the knowledge base.
         self.assertNotIn("kb-return-link", page)
         self.assertNotIn("返回知识库", page)
-        self.assertIn('<strong role="heading" aria-level="1">知识审核</strong></header>', page)
+        self.assertIn('<strong role="heading" aria-level="1">知识审核</strong><div class="user-menu review-header-menu"', page)
         self.assertNotIn('<form class="logout-form"', page)
         self.assertNotIn('>退出审核<', page)
         self.assertIn('<aside class="sidebar">', page)

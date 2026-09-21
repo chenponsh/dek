@@ -1018,6 +1018,8 @@ class ReviewService:
             '<header><button id="menu-toggle" aria-label="打开目录">☰</button>'
             '<img class="brand-logo" src="/assets/logo.png" alt="臣邦医药" width="150" height="28">'
             '<strong role="heading" aria-level="1">知识审核</strong>'
+            '<div class="user-menu review-header-menu" data-auth-me="/auth/me"><span id="user-name">正在读取…</span>'
+            '<a href="/auth/logout">退出</a></div>'
             '</header>'
         )
 
