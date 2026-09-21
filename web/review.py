@@ -747,7 +747,7 @@ STYLE = """<style>
 .status-tabs{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center;margin:0 0 1.2rem}
 .status-tab{position:relative;display:inline-flex;align-items:center;padding:.4rem .75rem;border-radius:999px;color:var(--muted);text-decoration:none;font-weight:600;font-size:.88rem}
 .status-tab:hover{background:var(--hover);color:var(--text)}
-.status-tab.active{background:var(--accent);color:#fff}
+.status-tab.active{background:var(--accent);color:var(--on-accent)}
 .filter-count{position:absolute;top:-.3rem;right:-.3rem;display:inline-block;min-width:1.3em;padding:0 .3rem;border-radius:999px;background:var(--bg);color:var(--text);font-size:.68em;line-height:1.4;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.18)}
 .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
 .table-wrap table{display:table;width:100%;min-width:600px}   /* a narrow screen scrolls the table sideways instead of crushing its columns */
@@ -766,7 +766,7 @@ th.index,td.index{width:60px;min-width:60px;text-align:center}
 .page-size input[type=number]::-webkit-inner-spin-button,.page-size input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .pager a,.pager .current,.pager .disabled{min-width:2rem;padding:.3rem .7rem;border:1px solid var(--line);border-radius:6px;text-align:center;text-decoration:none;color:var(--text)}
 .pager a:hover{background:var(--hover)}
-.pager .current{background:var(--accent);border-color:var(--accent);color:#fff}
+.pager .current{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 .pager .disabled{color:var(--muted);opacity:.5}
 .pager .gap,.pager .page-info{color:var(--muted);padding:0 .3rem}
 .pager .page-info{margin-left:.6rem}
@@ -779,7 +779,7 @@ th.index,td.index{width:60px;min-width:60px;text-align:center}
 pre,textarea,input:not([type=hidden]),select{box-sizing:border-box;width:100%;font:inherit;font-weight:400;border:1px solid var(--line);border-radius:8px;padding:.6rem .75rem;background:var(--bg);color:var(--text)}
 pre{white-space:pre-wrap;max-height:30rem;overflow:auto;background:var(--panel)}
 label{display:block;margin:1rem 0;color:var(--text);font-weight:600;font-size:.9rem}
-button[type=submit]{margin-top:.5rem;padding:.55rem 1.1rem;border:0;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;font-size:.95rem}
+button[type=submit]{margin-top:.5rem;padding:.55rem 1.1rem;border:0;border-radius:8px;background:var(--accent);color:var(--on-accent);font-weight:600;cursor:pointer;font-size:.95rem}
 button[type=submit]:hover{filter:brightness(.94)}
 .summary-actions button[type=submit]:hover{filter:none;background:var(--accent)}
 .decision-actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem}

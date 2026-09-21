@@ -454,7 +454,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         # Chrome (fonts, colors, sidebar) is the literal knowledge-base stylesheet,
         # referenced via var(...) rather than a second hardcoded palette.
         self.assertIn('.content{margin-left:var(--sidebar-w)}', page)
-        self.assertIn('background:var(--accent);color:#fff', page)
+        self.assertIn('background:var(--accent);color:var(--on-accent)', page)
         self.assertIn('<colgroup><col class="col-index"><col class="col-task"><col class="col-status"><col class="col-reviewer"></colgroup>', page)
         self.assertIn('<thead><tr><th class="index">序号</th><th>内容</th><th>状态</th><th>审核人</th></tr></thead>', page)
         self.assertNotIn("<th>待办</th>", page)
