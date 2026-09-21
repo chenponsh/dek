@@ -182,6 +182,15 @@ class ReviewAppTests(unittest.TestCase):
         self.assertTrue(any("review_render_failed" in line for line in captured.output))
         self.assertNotIn("clone failed", " ".join(captured.output))
 
+    def test_review_pages_let_the_browser_load_the_company_logo_from_the_same_site_only(self):
+        # Without img-src the default-src 'none' policy silently blocks the header logo.
+        _, headers, body = self.call("/", cookie=self.authenticate())
+        policy = dict(headers)["Content-Security-Policy"]
+        self.assertIn('src="/assets/logo.png"', body.decode("utf-8"))
+        self.assertIn("img-src 'self';", policy)
+        self.assertIn("default-src 'none'", policy)
+        self.assertNotIn("data:", policy)
+
     def test_work_queue_lists_items_and_links_to_a_detail_page(self):
         session = self.authenticate()
         status, _, body = self.call("/", cookie=session)
