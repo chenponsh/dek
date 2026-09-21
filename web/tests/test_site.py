@@ -559,7 +559,7 @@ class SiteBuildTests(unittest.TestCase):
         row = script[script.index('<a class="recent-item"'):][:200]
         self.assertLess(row.index('class="recent-index">${firstNumber + offset}'), row.index('class="recent-date"'))
         style = (self.out / "assets" / "style.css").read_text(encoding="utf-8")
-        self.assertIn(".recent-index{font-size:12px;font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}", style)
+        self.assertIn(".recent-index{font-size:12px;font-variant-numeric:tabular-nums;color:var(--muted);text-align:center}", style)
 
     def test_on_a_narrow_screen_the_number_and_path_columns_are_hidden_as_before(self):
         build_site(self.vault, self.out)
