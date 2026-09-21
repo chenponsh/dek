@@ -7,7 +7,7 @@ import unittest.mock
 from pathlib import Path
 from urllib.parse import urlencode
 
-from deploy.notify_entrypoint import _bulleted, new_pending_titles, newly_stuck_approved_titles, reviewer_ids
+from deploy.notify_entrypoint import MAX_TITLE_CHARS, _bulleted, new_pending_titles, notification_title, newly_stuck_approved_titles, reviewer_ids
 from web.review import MemoryFormNonceStore, ReviewService, rough_binding
 
 
@@ -63,6 +63,40 @@ class BulletedTests(unittest.TestCase):
         self.assertIn("还有 2 条", message)
 
 
+class NotificationTitleTests(unittest.TestCase):
+    class Item:
+        def __init__(self, content, title="20260920_CDE_共性问题-受理共性问题_增量_1.md"):
+            self.content, self.title = content, title
+
+    @staticmethod
+    def rough(question):
+        return ROUGH.replace("| Q | A | 2026-09-14 |", f"| {question} | A | 2026-09-14 |")
+
+    def test_shows_the_question_not_the_file_name(self):
+        item = self.Item(self.rough("已上市的化学药品创新药如何申请药品试验数据保护？"))
+        self.assertEqual(notification_title(item), "已上市的化学药品创新药如何申请药品试验数据保护？")
+
+    def test_a_leading_question_label_is_dropped(self):
+        self.assertEqual(notification_title(self.Item(self.rough("问：如何提交资料？"))), "如何提交资料？")
+
+    def test_a_multi_line_question_becomes_one_line(self):
+        self.assertEqual(notification_title(self.Item(self.rough("第一行<br>第二行"))), "第一行 第二行")
+
+    def test_a_very_long_question_is_cut_with_an_ellipsis(self):
+        title = notification_title(self.Item(self.rough("问" * 200)))
+        self.assertEqual(len(title), MAX_TITLE_CHARS + 1)
+        self.assertTrue(title.endswith("…"))
+
+    def test_a_draft_without_a_question_falls_back_to_its_file_name(self):
+        item = self.Item("---\nstatus: pending_review\n---\n\n没有表格\n")
+        self.assertEqual(notification_title(item), "20260920_CDE_共性问题-受理共性问题_增量_1.md")
+
+    def test_the_message_lists_questions(self):
+        message = _bulleted("有 2 条新内容待审核", ["问题一？", "问题二？"])
+        self.assertIn("· 问题一？", message)
+        self.assertNotIn(".md", message)
+
+
 class NotifyEntrypointTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -99,7 +133,7 @@ class NotifyEntrypointTests(unittest.TestCase):
     def test_first_run_reports_the_pending_item_and_persists_state(self):
         state = self.root / "state/pending-seen.json"
         titles = new_pending_titles(self.service, state)
-        self.assertEqual(titles, ["a.md"])
+        self.assertEqual(titles, ["Q"])
         self.assertEqual(json.loads(state.read_text(encoding="utf-8")), ["ingestion/rough/a.md"])
         self.assertEqual(new_pending_titles(self.service, state), [])
 
@@ -113,14 +147,14 @@ class NotifyEntrypointTests(unittest.TestCase):
         self.approve()
         state = self.root / "state/stuck-seen.json"
         later = self.clock_value + 1800
-        self.assertEqual(newly_stuck_approved_titles(self.service, 1800, later, state), ["a.md"])
+        self.assertEqual(newly_stuck_approved_titles(self.service, 1800, later, state), ["Q"])
         self.assertEqual(newly_stuck_approved_titles(self.service, 1800, later + 60, state), [])
 
     def test_stuck_item_that_publishes_can_be_reported_again_if_stuck_a_second_time(self):
         self.approve()
         state = self.root / "state/stuck-seen.json"
         later = self.clock_value + 1800
-        self.assertEqual(newly_stuck_approved_titles(self.service, 1800, later, state), ["a.md"])
+        self.assertEqual(newly_stuck_approved_titles(self.service, 1800, later, state), ["Q"])
         (self.root / "repo/ingestion/rough/a.md").unlink()  # simulates a real publish removing the rough file
         self.assertEqual(newly_stuck_approved_titles(self.service, 1800, later + 60, state), [])
         self.assertEqual(json.loads(state.read_text(encoding="utf-8")), [])

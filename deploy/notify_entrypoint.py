@@ -20,9 +20,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve(strict=True).parents[1]))
 from web.dingtalk_gateway import DingTalkClient
-from web.review import IsolatedReviewClone, MemoryFormNonceStore, ReviewService
+from web.review import IsolatedReviewClone, MemoryFormNonceStore, ReviewService, _item_title
 
 REVIEW_ORIGIN = "https://regkb.chenponai.com"
+MAX_TITLE_CHARS = 60
 DEFAULT_STUCK_THRESHOLD_SECONDS = 30 * 60
 
 
@@ -45,6 +46,13 @@ def _atomic_write_json(path: Path, value: object) -> None:
     os.replace(staging, path)
 
 
+def notification_title(item) -> str:
+    """How an item is named in a chat message: its question (the file name only when the
+    draft has none), on one line and cut at MAX_TITLE_CHARS so a long question stays readable."""
+    text = " ".join(_item_title(item).split())
+    return text if len(text) <= MAX_TITLE_CHARS else text[:MAX_TITLE_CHARS].rstrip() + "…"
+
+
 def _read_seen(path: Path) -> set[str]:
     try:
         return set(json.loads(path.read_text(encoding="utf-8")))
@@ -57,7 +65,7 @@ def new_pending_titles(service: ReviewService, state_path: Path) -> list[str]:
     state_path, return newly seen titles in path order, and persist the
     updated seen set. Pure with respect to the passed-in service."""
     items = [item for item in service.list_items() if item.status == "pending"]
-    current = {item.path: item.title for item in items}
+    current = {item.path: notification_title(item) for item in items}
     seen = _read_seen(state_path)
     new_paths = sorted(path for path in current if path not in seen)
     _atomic_write_json(state_path, sorted(current))
@@ -78,7 +86,7 @@ def newly_stuck_approved_titles(service: ReviewService, threshold_seconds: int, 
         except (ValueError, TypeError):
             continue
         if now - decided >= threshold_seconds:
-            stuck[item.path] = item.title
+            stuck[item.path] = notification_title(item)
     seen = _read_seen(state_path)
     new_paths = sorted(path for path in stuck if path not in seen)
     _atomic_write_json(state_path, sorted(stuck))
