@@ -151,6 +151,22 @@ def persist_current_report(repo: Path, before: dict[Path, str], output: Path, *,
     return selected
 
 
+REVIEW_INPUT = Path("/var/lib/dek-review/input")
+
+
+def write_review_bundle(run, git, repo: Path, temporary: str, review_input: Path | None = None) -> None:
+    """The reviewers' snapshot: a bundle of this clone's `main`, swapped in atomically.
+
+    The review pages derive everything from it (which drafts are pending, which approvals are
+    already published), so it is rewritten after every ingest run and after every publish."""
+    review_input = review_input or REVIEW_INPUT
+    staging=review_input/(".repository-"+Path(temporary).name+".bundle")
+    run(*git,"bundle","create",str(staging),"refs/heads/main")
+    with staging.open("rb") as handle: os.fsync(handle.fileno())
+    os.chmod(staging,0o640); os.replace(staging,review_input/"repository.bundle")
+    shutil.rmtree(temporary)
+
+
 def main(argv=None):
     invocation_started = datetime.now(timezone.utc)
     run_nonce = secrets.token_urlsafe(32)
@@ -161,7 +177,7 @@ def main(argv=None):
     parser.add_argument("--expected-output", type=Path, required=True)
     parser.add_argument("--package-root", type=Path, required=True)
     parser.add_argument("--pre-cutover-proof", action="store_true")
-    parser.add_argument("command", choices=("scheduled-run",))
+    parser.add_argument("command", choices=("scheduled-run", "refresh-bundle"))
     args = parser.parse_args(argv)
     installed = args.package_root.resolve(strict=True)
     if installed != _INSTALL_ROOT:
@@ -184,10 +200,11 @@ def main(argv=None):
             or args.expected_output.parent != PROOF_ROOT
             or args.expected_output.name != args.proof_output.name.replace(".json", ".expected.json")):
         raise SystemExit("expected output is not fixed service policy")
-    _atomic_private_json(args.expected_output, {
-        "schema": 1, "run_nonce": run_nonce, "started_at": _utc_text(invocation_started),
-        "proof_output": str(args.proof_output),
-    })
+    if args.command == "scheduled-run":
+        _atomic_private_json(args.expected_output, {
+            "schema": 1, "run_nonce": run_nonce, "started_at": _utc_text(invocation_started),
+            "proof_output": str(args.proof_output),
+        })
     temporary=tempfile.mkdtemp(prefix="run-",dir=clone_root); repo=Path(temporary)/"repo"
     # A real, writable-but-empty per-run HOME -- not the deliberately
     # unwritable /var/empty/dek-source-ingest this used to point git (and,
@@ -230,6 +247,11 @@ def main(argv=None):
     os.environ["DEK_INGEST_STARTED_AT"] = _utc_text(invocation_started)
     for index,(key,value) in enumerate(zip(overrides,values)):
         os.environ[f"GIT_CONFIG_KEY_{index}"]=key; os.environ[f"GIT_CONFIG_VALUE_{index}"]=value
+    if args.command == "refresh-bundle":
+        # Only re-publish origin's current state to the reviewers: no source is fetched, nothing
+        # is committed or pushed, no ingestion code runs and no proof record is touched.
+        write_review_bundle(run, git, repo, temporary)
+        return 0
     module, _core, _fetchers, _audit = load_ingestion_modules(installed)
     module.ROOT = repo
     module.APPROVAL_PATH = repo / "_" / "ingestion" / "approval.json"
@@ -251,12 +273,7 @@ def main(argv=None):
         run(*git,"-c","user.name=DEK Source Ingestion","-c","user.email=ingestion@invalid","commit","-m","chore: ingest sources")
     if "push" in plan:
         run(*git,"push","--",fixed,"HEAD:refs/heads/main")
-    review_input=Path("/var/lib/dek-review/input")
-    staging=review_input/(".repository-"+Path(temporary).name+".bundle")
-    run(*git,"bundle","create",str(staging),"refs/heads/main")
-    with staging.open("rb") as handle: os.fsync(handle.fileno())
-    os.chmod(staging,0o640); os.replace(staging,review_input/"repository.bundle")
-    shutil.rmtree(temporary)
+    write_review_bundle(run, git, repo, temporary)
     return 0
 
 if __name__ == "__main__":

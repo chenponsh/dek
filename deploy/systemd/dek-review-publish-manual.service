@@ -9,6 +9,8 @@ ExecStart=/usr/bin/systemctl start --wait dek-review-publish.service
 ExecStart=/usr/bin/systemctl start --wait dek-builder.service
 ExecStart=/usr/bin/systemctl start --wait dek-review-publish.service
 ExecStart=/usr/bin/systemctl start --wait dek-activator.service
+# Last, bring the reviewers' snapshot up to date so the page shows the item as published (a failure here must not fail the publish).
+ExecStart=-/usr/bin/systemctl start --wait dek-source-refresh.service
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true

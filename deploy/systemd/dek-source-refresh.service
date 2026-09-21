@@ -1,0 +1,46 @@
+[Unit]
+Description=DEK review snapshot refresh (re-publishes origin's current state to the reviewers; fetches nothing, changes nothing)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecCondition=+/usr/bin/python3 -I /opt/dek-source-ingest/app/deploy/readiness.py --config /etc/dek-readiness.json --hmac-key /var/lib/dek-readiness/marker-hmac-key --validate-marker --marker /var/lib/dek-readiness/automation-ready
+User=dek-source-ingest
+Group=dek-source-ingest
+WorkingDirectory=/var/empty/dek-source-ingest
+Environment=DEK_FIXED_ORIGIN=https://github.com/chenponsh/dek.git
+LoadCredential=git-credentials:/var/lib/dek-git-auth/git-credentials
+Environment=DEK_GIT_CREDENTIAL_FILE=%d/git-credentials
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/var/lib/dek-source-ingest/vendor/python
+Environment=DEK_CHROMIUM_EXECUTABLE=/var/lib/dek-source-ingest/vendor/ms-playwright-chromium-1187/chrome-linux/chrome
+Environment=HTTP_PROXY=http://127.0.0.1:7890
+Environment=HTTPS_PROXY=http://127.0.0.1:7890
+Environment=http_proxy=http://127.0.0.1:7890
+Environment=https_proxy=http://127.0.0.1:7890
+Environment=NO_PROXY=www.chp.org.cn,chp.org.cn
+Environment=no_proxy=www.chp.org.cn,chp.org.cn
+UMask=0077
+ExecStart=/usr/bin/python3 -I /opt/dek-source-ingest/app/deploy/source_ingest_entrypoint.py --package-root /opt/dek-source-ingest/app --isolated-clone /var/lib/dek-source-ingest/clones --origin https://github.com/chenponsh/dek.git --proof-output /var/lib/dek-source-ingest/proofs/latest-report.json --expected-output /var/lib/dek-source-ingest/proofs/latest-report.expected.json refresh-bundle
+SyslogIdentifier=dek-source-ingest
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+ReadOnlyPaths=/opt/dek-source-ingest/app /var/lib/dek-source-ingest/vendor
+ReadWritePaths=/var/lib/dek-source-ingest/clones /var/lib/dek-source-ingest/proofs /var/lib/dek-review/input
+InaccessiblePaths=/opt/dek-publisher /opt/dek-builder /opt/dek-activator /opt/dek-web /opt/dek-review /opt/dek-qa /var/lib/dek-publisher/secrets /var/lib/dek-activate /var/spool/dek-build /etc/systemd/system /usr/lib/systemd /root
