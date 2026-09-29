@@ -61,6 +61,34 @@
     if (!list) return;
     let options = [];
     try { options = JSON.parse(input.dataset.options || "[]"); } catch (_) { options = []; }
+    let existingCategories = [];
+    try { existingCategories = JSON.parse(input.dataset.existingCategories || "[]"); } catch (_) { existingCategories = []; }
+    const knownCategories = new Set(existingCategories);
+    const form = input.closest("form");
+    const preview = form?.querySelector(".category-create-preview");
+    const pathInfo = path => {
+      const match = /^wiki\/(.+)\/([^/]+)\.md$/.exec(path.trim());
+      if (!match) return null;
+      const category = "wiki/" + match[1];
+      return { category, name: match[1].split("/").pop() };
+    };
+    const updatePreview = () => {
+      const target = pathInfo(input.value);
+      const source = pathInfo(input.dataset.sourcePath || "");
+      let message = "";
+      if (target && source) {
+        message = knownCategories.has(target.category)
+          ? `将把该知识从“${source.name}”移动到“${target.name}”。发布后生效。`
+          : `将新建分类“${target.name}”，并把该知识从“${source.name}”移动到新分类。发布后生效。`;
+      } else if (target && !knownCategories.has(target.category)) {
+        message = `将新建分类“${target.name}”，并在发布时创建第一条知识。`;
+      }
+      input.dataset.confirmMessage = message;
+      if (preview) {
+        preview.textContent = message;
+        preview.hidden = !message;
+      }
+    };
     let active = -1;
     input.setAttribute("role", "combobox");
     input.setAttribute("aria-autocomplete", "list");
@@ -81,7 +109,7 @@
       setActive(-1);
     };
     const candidateBox = () => input.closest("form")?.querySelector('[name="candidate_markdown"]');
-    const choose = row => { input.value = row.dataset.path; syncCandidateToPath(candidateBox(), input.value); close(); };
+    const choose = row => { input.value = row.dataset.path; syncCandidateToPath(candidateBox(), input.value); updatePreview(); close(); };
     const render = () => {
       // Matching is by folder name only; each row shows the full suggested path.
       const query = input.value.trim().toLowerCase();
@@ -96,8 +124,8 @@
     input.addEventListener("focus", render);
     // Typing a full path (say, changing the number at its end) updates the candidate too;
     // half-typed text that is not a wiki path leaves it alone.
-    input.addEventListener("input", () => { render(); syncCandidateToPath(candidateBox(), input.value.trim()); });
-    input.addEventListener("change", () => syncCandidateToPath(candidateBox(), input.value.trim()));
+    input.addEventListener("input", () => { render(); syncCandidateToPath(candidateBox(), input.value.trim()); updatePreview(); });
+    input.addEventListener("change", () => { syncCandidateToPath(candidateBox(), input.value.trim()); updatePreview(); });
     input.addEventListener("blur", () => setTimeout(close, 150));
     input.addEventListener("keydown", event => {
       const open = list.classList.contains("open");
@@ -127,12 +155,12 @@
       if (!chip) return;
       input.value = chip.dataset.path;
       syncCandidateToPath(candidateBox(), chip.dataset.path);
+      updatePreview();
     });
     // A rough with no wiki_target suggestion of its own prefills this blank;
     // clicking 批准 without picking a folder first used to 400 server-side
     // with no visible reason (the response body deliberately never carries
     // the real one). Catch it here instead, before the round trip.
-    const form = input.closest("form");
     if (form) {
       form.addEventListener("submit", event => {
         const moving = form.action.endsWith("/move-decision");
@@ -143,9 +171,15 @@
           event.preventDefault();
           alert(moving ? "请先选择要移动到的分类。" : "批准前请先在「Wiki 路径」栏搜索并选择一个具体分类文件夹。");
           input.focus();
+          return;
+        }
+        const message = input.dataset.confirmMessage;
+        if (message && !window.confirm(message + "\n\n确认提交审核决定吗？")) {
+          event.preventDefault();
         }
       });
     }
+    updatePreview();
   });
 
   document.querySelectorAll("tr[data-href]").forEach(row => {

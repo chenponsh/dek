@@ -61,7 +61,7 @@ NOTICES = {
     "ingest_running": "抓取正在进行，完成并刷新页面后才能批准或拒绝，避免处理到旧列表里已经不存在的内容。这次没有记录任何决定。",
     "publish_triggered": "已提交发布请求，已批准的内容会在后台构建并发布，稍后刷新查看。",
     "publish_cooldown": "刚触发过一次发布，请稍等片刻再试。",
-    "moved": "已记录：调整分类。发布后生效。",
+    "moved": "分类调整已审核待发布，尚未实际移动；发布后生效。",
 }
 STATUS_FILTERS = {"pending", "approved", "published", "rejected"}
 
@@ -372,14 +372,15 @@ class ReviewApp:
                 body = environ["wsgi.input"].read(length)
                 if len(body) != length:
                     raise ReviewError("incomplete request")
-                _, identity = self.service.submit_move_form(
+                _, identity, return_item = self.service.submit_move_form(
                     body, session_id=session_id, user_id=user_id, reviewer_label=display_name,
                 )
             except (ReviewError, ValueError, KeyError, UnicodeDecodeError) as error:
                 status = error.status if isinstance(error, ReviewError) else "400 Bad Request"
                 auth_logger.warning("review_move_rejected status=%s reason=%s", status, str(error) or type(error).__name__)
                 return self._response(start, status, status.encode("ascii"), (("Content-Type", "text/plain"),))
-            location = f"{REVIEW_PREFIX}/knowledge/{identity}?notice=moved"
+            location = (f"{REVIEW_PREFIX}/item/{return_item}?notice=moved" if return_item
+                        else f"{REVIEW_PREFIX}/knowledge/{identity}?notice=moved")
             return self._response(start, "303 See Other", headers=(("Location", location),))
 
         if path == "/trigger-ingest":

@@ -941,7 +941,10 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(self.status_of(), "published")
         count, page = self.approved_count()
         self.assertEqual(count, 0)                                     # no longer counted on the publish button
-        self.assertEqual(self.service.render_list("opaque-session", status="published").decode("utf-8").count("备注：pending.md"), 1)
+        published = self.service.render_list("opaque-session", status="published").decode("utf-8")
+        self.assertEqual(published.count("备注：pending.md"), 1)
+        self.assertIn("问：Q", published)
+        self.assertIn("日期：2026-09-14", published)
         self.assertNotIn("备注：pending.md", self.service.render_list("opaque-session", status="approved").decode("utf-8"))
 
     def test_an_approval_is_still_published_when_its_draft_file_is_gone_but_its_page_exists(self):

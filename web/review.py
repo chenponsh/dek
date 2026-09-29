@@ -12,7 +12,7 @@ import stat
 import subprocess
 import time
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Callable
@@ -1053,6 +1053,44 @@ class ReviewService:
         except TaxonomyError as exc:
             raise ReviewError(str(exc), "409 Conflict") from exc
 
+    @staticmethod
+    def _existing_category_dirs(root: Path) -> list[str]:
+        wiki = root / "wiki"
+        if not wiki.is_dir() or wiki.is_symlink():
+            return []
+        return sorted(
+            path.parent.relative_to(root).as_posix()
+            for path in wiki.rglob("*.md")
+            if path.name == path.parent.name + ".md" and path.is_file() and not path.is_symlink()
+        )
+
+    def _pending_moves(self, root: Path) -> dict[str, dict]:
+        latest: dict[str, dict] = {}
+        for record in self._decisions():
+            if record.get("action") == "move" and isinstance(record.get("source_wiki_path"), str):
+                latest[record["source_wiki_path"]] = record
+        return {
+            source: record for source, record in latest.items()
+            if (root / source).is_file() and not (root / str(record.get("wiki_path", ""))).exists()
+        }
+
+    @staticmethod
+    def _current_wiki_path(root: Path, raw_path: str) -> str:
+        path = default_wiki_path(raw_path)
+        redirects_path = root / "wiki/_redirects.json"
+        try:
+            redirects = json.loads(redirects_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            redirects = {}
+        for _ in range(8):
+            if (root / path).is_file():
+                return path
+            target = redirects.get(path) if isinstance(redirects, dict) else None
+            if not isinstance(target, str) or target == path:
+                break
+            path = target
+        return ""
+
     def _folder_candidates(self, root: Path, taken: frozenset[str] | set[str] = frozenset()) -> list[tuple[str, str]]:
         """Existing categories plus categories promised by unpublished decisions."""
         candidates = wiki_folder_candidates(root, taken)
@@ -1163,6 +1201,16 @@ class ReviewService:
                 if draft_status in ("", "promoted"):
                     derived = "published"
             existing = items.get(path)
+            if existing is None:
+                try:
+                    binding = rough_binding_at(root, validate_relative_path(path, ROUGH_PREFIX))
+                    title, source, date, target = self._title(binding)
+                    existing = ReviewItem(
+                        item_identity(path), path, title, source, date,
+                        "pending", "", "", "", binding.content, target,
+                    )
+                except (ReviewError, OSError):
+                    pass
             reviewer = labels.get(record.get("decision_id", ""), "")
             items[path] = ReviewItem(
                 item_identity(path), path,
@@ -1173,6 +1221,18 @@ class ReviewService:
                 existing.content if existing else "",
                 existing.wiki_target if existing else str(record.get("wiki_path") or ""),
             )
+        pending_moves = self._pending_moves(root)
+        for path, item in list(items.items()):
+            if item.status != "published":
+                continue
+            current = self._current_wiki_path(root, item.wiki_target)
+            move = pending_moves.get(current)
+            if move is not None:
+                items[path] = replace(
+                    item, status="approved", action="move",
+                    reviewer=labels.get(move.get("decision_id", ""), ""),
+                    decided_at=str(move.get("created_at", "")),
+                )
         values = list(items.values())
         needle = query.strip().casefold()
         if needle:
@@ -1198,6 +1258,7 @@ class ReviewService:
     def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None, action_query: str = "", heading: str = "原文", suggested: str = "", alternatives: list[tuple[str, str]] | None = None, taken: frozenset[str] = frozenset()) -> str:
         candidates = self._folder_candidates(root, taken) if root else []
         options_json = json.dumps([[label, path] for label, path in candidates], ensure_ascii=False)
+        categories_json = json.dumps(self._existing_category_dirs(root), ensure_ascii=False) if root else "[]"
         if self.ingest_status()["in_progress"]:
             # a decision now would be made on a list the pull is about to replace
             decision_buttons = ('<button type="submit" class="is-busy" disabled aria-busy="true">抓取中，暂不能批准</button>'
@@ -1212,7 +1273,7 @@ class ReviewService:
             chips = f'<div class="path-suggestions">系统建议：{buttons}</div>'
         return f"""<article><h2>{html.escape(heading)}</h2><pre>{html.escape(rough_display(rough.content, suggested))}</pre>
 <form method="post" action="{self.path_prefix}/decision{html.escape(action_query)}"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
-<label>Wiki 路径<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<label>候选 Wiki Markdown<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><div class="decision-actions">{decision_buttons}</div></form></article>"""
+<label>Wiki 路径<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}" data-existing-categories="{html.escape(categories_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<div class="notice category-create-preview" hidden></div><label>候选 Wiki Markdown<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><div class="decision-actions">{decision_buttons}</div></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()
@@ -1433,6 +1494,10 @@ class ReviewService:
                 )
         else:
             form = '<p class="notice">该条目已不在待审核快照中，无法再提交决定。</p>'
+        published_path = self._current_wiki_path(root, item.wiki_target)
+        published_item = next((entry for entry in self.wiki_items(root=root) if entry.path == published_path), None)
+        if published_item is not None:
+            form += self._move_panel(session_id, published_item, root=root, return_item=identity)
         meta = " · ".join(part for part in (
             f"状态：{item.status_label}",
             f"来源：{_short_source(item.source)}" if item.source else "",
@@ -1494,6 +1559,34 @@ class ReviewService:
             return None
         return next((item for item in self.wiki_items(root=root) if item.identity == identity), None)
 
+    def _move_panel(self, session_id: str, item: WikiItem, *, root: Path, return_item: str = "") -> str:
+        taken = self._promised_wiki_paths(root)
+        current_folder = PurePosixPath(item.path).parent.as_posix()
+        options = [(label, path) for label, path in self._folder_candidates(root, taken)
+                   if PurePosixPath(path).parent.as_posix() != current_folder]
+        options_json = json.dumps([[label, path] for label, path in options], ensure_ascii=False)
+        categories_json = json.dumps(self._existing_category_dirs(root), ensure_ascii=False)
+        nonce = self.nonces.issue(session_id, item.path, int(self.clock()) + 900, str(root))
+        pending = self._pending_moves(root).get(item.path)
+        pending_notice = ""
+        if pending is not None:
+            pending_notice = (
+                '<div class="notice">分类调整：已审核待发布，尚未实际移动。目标：'
+                + html.escape(str(pending.get("wiki_path", ""))) + '</div>'
+            )
+        return (
+            '<section class="move-panel"><h2>调整分类</h2>' + pending_notice
+            + f'<div class="meta">当前位置：{html.escape(item.path)}</div>'
+            + f'<form method="post" action="{self.path_prefix}/move-decision">'
+            + f'<input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="source_wiki_path" value="{html.escape(item.path)}">'
+            + f'<input type="hidden" name="source_wiki_sha256" value="{item.sha256}"><input type="hidden" name="action" value="move">'
+            + f'<input type="hidden" name="return_item" value="{html.escape(return_item)}">'
+            + f'<label>移动到<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="" placeholder="搜索目标分类…" data-options="{html.escape(options_json)}" data-existing-categories="{html.escape(categories_json)}" data-source-path="{html.escape(item.path)}">'
+            + '<div class="combo-list" role="listbox"></div></div></label>'
+            + '<div class="notice category-create-preview" hidden></div>'
+            + '<div class="decision-actions"><button type="submit" name="move" value="1" data-busy-label="提交中…">确认调整分类</button></div></form></section>'
+        )
+
     def render_wiki_list(self, *, query: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:
         items = self.wiki_items(query=query)
         size = min(max(int(page_size), MIN_PAGE_SIZE), MAX_PAGE_SIZE)
@@ -1526,31 +1619,19 @@ class ReviewService:
         item = self.find_wiki_item(identity, root=root)
         if item is None:
             return None
-        taken = self._promised_wiki_paths(root)
-        options = self._folder_candidates(root, taken)
-        options_json = json.dumps([[label, path] for label, path in options], ensure_ascii=False)
-        nonce = self.nonces.issue(session_id, item.path, int(self.clock()) + 900, str(root))
-        form = (
-            f'<form method="post" action="{self.path_prefix}/move-decision">'
-            f'<input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="source_wiki_path" value="{html.escape(item.path)}">'
-            f'<input type="hidden" name="source_wiki_sha256" value="{item.sha256}"><input type="hidden" name="action" value="move">'
-            f'<label>移动到<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="" placeholder="搜索目标分类…" data-options="{html.escape(options_json)}">'
-            '<div class="combo-list" role="listbox"></div></div></label>'
-            '<div class="notice category-create-preview" hidden></div>'
-            '<div class="decision-actions"><button type="submit" name="move" value="1" data-busy-label="提交中…">确认调整分类</button></div></form>'
-        )
+        form = self._move_panel(session_id, item, root=root)
         body = (self._header() + self._sidebar("review:knowledge") + '<div class="content"><main class="review-shell review-list">'
                 f'<p><a href="{self.path_prefix}/knowledge">← 返回已发布知识</a></p><h1>{html.escape(item.title)}</h1>'
                 f'<div class="meta">当前位置：{html.escape(item.path)}</div>'
                 + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
-                + f'<h2>现有内容</h2><pre>{html.escape(item.content)}</pre><h2>调整分类</h2>{form}</main></div>')
+                + f'<h2>现有内容</h2><pre>{html.escape(item.content)}</pre>{form}</main></div>')
         return self._page("调整分类", body)
 
-    def submit_move_form(self, body: bytes, *, session_id: str, user_id: str, reviewer_label: str = "") -> tuple[str, str]:
+    def submit_move_form(self, body: bytes, *, session_id: str, user_id: str, reviewer_label: str = "") -> tuple[str, str, str]:
         if len(body) > MAX_DECISION_BYTES:
             raise ReviewError("request too large", "413 Payload Too Large")
         try:
-            values = parse_qs(body.decode("utf-8"), keep_blank_values=True, strict_parsing=True, max_num_fields=8)
+            values = parse_qs(body.decode("utf-8"), keep_blank_values=True, strict_parsing=True, max_num_fields=9)
         except (UnicodeDecodeError, ValueError) as exc:
             raise ReviewError("invalid form") from exc
         def one(name: str) -> str:
@@ -1560,6 +1641,10 @@ class ReviewService:
             return items[0]
         if one("action") != "move":
             raise ReviewError("invalid action")
+        return_values = values.get("return_item", [""])
+        if len(return_values) != 1 or (return_values[0] and re.fullmatch(r"[0-9a-f]{16}", return_values[0]) is None):
+            raise ReviewError("invalid return item")
+        return_item = return_values[0]
         source = one("source_wiki_path")
         nonce = one("form_nonce")
         snapshot_root = self.nonces.peek(nonce, session_id, source)
@@ -1609,7 +1694,7 @@ class ReviewService:
             self.nonces.invalidate(nonce)
         if self.labels is not None:
             self.labels.append(decision_id,reviewer_label)
-        return decision_id, item_identity(source)
+        return decision_id, item_identity(source), return_item
 
     def submit_form(self, body: bytes, *, session_id: str, user_id: str, reviewer_label: str = "") -> str:
         if len(body) > MAX_DECISION_BYTES:

@@ -222,33 +222,53 @@ class ReviewAppTests(unittest.TestCase):
             (folder / f"{name}.md").write_text(
                 f'---\naliases:\n  - "#{name}"\ntags:\n  - "{name}"\nmaster:\n---\n', encoding="utf-8",
             )
+        session = self.authenticate()
+        binding = rough_binding(self.rough, relative="ingestion/rough/pending.md")
+        self.service.submit_form(urlencode({
+            "form_nonce": self.nonces.issue(session.split("=", 1)[1], binding.path, self.clock_value + 900, str(self.root / "repo")),
+            "rough_path": binding.path, "rough_sha256": binding.sha256, "rough_version": binding.version,
+            "action": "approve", "wiki_path": "wiki/01_原分类/01-0001.md",
+            "candidate_markdown": CANDIDATE.replace("01_Test", "01_原分类"),
+        }).encode(), session_id=session.split("=", 1)[1], user_id="reviewer-1", reviewer_label="审阅人")
         note = self.root / "repo/wiki/01_原分类/01-0001.md"
         note.write_text(
             '---\nno: 1\nquestion: "测试移动"\ntag_pages:\n  - "[[01_原分类]]"\ntags:\n  - "01_原分类"\n---\n\n正文。\n',
             encoding="utf-8",
         )
-        subprocess.run(["git", "add", "wiki"], cwd=self.root / "repo", check=True)
+        self.rough.write_text(
+            self.rough.read_text(encoding="utf-8")
+            .replace("status: pending_review", "status: promoted")
+            .replace("wiki_target:", "wiki_target: wiki/01_原分类/01-0001.md"),
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "wiki", "ingestion/rough/pending.md"], cwd=self.root / "repo", check=True)
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@invalid", "commit", "-qm", "wiki"], cwd=self.root / "repo", check=True)
-        session = self.authenticate()
         status, _, listing = self.call("/knowledge", cookie=session)
         self.assertEqual(status, "200 OK")
-        identity = re.search(r'/review/knowledge/([0-9a-f]{16})', listing.decode()).group(1)
-        status, _, detail = self.call("/knowledge/" + identity, cookie=session)
+        self.assertRegex(listing.decode(), r'/review/knowledge/[0-9a-f]{16}')
+        rough_identity = re.search(r'/review/item/([0-9a-f]{16})', self.call("/", query="status=published", cookie=session)[2].decode()).group(1)
+        status, _, detail = self.call("/item/" + rough_identity, query="status=published", cookie=session)
         self.assertEqual(status, "200 OK")
         page = detail.decode()
+        self.assertIn("调整分类", page)
+        self.assertIn('name="return_item" value="' + rough_identity + '"', page)
         nonce = re.search('name="form_nonce" value="([^"]+)"', page).group(1)
         digest = re.search('name="source_wiki_sha256" value="([^"]+)"', page).group(1)
         status, headers, _ = self.call(
             "/move-decision", method="POST", cookie=session, origin=REVIEW_ORIGIN,
             form={"form_nonce": nonce, "source_wiki_path": "wiki/01_原分类/01-0001.md",
                   "source_wiki_sha256": digest, "action": "move",
-                  "wiki_path": "wiki/02_新分类/02-0001.md"},
+                  "wiki_path": "wiki/02_新分类/02-0001.md", "return_item": rough_identity},
         )
         self.assertEqual(status, "303 See Other")
-        self.assertEqual(dict(headers)["Location"], f"/review/knowledge/{identity}?notice=moved")
-        record = json.loads((self.root / "state/decisions.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(dict(headers)["Location"], f"/review/item/{rough_identity}?notice=moved")
+        records = [json.loads(line) for line in (self.root / "state/decisions.jsonl").read_text(encoding="utf-8").splitlines()]
+        record = records[-1]
         self.assertEqual(record["action"], "move")
         self.assertEqual(record["wiki_path"], "wiki/02_新分类/02-0001.md")
+        status, _, after = self.call("/item/" + rough_identity, query="notice=moved", cookie=session)
+        self.assertEqual(status, "200 OK")
+        self.assertIn("已审核待发布，尚未实际移动", after.decode())
 
     def test_decision_redirects_to_the_item_and_shows_the_reviewer_nickname(self):
         session = self.authenticate()

@@ -801,8 +801,10 @@ class SiteBuildTests(unittest.TestCase):
             self.assertIn(token, script)
         # The dropdown, the suggestion buttons and hand-typing all go through the same step.
         self.assertEqual(script.count("syncCandidateToPath("), 5)   # its definition + choose + chip + input + change
-        self.assertIn('input.addEventListener("input", () => { render(); syncCandidateToPath(candidateBox(), input.value.trim()); });', script)
-        self.assertIn('input.addEventListener("change", () => syncCandidateToPath(candidateBox(), input.value.trim()));', script)
+        self.assertIn('input.addEventListener("input", () => { render(); syncCandidateToPath(candidateBox(), input.value.trim()); updatePreview(); });', script)
+        self.assertIn('input.addEventListener("change", () => { syncCandidateToPath(candidateBox(), input.value.trim()); updatePreview(); });', script)
+        self.assertIn('将新建分类“${target.name}”', script)
+        self.assertIn('window.confirm(message', script)
 
     def test_sidebar_tree_has_a_home_entry(self):
         build_site(self.vault, self.out)
