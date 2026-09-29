@@ -538,6 +538,35 @@ def build_site(vault: Path, output: Path) -> dict:
             if target and target["kind"] == "source" and target not in refs: refs.append(target)
         dest = output / Path(str(doc["output"])); dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(_page(doc, docs, rendered, backlinks[doc["key"]], by_path, by_stem, refs), encoding="utf-8")
+    redirects_path = vault / "wiki/_redirects.json"
+    if redirects_path.exists():
+        try:
+            redirects = json.loads(redirects_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("invalid wiki redirect map") from exc
+        if not isinstance(redirects, dict):
+            raise ValueError("invalid wiki redirect map")
+        for old, new in sorted(redirects.items()):
+            old_path, new_path = PurePosixPath(str(old)), PurePosixPath(str(new))
+            if (not isinstance(old, str) or not isinstance(new, str)
+                    or old_path.is_absolute() or new_path.is_absolute()
+                    or any(part in {"", ".", ".."} for part in (*old_path.parts, *new_path.parts))
+                    or old_path.parts[0] != "wiki" or new_path.parts[0] != "wiki"
+                    or old_path.suffix != ".md" or new_path.suffix != ".md"
+                    or old_path.with_suffix("").as_posix() in by_path
+                    or new_path.with_suffix("").as_posix() not in by_path):
+                raise ValueError("invalid wiki redirect map")
+            old_output, new_output = old_path.with_suffix(".html"), new_path.with_suffix(".html")
+            href = _relative_href(old_output, new_output)
+            destination = output / Path(old_output.as_posix())
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            safe = html.escape(href, quote=True)
+            destination.write_text(
+                '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+                f'<meta http-equiv="refresh" content="0; url={safe}"><title>知识已移动</title></head>'
+                f'<body><p>该知识已移动到<a href="{safe}">新位置</a>。</p></body></html>',
+                encoding="utf-8",
+            )
     public_docs = [{"path": d["path"], "title": d["title"], "kind": d["kind"], "url": str(d["output"]), "date": _iso_date(d["meta"].get("date"))} for d in docs]
     tree = _manifest_tree(public_docs)
     (output / "manifest.json").write_text(json.dumps({"documents": public_docs, "tree": tree}, ensure_ascii=False, indent=2), encoding="utf-8")

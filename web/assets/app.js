@@ -135,11 +135,13 @@
     const form = input.closest("form");
     if (form) {
       form.addEventListener("submit", event => {
-        if (event.submitter?.value !== "approve") return;
+        const moving = form.action.endsWith("/move-decision");
+        if (event.submitter?.value !== "approve" && !moving) return;
+        const approving = event.submitter?.value === "approve";
         const candidate = form.querySelector('[name="candidate_markdown"]');
-        if (!input.value.trim() || !candidate?.value.trim()) {
+        if (!input.value.trim() || (approving && !candidate?.value.trim())) {
           event.preventDefault();
-          alert("批准前请先在「Wiki 路径」栏搜索并选择一个具体分类文件夹。");
+          alert(moving ? "请先选择要移动到的分类。" : "批准前请先在「Wiki 路径」栏搜索并选择一个具体分类文件夹。");
           input.focus();
         }
       });
@@ -350,9 +352,10 @@
       const homeActive = current === "首页.md" ? " active" : "";
       const homeHref = new URL("index.html", manifestUrl).href;
       const homeLink = `<a role="treeitem" class="tree-link home-link${homeActive}" href="${homeHref}"><span class="tree-file-icon">⌂</span><span class="tree-label">首页</span></a>`;
-      // 来源列表 is the reviewers' page (the server refuses anyone else): first entry after 首页
+      // Reviewer-only entries (the server refuses anyone else) follow the home link.
       const sourcesLink = `<a role="treeitem" class="tree-link sources-link${current === "review:sources" ? " active" : ""}" href="/review/sources"><span class="tree-file-icon">▦</span><span class="tree-label">来源列表</span></a>`;
-      nav.innerHTML = homeLink + sourcesLink + `<div role="tree" aria-label="知识库目录">${tree.map(node => renderNode(node)).join("")}</div>`;
+      const knowledgeLink = `<a role="treeitem" class="tree-link sources-link${current === "review:knowledge" ? " active" : ""}" href="/review/knowledge"><span class="tree-file-icon">⇄</span><span class="tree-label">已发布知识</span></a>`;
+      nav.innerHTML = homeLink + sourcesLink + knowledgeLink + `<div role="tree" aria-label="知识库目录">${tree.map(node => renderNode(node)).join("")}</div>`;
       nav.querySelectorAll("details[data-path]").forEach(folder => {
         folder.addEventListener("toggle", () => {
           const path = folder.dataset.path;

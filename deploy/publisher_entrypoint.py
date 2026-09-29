@@ -52,6 +52,16 @@ def queue_snapshot(queue: Path) -> dict:
     return {"decision_queue_sha256": hashlib.sha256(raw).hexdigest(), "decision_queue_size": len(raw)}
 
 
+def _decision_subject(review_module, record: dict) -> str:
+    helper = getattr(review_module, "decision_subject", None)
+    if helper is not None:
+        return helper(record)
+    # Compatibility for isolated tests and older installed review modules.
+    source = record.get("source_wiki_path") if record.get("action") == "move" else record.get("rough_path")
+    prefix = "wiki:" if record.get("action") == "move" else "rough:"
+    return prefix + source if isinstance(source, str) else ""
+
+
 def authorized_queue_snapshot(review_module, queue: Path, decision_key: bytes, decision: dict,
                               quarantine_dir: Path, on_corrupt) -> dict:
     """Validate under the writer lock, then release it before the caller pushes.
@@ -72,11 +82,11 @@ def authorized_queue_snapshot(review_module, queue: Path, decision_key: bytes, d
                 validated = review_module.validate_decision(record, decision_key)
             except (Exception, SystemExit):
                 continue
-            if validated.get("rough_path") == decision.get("rough_path"):
+            if _decision_subject(review_module, validated) == _decision_subject(review_module, decision):
                 latest = validated
-        if (latest is None or latest.get("action") != "approve" or
+        if (latest is None or latest.get("action") != decision.get("action") or
                 latest.get("decision_id") != decision.get("decision_id")):
-            raise RuntimeError("approval was superseded before push")
+            raise RuntimeError("decision was superseded before push")
         return queue_snapshot(queue)
 
 
@@ -171,6 +181,10 @@ def published_result(approved_root: Path, builds_root: Path, decision_id: str) -
 PERMANENT_FAILURES = (
     "rough source is unreadable",
     "wiki_path already published with different content",
+    "move source is unreadable",
+    "move source changed",
+    "move target already exists",
+    "category authorization conflict",
     "review snapshot is not part of the published history",
 )
 
@@ -210,10 +224,12 @@ def load_approved_decisions(review_module, queue: Path, decision_key: bytes,
                 validated=review_module.validate_decision(record,decision_key)
             except (Exception,SystemExit):
                 continue
-            rough_path=validated["rough_path"]
-            latest_by_path.pop(rough_path,None)
-            latest_by_path[rough_path]=validated
-    return [record for record in latest_by_path.values() if record["action"]=="approve"]
+            subject=_decision_subject(review_module,validated)
+            if not subject:
+                continue
+            latest_by_path.pop(subject,None)
+            latest_by_path[subject]=validated
+    return [record for record in latest_by_path.values() if record["action"] in {"approve", "move"}]
 
 
 def _write_isolation(directory: Path, name: str, reason: str) -> None:

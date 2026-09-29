@@ -215,6 +215,41 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(self.call("/item/not-an-identity", cookie=session)[0], "404 Not Found")
         self.assertEqual(self.call("/item/" + identity, cookie=session, method="POST")[0], "405 Method Not Allowed")
 
+    def test_reviewer_can_record_a_single_published_knowledge_move(self):
+        for name in ("01_原分类", "02_新分类"):
+            folder = self.root / "repo/wiki" / name
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / f"{name}.md").write_text(
+                f'---\naliases:\n  - "#{name}"\ntags:\n  - "{name}"\nmaster:\n---\n', encoding="utf-8",
+            )
+        note = self.root / "repo/wiki/01_原分类/01-0001.md"
+        note.write_text(
+            '---\nno: 1\nquestion: "测试移动"\ntag_pages:\n  - "[[01_原分类]]"\ntags:\n  - "01_原分类"\n---\n\n正文。\n',
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "wiki"], cwd=self.root / "repo", check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@invalid", "commit", "-qm", "wiki"], cwd=self.root / "repo", check=True)
+        session = self.authenticate()
+        status, _, listing = self.call("/knowledge", cookie=session)
+        self.assertEqual(status, "200 OK")
+        identity = re.search(r'/review/knowledge/([0-9a-f]{16})', listing.decode()).group(1)
+        status, _, detail = self.call("/knowledge/" + identity, cookie=session)
+        self.assertEqual(status, "200 OK")
+        page = detail.decode()
+        nonce = re.search('name="form_nonce" value="([^"]+)"', page).group(1)
+        digest = re.search('name="source_wiki_sha256" value="([^"]+)"', page).group(1)
+        status, headers, _ = self.call(
+            "/move-decision", method="POST", cookie=session, origin=REVIEW_ORIGIN,
+            form={"form_nonce": nonce, "source_wiki_path": "wiki/01_原分类/01-0001.md",
+                  "source_wiki_sha256": digest, "action": "move",
+                  "wiki_path": "wiki/02_新分类/02-0001.md"},
+        )
+        self.assertEqual(status, "303 See Other")
+        self.assertEqual(dict(headers)["Location"], f"/review/knowledge/{identity}?notice=moved")
+        record = json.loads((self.root / "state/decisions.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(record["action"], "move")
+        self.assertEqual(record["wiki_path"], "wiki/02_新分类/02-0001.md")
+
     def test_decision_redirects_to_the_item_and_shows_the_reviewer_nickname(self):
         session = self.authenticate()
         _, _, body = self.call("/", cookie=session)

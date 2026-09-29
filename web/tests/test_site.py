@@ -92,6 +92,18 @@ class SiteBuildTests(unittest.TestCase):
         self.assertFalse(is_publishable_path(Path("_raw/secret.md")))
         self.assertFalse(is_publishable_path(Path("wiki/排除资料.md")))
 
+    def test_moved_note_old_url_redirects_to_new_url(self):
+        old = "wiki/01_注册/旧条目.md"
+        new = "wiki/01_注册/条目.md"
+        (self.vault / "wiki/_redirects.json").write_text(
+            json.dumps({old: new}, ensure_ascii=False), encoding="utf-8",
+        )
+        build_site(self.vault, self.out)
+        page = (self.out / "wiki/01_注册/旧条目.html").read_text(encoding="utf-8")
+        self.assertIn(quote("条目.html"), page)
+        manifest = json.loads((self.out / "manifest.json").read_text(encoding="utf-8"))
+        self.assertNotIn(old, {item["path"] for item in manifest["documents"]})
+
     def test_wikilinks_and_backlinks_are_rendered(self):
         build_site(self.vault, self.out)
         wiki = rendered_page((self.out / "wiki" / "01_注册" / "条目.html"))

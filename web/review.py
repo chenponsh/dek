@@ -22,6 +22,7 @@ import yaml
 from deploy.release_bundle import APPROVAL_ID_PATTERN
 
 from .suggest import question_key, read_suggestion, rough_qa, suggest_folders, wiki_questions
+from .taxonomy import CategoryPlan, TaxonomyError, inspect_wiki_target, rewrite_note_for_target
 
 
 HASH_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -603,6 +604,16 @@ class DecisionSummary:
     created_at: str
 
 
+@dataclass(frozen=True)
+class WikiItem:
+    identity: str
+    path: str
+    title: str
+    category: str
+    content: str
+    sha256: str
+
+
 class MemoryFormNonceStore:
     """Bounded, process-local, single-use form nonce store."""
 
@@ -768,17 +779,51 @@ def verify_decision_mac(record: dict, key: bytes) -> bool:
     return isinstance(supplied, str) and hmac.compare_digest(supplied, decision_mac(record, key))
 
 
+def decision_subject(record: dict) -> str:
+    """The object whose latest signed decision supersedes earlier ones."""
+    if record.get("action") == "move":
+        value = record.get("source_wiki_path")
+        return "wiki:" + value if isinstance(value, str) else ""
+    value = record.get("rough_path")
+    return "rough:" + value if isinstance(value, str) else ""
+
+
 def validate_decision(record: object, key: bytes) -> dict:
     """Validate the complete, MAC-bound publisher authorization record."""
-    fields={"schema_version","record_type","decision_id","created_at","reviewer_digest","action","rough_path","rough_sha256","rough_version","wiki_path","candidate_markdown","comment","snapshot_commit","snapshot_tree","snapshot_bundle_sha256","decision_mac"}
-    if not isinstance(record,dict) or set(record)!=fields or record.get("schema_version")!=2 or record.get("record_type")!="decision":
+    v2_fields={"schema_version","record_type","decision_id","created_at","reviewer_digest","action","rough_path","rough_sha256","rough_version","wiki_path","candidate_markdown","comment","snapshot_commit","snapshot_tree","snapshot_bundle_sha256","decision_mac"}
+    approve_v3_fields=v2_fields|{"category_page_path","category_page_markdown"}
+    move_v3_fields={"schema_version","record_type","decision_id","created_at","reviewer_digest","action",
+                    "source_wiki_path","source_wiki_sha256","wiki_path","candidate_markdown",
+                    "category_page_path","category_page_markdown","comment","snapshot_commit","snapshot_tree",
+                    "snapshot_bundle_sha256","decision_mac"}
+    if not isinstance(record,dict) or record.get("record_type")!="decision":
         raise ReviewError("decision schema invalid")
-    if record.get("action") not in {"approve","reject","return"} or not isinstance(record.get("decision_id"), str) or not APPROVAL_ID_PATTERN.fullmatch(record["decision_id"]):
+    schema=record.get("schema_version")
+    action=record.get("action")
+    if ((schema==2 and set(record)!=v2_fields)
+            or (schema==3 and action=="approve" and set(record)!=approve_v3_fields)
+            or (schema==3 and action=="move" and set(record)!=move_v3_fields)
+            or schema not in {2,3} or action not in {"approve","reject","return","move"}
+            or (schema==3 and action not in {"approve","move"})
+            or not isinstance(record.get("decision_id"), str) or not APPROVAL_ID_PATTERN.fullmatch(record["decision_id"])):
         raise ReviewError("decision schema invalid")
     if not re.fullmatch(r"[0-9a-f]{40,64}",str(record.get("snapshot_commit",""))) or not re.fullmatch(r"[0-9a-f]{40,64}",str(record.get("snapshot_tree",""))) or not re.fullmatch(r"[0-9a-f]{64}",str(record.get("snapshot_bundle_sha256",""))):
         raise ReviewError("decision schema invalid")
-    validate_relative_path(record["rough_path"],ROUGH_PREFIX)
-    if record["action"]=="approve": validate_relative_path(record["wiki_path"],WIKI_PREFIX)
+    if action=="move":
+        validate_relative_path(record["source_wiki_path"],WIKI_PREFIX)
+        validate_relative_path(record["wiki_path"],WIKI_PREFIX)
+        if not HASH_PATTERN.fullmatch(str(record.get("source_wiki_sha256",""))):
+            raise ReviewError("decision schema invalid")
+    else:
+        validate_relative_path(record["rough_path"],ROUGH_PREFIX)
+        if action=="approve": validate_relative_path(record["wiki_path"],WIKI_PREFIX)
+    if schema==3:
+        category_path=record.get("category_page_path")
+        category_markdown=record.get("category_page_markdown")
+        if not isinstance(category_path,str) or not isinstance(category_markdown,str) or bool(category_path)!=bool(category_markdown):
+            raise ReviewError("decision schema invalid")
+        if category_path:
+            validate_relative_path(category_path,WIKI_PREFIX)
     if not verify_decision_mac(record,key): raise ReviewError("decision MAC invalid","403 Forbidden")
     return dict(record)
 
@@ -997,20 +1042,67 @@ class ReviewService:
         )
         return self._page("来源列表", body)
 
+    @staticmethod
+    def _category_plan(root: Path, wiki_path: str) -> CategoryPlan | None:
+        # Some historical/test snapshots predate the wiki tree. They retain
+        # their v2 decision behavior; real current snapshots always have it.
+        if not (root / "wiki").is_dir():
+            return None
+        try:
+            return inspect_wiki_target(root, wiki_path)
+        except TaxonomyError as exc:
+            raise ReviewError(str(exc), "409 Conflict") from exc
+
+    def _folder_candidates(self, root: Path, taken: frozenset[str] | set[str] = frozenset()) -> list[tuple[str, str]]:
+        """Existing categories plus categories promised by unpublished decisions."""
+        candidates = wiki_folder_candidates(root, taken)
+        known = {"wiki/" + label for label, _ in candidates}
+        promised: dict[str, tuple[str, int, int]] = {}
+        for record in self._decisions():
+            if record.get("action") not in {"approve", "move"}:
+                continue
+            target = record.get("wiki_path")
+            if not isinstance(target, str) or not target.startswith("wiki/"):
+                continue
+            path = PurePosixPath(target)
+            folder = path.parent.as_posix()
+            match = re.fullmatch(r"(.+)-(\d+)\.md", path.name)
+            if folder in known or not match:
+                continue
+            try:
+                plan = inspect_wiki_target(root, target)
+            except TaxonomyError:
+                continue
+            if plan is None:
+                continue
+            value, width = int(match.group(2)), len(match.group(2))
+            current = promised.get(folder)
+            if current is None or value > current[1]:
+                promised[folder] = (match.group(1), value, width)
+        for folder, (prefix, maximum, width) in promised.items():
+            number = maximum + 1
+            target = f"{folder}/{prefix}-{number:0{width}d}.md"
+            while target in taken:
+                number += 1
+                target = f"{folder}/{prefix}-{number:0{width}d}.md"
+            candidates.append((folder[len("wiki/"):], target))
+        return sorted(candidates)
+
     def _promised_wiki_paths(self, root: Path, except_rough: str = "") -> frozenset[str]:
         """Wiki paths that approved drafts (other than `except_rough`) are waiting to be published at."""
         latest: dict[str, dict] = {}
         for record in self._decisions():
-            if isinstance(record.get("rough_path"), str):
-                latest[record["rough_path"]] = record
+            subject = decision_subject(record)
+            if subject:
+                latest[subject] = record
         return frozenset(
             str(record.get("wiki_path"))
-            for path, record in latest.items()
-            if path != except_rough and record.get("action") == "approve" and record.get("wiki_path")
+            for subject, record in latest.items()
+            if subject != "rough:" + except_rough and record.get("action") in {"approve", "move"} and record.get("wiki_path")
             and not (root / str(record["wiki_path"])).exists()
             # only an approval whose draft is still waiting to be published reserves its number;
             # one whose draft was deleted (a data reset) can never publish, so the number is free
-            and self._rough_status(root, path) not in ("", "promoted")
+            and (record.get("action") == "move" or self._rough_status(root, str(record.get("rough_path", ""))) not in ("", "promoted"))
         )
 
     def _duplicate_notice(self, root: Path, item) -> str:
@@ -1104,7 +1196,7 @@ class ReviewService:
         return None
 
     def _form_card(self, rough: RoughBinding, nonce: str, *, wiki_path: str = "", candidate: str = "", root: Path | None = None, action_query: str = "", heading: str = "原文", suggested: str = "", alternatives: list[tuple[str, str]] | None = None, taken: frozenset[str] = frozenset()) -> str:
-        candidates = wiki_folder_candidates(root, taken) if root else []
+        candidates = self._folder_candidates(root, taken) if root else []
         options_json = json.dumps([[label, path] for label, path in candidates], ensure_ascii=False)
         if self.ingest_status()["in_progress"]:
             # a decision now would be made on a list the pull is about to replace
@@ -1328,7 +1420,7 @@ class ReviewService:
             if not suggested:
                 # The draft carries no target: suggest the folders holding the most similar filed entries.
                 alternatives = suggest_wiki_paths(
-                    root, item.content, candidates=wiki_folder_candidates(root, taken),
+                    root, item.content, candidates=self._folder_candidates(root, taken),
                     preferred=read_suggestion(self.suggestions_path, binding.path, binding.sha256))
                 if alternatives:
                     suggested = alternatives[0][1]
@@ -1367,6 +1459,157 @@ class ReviewService:
             + '</div>'
         )
         return self._page(_item_title(item), body)
+
+    def wiki_items(self, *, query: str = "", root=None) -> list[WikiItem]:
+        root = self._snapshot_root(root)
+        result: list[WikiItem] = []
+        wiki = root / "wiki"
+        if not wiki.is_dir() or wiki.is_symlink():
+            return result
+        for path in sorted(wiki.rglob("*.md")):
+            relative = path.relative_to(root).as_posix()
+            if any("排除" in part for part in path.relative_to(wiki).parts):
+                continue
+            if path.name == path.parent.name + ".md" or re.fullmatch(r"\d+-\d{4}\.md", path.name) is None:
+                continue
+            try:
+                raw = path.read_bytes()
+                if len(raw) > 16 * 1024 * 1024:
+                    continue
+                text = raw.decode("utf-8")
+                fields = _frontmatter(text)
+            except (OSError, UnicodeDecodeError, ReviewError):
+                continue
+            title = str(fields.get("question") or path.stem).strip()
+            result.append(WikiItem(item_identity(relative), relative, title,
+                                   path.parent.relative_to(wiki).as_posix(), text,
+                                   "sha256:" + hashlib.sha256(raw).hexdigest()))
+        needle = query.strip().casefold()
+        if needle:
+            result = [item for item in result if needle in " ".join((item.path, item.title, item.category, item.content)).casefold()]
+        return result
+
+    def find_wiki_item(self, identity: str, *, root=None) -> WikiItem | None:
+        if not isinstance(identity, str) or re.fullmatch(r"[0-9a-f]{16}", identity) is None:
+            return None
+        return next((item for item in self.wiki_items(root=root) if item.identity == identity), None)
+
+    def render_wiki_list(self, *, query: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:
+        items = self.wiki_items(query=query)
+        size = min(max(int(page_size), MIN_PAGE_SIZE), MAX_PAGE_SIZE)
+        pages = max(1, -(-len(items) // size))
+        page = min(max(1, int(page)), pages)
+        first = (page - 1) * size
+        rows = "".join(
+            f'<tr data-href="{self.path_prefix}/knowledge/{item.identity}"><td class="meta index">{number}</td>'
+            f'<td><a href="{self.path_prefix}/knowledge/{item.identity}">{html.escape(item.title)}</a>'
+            f'<div class="meta">{html.escape(item.path)}</div></td><td>{html.escape(item.category)}</td></tr>'
+            for number, item in enumerate(items[first:first + size], start=first + 1)
+        ) or '<tr><td colspan="3">没有符合条件的知识。</td></tr>'
+        def href(number: int) -> str:
+            values = {"page": number, "page_size": size}
+            if query:
+                values["q"] = query
+            return self.path_prefix + "/knowledge?" + urlencode(values)
+        pager = "".join((f'<a href="{href(page-1)}">上一页</a>' if page > 1 else '<span class="disabled">上一页</span>',
+                         f'<span class="page-info">第 {page}/{pages} 页</span>',
+                         f'<a href="{href(page+1)}">下一页</a>' if page < pages else '<span class="disabled">下一页</span>'))
+        body = (self._header() + self._sidebar("review:knowledge") + '<div class="content"><main class="review-shell review-list">'
+                '<h1>已发布知识</h1><p class="meta">选择一条知识，可以把它移动到其他分类。</p>'
+                f'<form method="get" action="{self.path_prefix}/knowledge" class="search-form"><input name="q" value="{html.escape(query)}" placeholder="搜索问题、编号或分类"><button type="submit">搜索</button></form>'
+                '<div class="table-wrap"><table><thead><tr><th class="index">序号</th><th>知识</th><th>当前分类</th></tr></thead>'
+                f'<tbody>{rows}</tbody></table></div><nav class="pager">{pager}</nav></main></div>')
+        return self._page("已发布知识", body)
+
+    def render_wiki_item(self, session_id: str, identity: str, *, notice: str = "") -> bytes | None:
+        root = self._snapshot_root()
+        item = self.find_wiki_item(identity, root=root)
+        if item is None:
+            return None
+        taken = self._promised_wiki_paths(root)
+        options = self._folder_candidates(root, taken)
+        options_json = json.dumps([[label, path] for label, path in options], ensure_ascii=False)
+        nonce = self.nonces.issue(session_id, item.path, int(self.clock()) + 900, str(root))
+        form = (
+            f'<form method="post" action="{self.path_prefix}/move-decision">'
+            f'<input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="source_wiki_path" value="{html.escape(item.path)}">'
+            f'<input type="hidden" name="source_wiki_sha256" value="{item.sha256}"><input type="hidden" name="action" value="move">'
+            f'<label>移动到<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="" placeholder="搜索目标分类…" data-options="{html.escape(options_json)}">'
+            '<div class="combo-list" role="listbox"></div></div></label>'
+            '<div class="notice category-create-preview" hidden></div>'
+            '<div class="decision-actions"><button type="submit" name="move" value="1" data-busy-label="提交中…">确认调整分类</button></div></form>'
+        )
+        body = (self._header() + self._sidebar("review:knowledge") + '<div class="content"><main class="review-shell review-list">'
+                f'<p><a href="{self.path_prefix}/knowledge">← 返回已发布知识</a></p><h1>{html.escape(item.title)}</h1>'
+                f'<div class="meta">当前位置：{html.escape(item.path)}</div>'
+                + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
+                + f'<h2>现有内容</h2><pre>{html.escape(item.content)}</pre><h2>调整分类</h2>{form}</main></div>')
+        return self._page("调整分类", body)
+
+    def submit_move_form(self, body: bytes, *, session_id: str, user_id: str, reviewer_label: str = "") -> tuple[str, str]:
+        if len(body) > MAX_DECISION_BYTES:
+            raise ReviewError("request too large", "413 Payload Too Large")
+        try:
+            values = parse_qs(body.decode("utf-8"), keep_blank_values=True, strict_parsing=True, max_num_fields=8)
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise ReviewError("invalid form") from exc
+        def one(name: str) -> str:
+            items = values.get(name, [])
+            if len(items) != 1:
+                raise ReviewError(f"invalid {name}")
+            return items[0]
+        if one("action") != "move":
+            raise ReviewError("invalid action")
+        source = one("source_wiki_path")
+        nonce = one("form_nonce")
+        snapshot_root = self.nonces.peek(nonce, session_id, source)
+        if snapshot_root is None:
+            raise ReviewError("invalid form nonce", "403 Forbidden")
+        root = Path(snapshot_root)
+        source_relative = validate_relative_path(source, WIKI_PREFIX)
+        source_path = resolve_existing(root, source_relative)
+        raw = source_path.read_bytes()
+        supplied_hash = one("source_wiki_sha256")
+        actual_hash = "sha256:" + hashlib.sha256(raw).hexdigest()
+        if not hmac.compare_digest(supplied_hash, actual_hash):
+            raise ReviewError("knowledge changed", "409 Conflict")
+        target = one("wiki_path")
+        validate_relative_path(target, WIKI_PREFIX)
+        if target == source:
+            raise ReviewError("move target is unchanged", "409 Conflict")
+        try:
+            (root / target).lstat()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise ReviewError("move target is unsafe", "409 Conflict") from exc
+        else:
+            raise ReviewError("move target already exists", "409 Conflict")
+        plan = self._category_plan(root, target)
+        try:
+            candidate = rewrite_note_for_target(raw.decode("utf-8"), source, target)
+        except (UnicodeDecodeError, TaxonomyError) as exc:
+            raise ReviewError(str(exc), "409 Conflict") from exc
+        decision_id = secrets.token_urlsafe(24)
+        commit=subprocess.check_output(["/usr/bin/git","rev-parse","HEAD^{commit}"],cwd=root,env={"PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_GLOBAL":"/dev/null"},text=True).strip()
+        tree=subprocess.check_output(["/usr/bin/git","rev-parse","HEAD^{tree}"],cwd=root,env={"PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_GLOBAL":"/dev/null"},text=True).strip()
+        bundle_digest=getattr(self.repository_source,"_digest","")
+        if not re.fullmatch(r"[0-9a-f]{64}",bundle_digest): bundle_digest=hashlib.sha256((commit+"\0"+tree).encode()).hexdigest()
+        record={"schema_version":3,"record_type":"decision","decision_id":decision_id,
+                "created_at":datetime.fromtimestamp(self.clock(),timezone.utc).isoformat(timespec="seconds"),
+                "reviewer_digest":"hmac-sha256:"+hmac.new(self.audit_key,user_id.encode(),hashlib.sha256).hexdigest(),
+                "action":"move","source_wiki_path":source,"source_wiki_sha256":actual_hash,
+                "wiki_path":target,"candidate_markdown":candidate,
+                "category_page_path":plan.page_path if plan else "",
+                "category_page_markdown":plan.page_markdown if plan else "","comment":"",
+                "snapshot_commit":commit,"snapshot_tree":tree,"snapshot_bundle_sha256":bundle_digest}
+        record["decision_mac"]=decision_mac(record,self.queue_key)
+        with queue_lock(self.queue_path):
+            append_record(self.queue_path,record,already_locked=True)
+            self.nonces.invalidate(nonce)
+        if self.labels is not None:
+            self.labels.append(decision_id,reviewer_label)
+        return decision_id, item_identity(source)
 
     def submit_form(self, body: bytes, *, session_id: str, user_id: str, reviewer_label: str = "") -> str:
         if len(body) > MAX_DECISION_BYTES:
@@ -1408,6 +1651,7 @@ class ReviewService:
             if not candidate.strip():
                 raise ReviewError("approve requires candidate markdown")
             _frontmatter(candidate)
+            plan = self._category_plan(root, wiki_path)
         else:
             # Both decision buttons share one <form>; reject may submit
             # whatever wiki_path/candidate_markdown were left over from an
@@ -1415,6 +1659,7 @@ class ReviewService:
             # non-approve decision never uses either field.
             wiki_path = ""
             candidate = ""
+            plan = None
         if len(candidate.encode("utf-8")) > 900_000:
             raise ReviewError("field too large", "413 Payload Too Large")
         decision_id = secrets.token_urlsafe(24)
@@ -1423,7 +1668,7 @@ class ReviewService:
         bundle_digest=getattr(self.repository_source,"_digest","")
         if not re.fullmatch(r"[0-9a-f]{64}",bundle_digest): bundle_digest=hashlib.sha256((commit+"\0"+tree).encode()).hexdigest()
         record = {
-            "schema_version": 2, "record_type": "decision", "decision_id": decision_id,
+            "schema_version": 3 if plan is not None else 2, "record_type": "decision", "decision_id": decision_id,
             "created_at": datetime.fromtimestamp(self.clock(), timezone.utc).isoformat(timespec="seconds"),
             "reviewer_digest": "hmac-sha256:" + hmac.new(self.audit_key, user_id.encode(), hashlib.sha256).hexdigest(),
             "action": action, "rough_path": binding.path, "rough_sha256": binding.sha256,
@@ -1432,6 +1677,9 @@ class ReviewService:
             # the field) but no longer collected: always empty.
             "comment": "", "snapshot_commit":commit,"snapshot_tree":tree,"snapshot_bundle_sha256":bundle_digest,
         }
+        if plan is not None:
+            record["category_page_path"] = plan.page_path
+            record["category_page_markdown"] = plan.page_markdown
         record["decision_mac"] = decision_mac(record, self.queue_key)
         # The decision queue stays append-only and MAC-bound; a later decision for the
         # same rough supersedes the earlier one for display and for the publisher, which

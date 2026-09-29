@@ -366,14 +366,15 @@ class ReleasePublisher:
         return commit
 
     def prepare_change(self, output: Path, decision: dict, *, chain_from: dict | None = None) -> dict:
-        """Apply one approved review decision in its own clone and bundle that commit.
+        """Apply one signed publish or move decision in its own clone.
 
         The change goes on top of what is published now (or, in a chain, on top of the
         previous package), not on the older snapshot the reviewer looked at: the draft
         and the target path are re-checked there, so nothing else the reviewer did not
         see is touched, and the push is always a fast-forward.
         """
-        if decision.get("action") != "approve": raise BundleError("only approved decisions produce releases")
+        action=decision.get("action")
+        if action not in {"approve","move"}: raise BundleError("only publishable decisions produce releases")
         decision_id=str(decision.get("decision_id","")); nonce=decision_id
         approval_generation(decision_id, nonce)
         if not self.test_only_local_origin:
@@ -393,36 +394,98 @@ class ReleasePublisher:
             if chain_from:
                 chained=self._chain_base(clone,chain_from,tip)
                 if chained: base=chained
-            parent_commit=_nearest_decision_commit(clone,base)
-            rough=clone/str(decision.get("rough_path","")); wiki=clone/str(decision.get("wiki_path",""))
-            if not rough.resolve().is_relative_to((clone/"ingestion/rough").resolve()) or not wiki.resolve().is_relative_to((clone/"wiki").resolve()): raise BundleError("decision path escapes repository")
-            candidate_bytes=decision["candidate_markdown"].encode("utf-8")
-            # Two decisions reviewed close together can each name the same wiki_path;
-            # the working tree is put on the base first, so a path the base already
-            # holds with different content is refused here instead of being overwritten.
             _run((*GIT,"reset","--hard",base),cwd=clone)
-            if wiki.is_file() and wiki.read_bytes()!=candidate_bytes:
-                raise BundleError("wiki_path already published with different content")
-            try:
-                rough_details=rough.lstat()
-            except OSError as exc:
-                raise BundleError("rough source is unreadable") from exc
-            if not stat.S_ISREG(rough_details.st_mode) or rough_details.st_nlink!=1:
-                raise BundleError("rough source is not an exact regular file")
-            raw=rough.read_bytes()
-            if "sha256:"+hashlib.sha256(raw).hexdigest()!=decision.get("rough_sha256"): raise BundleError("rough binding changed")
-            wiki=write_candidate_regular(clone,str(decision.get("wiki_path","")),candidate_bytes)
-            text=raw.decode("utf-8")
-            text=text.replace("status: pending_review","status: promoted",1)
-            # ingestion/automation/audit.py's lifecycle check fails closed on
-            # any status: promoted rough whose wiki_target is still blank; a
-            # rough's wiki_target is only ever prefilled by ingestion as a
-            # suggestion, so the actual approved wiki_path must be recorded
-            # here or the very next builder run permanently rejects this commit.
-            text=re.sub(r"(?m)^wiki_target:.*$",f"wiki_target: {decision.get('wiki_path','')}",text,count=1)
-            rough.write_text(text,encoding="utf-8")
-            relative=(rough.relative_to(clone).as_posix(),wiki.relative_to(clone).as_posix())
-            _run((*GIT,"add","--",*relative),cwd=clone)
+            parent_commit=_nearest_decision_commit(clone,base)
+            target_relative=str(decision.get("wiki_path",""))
+            wiki=clone/target_relative
+            candidate_bytes=str(decision.get("candidate_markdown","")).encode("utf-8")
+            signed_page=str(decision.get("category_page_path","") or "")
+            signed_markdown=str(decision.get("category_page_markdown","") or "")
+            if decision.get("schema_version")==3 or action=="move":
+                # release_bundle is also imported by the separately installed
+                # source-ingest service, whose minimal tree intentionally has
+                # no web package. Taxonomy is publisher-only, so load it here.
+                from web.taxonomy import TaxonomyError, inspect_wiki_target, rewrite_note_for_target
+                try:
+                    plan=inspect_wiki_target(clone,target_relative)
+                except TaxonomyError as exc:
+                    raise BundleError("category authorization conflict") from exc
+                if plan is not None:
+                    if signed_page!=plan.page_path or signed_markdown!=plan.page_markdown:
+                        raise BundleError("category authorization conflict")
+                    write_candidate_regular(clone,signed_page,signed_markdown.encode("utf-8"))
+                elif signed_page:
+                    page=clone/signed_page
+                    if not page.is_file() or page.is_symlink() or page.read_text(encoding="utf-8")!=signed_markdown:
+                        raise BundleError("category authorization conflict")
+
+            if action=="approve":
+                rough=clone/str(decision.get("rough_path",""))
+                if not rough.resolve().is_relative_to((clone/"ingestion/rough").resolve()):
+                    raise BundleError("decision path escapes repository")
+                if wiki.is_file() and wiki.read_bytes()!=candidate_bytes:
+                    raise BundleError("wiki_path already published with different content")
+                try:
+                    rough_details=rough.lstat()
+                except OSError as exc:
+                    raise BundleError("rough source is unreadable") from exc
+                if not stat.S_ISREG(rough_details.st_mode) or rough_details.st_nlink!=1:
+                    raise BundleError("rough source is not an exact regular file")
+                raw=rough.read_bytes()
+                if "sha256:"+hashlib.sha256(raw).hexdigest()!=decision.get("rough_sha256"):
+                    raise BundleError("rough binding changed")
+                wiki=write_candidate_regular(clone,target_relative,candidate_bytes)
+                text=raw.decode("utf-8").replace("status: pending_review","status: promoted",1)
+                text=re.sub(r"(?m)^wiki_target:.*$",f"wiki_target: {target_relative}",text,count=1)
+                rough.write_text(text,encoding="utf-8")
+            else:
+                source_relative=str(decision.get("source_wiki_path",""))
+                source=clone/source_relative
+                if (not source.resolve().is_relative_to((clone/"wiki").resolve())
+                        or not wiki.resolve().is_relative_to((clone/"wiki").resolve())):
+                    raise BundleError("decision path escapes repository")
+                try:
+                    source_details=source.lstat()
+                except OSError as exc:
+                    raise BundleError("move source is unreadable") from exc
+                if not stat.S_ISREG(source_details.st_mode) or source_details.st_nlink!=1:
+                    raise BundleError("move source is unreadable")
+                raw=source.read_bytes()
+                if "sha256:"+hashlib.sha256(raw).hexdigest()!=decision.get("source_wiki_sha256"):
+                    raise BundleError("move source changed")
+                if wiki.exists() or wiki.is_symlink():
+                    raise BundleError("move target already exists")
+                try:
+                    expected=rewrite_note_for_target(raw.decode("utf-8"),source_relative,target_relative).encode("utf-8")
+                except (UnicodeDecodeError,TaxonomyError) as exc:
+                    raise BundleError("move source is unreadable") from exc
+                if expected!=candidate_bytes:
+                    raise BundleError("move candidate changed")
+                wiki=write_candidate_regular(clone,target_relative,candidate_bytes)
+                source.unlink()
+                redirects_path=clone/"wiki/_redirects.json"
+                if redirects_path.exists():
+                    details=redirects_path.lstat()
+                    if not stat.S_ISREG(details.st_mode) or details.st_nlink!=1:
+                        raise BundleError("redirect map is unsafe")
+                    try:
+                        redirects=json.loads(redirects_path.read_text(encoding="utf-8"))
+                    except (OSError,UnicodeDecodeError,json.JSONDecodeError) as exc:
+                        raise BundleError("redirect map is invalid") from exc
+                    if not isinstance(redirects,dict) or not all(isinstance(k,str) and isinstance(v,str) for k,v in redirects.items()):
+                        raise BundleError("redirect map is invalid")
+                else:
+                    redirects={}
+                # Collapse redirect chains, and remove a historical redirect
+                # when its old location becomes the live target again.
+                redirects.pop(target_relative,None)
+                for old,current in list(redirects.items()):
+                    if current==source_relative:
+                        redirects[old]=target_relative
+                redirects[source_relative]=target_relative
+                atomic_write_bytes(redirects_path,(json.dumps(redirects,ensure_ascii=False,sort_keys=True,separators=(",",":"))+"\n").encode("utf-8"),mode=0o644)
+
+            _run((*GIT,"add","-A","--","wiki",*( [str(decision.get("rough_path"))] if action=="approve" else [] )),cwd=clone)
             _run((*GIT,"-c",f"user.name={PUBLISHER_COMMIT_NAME}","-c",f"user.email={PUBLISHER_COMMIT_EMAIL}","commit","-m",f"publish: {decision_id}"),cwd=clone)
             exact=_run((*GIT,"rev-parse","HEAD^{commit}"),cwd=clone).decode().strip(); tree=_run((*GIT,"rev-parse","HEAD^{tree}"),cwd=clone).decode().strip()
             tree_entry=_run((*GIT,"ls-tree","HEAD","--",wiki.relative_to(clone).as_posix()),cwd=clone).decode("utf-8","strict").strip()

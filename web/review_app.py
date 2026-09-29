@@ -61,6 +61,7 @@ NOTICES = {
     "ingest_running": "抓取正在进行，完成并刷新页面后才能批准或拒绝，避免处理到旧列表里已经不存在的内容。这次没有记录任何决定。",
     "publish_triggered": "已提交发布请求，已批准的内容会在后台构建并发布，稍后刷新查看。",
     "publish_cooldown": "刚触发过一次发布，请稍等片刻再试。",
+    "moved": "已记录：调整分类。发布后生效。",
 }
 STATUS_FILTERS = {"pending", "approved", "published", "rejected"}
 
@@ -246,6 +247,45 @@ class ReviewApp:
                 return self._response(start, "404 Not Found", b"Not Found")
             return self._response(start, "200 OK", body, (("Content-Type", "text/html; charset=utf-8"),))
 
+        if path == "/knowledge":
+            if method != "GET":
+                return self._response(start, "405 Method Not Allowed", b"Method Not Allowed", (("Allow", "GET"),))
+            if not self.reviewers:
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            if not authenticated:
+                return self._begin_login(start, REVIEW_PREFIX + "/knowledge")
+            if not is_reviewer:
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            query = parse_qs(environ.get("QUERY_STRING", ""))
+            search = (query.get("q", [""])[0] or "")[:QUERY_LIMIT]
+            _, page, page_size = list_position(query)
+            try:
+                body = self.service.render_wiki_list(query=search, page=page, page_size=page_size)
+            except ReviewError as error:
+                return self._render_failure(start, error)
+            return self._response(start, "200 OK", body, (("Content-Type", "text/html; charset=utf-8"),))
+
+        if path.startswith("/knowledge/"):
+            if method != "GET":
+                return self._response(start, "405 Method Not Allowed", b"Method Not Allowed", (("Allow", "GET"),))
+            if not self.reviewers:
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            if not authenticated:
+                return self._begin_login(start, REVIEW_PREFIX + path)
+            if not is_reviewer:
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            query = parse_qs(environ.get("QUERY_STRING", ""))
+            try:
+                body = self.service.render_wiki_item(
+                    session_id, path[len("/knowledge/"):],
+                    notice=self._notice_text(query.get("notice", [""])[0]),
+                )
+            except ReviewError as error:
+                return self._render_failure(start, error)
+            if body is None:
+                return self._response(start, "404 Not Found", b"Not Found")
+            return self._response(start, "200 OK", body, (("Content-Type", "text/html; charset=utf-8"),))
+
         if path == "/decision":
             if method != "POST":
                 return self._response(start, "405 Method Not Allowed", b"Method Not Allowed", (("Allow", "POST"),))
@@ -305,6 +345,41 @@ class ReviewApp:
             if position_status: location += "&status=" + position_status
             if position_page > 1: location += "&page=%d" % position_page
             if position_size != PAGE_SIZE: location += "&page_size=%d" % position_size
+            return self._response(start, "303 See Other", headers=(("Location", location),))
+
+        if path == "/move-decision":
+            if method != "POST":
+                return self._response(start, "405 Method Not Allowed", b"Method Not Allowed", (("Allow", "POST"),))
+            if not authenticated:
+                return self._response(start, "401 Unauthorized", b"Unauthorized")
+            if not is_reviewer:
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            kind = origin_kind(environ.get("HTTP_ORIGIN"), self.expected_origin)
+            if kind in {"absent", "null"}:
+                fetch_site = sanitize_fetch_site(environ.get("HTTP_SEC_FETCH_SITE"))
+                if fetch_site in {"cross-site", "other"}:
+                    auth_logger.warning("review_move origin_unusable origin=%s fetch_site=%s", kind, fetch_site)
+                    return self._response(start, "403 Forbidden", b"Forbidden")
+            elif kind == "other":
+                auth_logger.warning("review_move origin_mismatch origin=%s", sanitize_origin(environ.get("HTTP_ORIGIN")))
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            if not is_form_content_type(environ.get("CONTENT_TYPE")):
+                return self._response(start, "415 Unsupported Media Type", b"Unsupported Media Type")
+            try:
+                length = int(environ.get("CONTENT_LENGTH") or "0")
+                if length < 0 or length > MAX_DECISION_BYTES:
+                    raise ReviewError("request too large", "413 Payload Too Large")
+                body = environ["wsgi.input"].read(length)
+                if len(body) != length:
+                    raise ReviewError("incomplete request")
+                _, identity = self.service.submit_move_form(
+                    body, session_id=session_id, user_id=user_id, reviewer_label=display_name,
+                )
+            except (ReviewError, ValueError, KeyError, UnicodeDecodeError) as error:
+                status = error.status if isinstance(error, ReviewError) else "400 Bad Request"
+                auth_logger.warning("review_move_rejected status=%s reason=%s", status, str(error) or type(error).__name__)
+                return self._response(start, status, status.encode("ascii"), (("Content-Type", "text/plain"),))
+            location = f"{REVIEW_PREFIX}/knowledge/{identity}?notice=moved"
             return self._response(start, "303 See Other", headers=(("Location", location),))
 
         if path == "/trigger-ingest":
