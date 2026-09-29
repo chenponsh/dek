@@ -353,7 +353,7 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(status, "303 See Other")
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=approved")
         _, _, done = self.call("/item/" + identity, cookie=session)
-        self.assertIn("已批准待发布", done.decode("utf-8"))
+        self.assertIn("已审核待发布", done.decode("utf-8"))
         records = [json.loads(line) for line in (self.root / "state/decisions.jsonl").read_text().splitlines()]
         self.assertEqual([r["action"] for r in records], ["reject", "approve"])
         self.assertEqual([r["comment"] for r in records], ["", ""])

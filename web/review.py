@@ -118,7 +118,7 @@ class RoughBinding:
 
 STATUS_LABELS = {
     "pending": "待审核",
-    "approved": "已批准待发布",
+    "approved": "已审核待发布",
     "rejected": "已拒绝",
     "published": "已发布",
 }
@@ -1320,7 +1320,7 @@ class ReviewService:
         shown = items[first:first + size]
         tab_size = html.escape(f"&page_size={size}") if size != PAGE_SIZE else ""
         filter_parts = []
-        for key, label in (("", "全部"), ("pending", "待审核"), ("approved", "已批准待发布"), ("published", "已发布"), ("rejected", "已拒绝")):
+        for key, label in (("", "全部"), ("pending", "待审核"), ("approved", "已审核待发布"), ("published", "已发布"), ("rejected", "已拒绝")):
             count = len(all_items) if not key else status_counts[key]
             badge = f'<sup class="filter-count">{count}</sup>' if count else ""
             filter_parts.append(

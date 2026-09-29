@@ -312,7 +312,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.decide(action="approve")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         self.assertEqual(item.status, "approved")
-        self.assertEqual(item.status_label, "已批准待发布")
+        self.assertEqual(item.status_label, "已审核待发布")
         self.assertEqual(item.reviewer, "彭文艳")
         self.assertEqual(item.decided_at, "2030-03-17T17:46:40+00:00")
 
@@ -428,7 +428,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertIn('>全部<sup class="filter-count">2</sup></a>', page)
         self.assertIn('>待审核<sup class="filter-count">1</sup></a>', page)
-        self.assertIn('>已批准待发布<sup class="filter-count">1</sup></a>', page)
+        self.assertIn('>已审核待发布<sup class="filter-count">1</sup></a>', page)
         self.assertIn('>已发布</a>', page)
         self.assertNotIn('已退回', page)
         self.assertNotIn('status=returned', page)
@@ -927,7 +927,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(self.status_of(), "approved")
         count, page = self.approved_count()
         self.assertEqual(count, 1)
-        self.assertIn("已批准待发布", page)
+        self.assertIn("已审核待发布", page)
 
     def test_an_approval_is_published_once_publishing_marked_its_draft_promoted(self):
         # Publishing keeps the draft file and sets `status: promoted` (it does not delete it).
