@@ -1322,7 +1322,7 @@ class ReviewService:
         filter_parts = []
         for key, label in (("", "全部"), ("pending", "待审核"), ("approved", "已审核待发布"), ("published", "已发布"), ("rejected", "已拒绝")):
             count = len(all_items) if not key else status_counts[key]
-            badge = f'<sup class="filter-count">{count}</sup>' if count else ""
+            badge = f'<sup class="filter-count">{count}</sup>' if key in {"pending", "approved"} and count else ""
             filter_parts.append(
                 f'<a class="status-tab{" active" if key == status else ""}"'
                 + (' aria-current="page"' if key == status else '')
