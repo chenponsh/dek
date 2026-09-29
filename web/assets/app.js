@@ -388,8 +388,7 @@
       const homeLink = `<a role="treeitem" class="tree-link home-link${homeActive}" href="${homeHref}"><span class="tree-file-icon">⌂</span><span class="tree-label">首页</span></a>`;
       // Reviewer-only entries (the server refuses anyone else) follow the home link.
       const sourcesLink = `<a role="treeitem" class="tree-link sources-link${current === "review:sources" ? " active" : ""}" href="/review/sources"><span class="tree-file-icon">▦</span><span class="tree-label">来源列表</span></a>`;
-      const knowledgeLink = `<a role="treeitem" class="tree-link sources-link${current === "review:knowledge" ? " active" : ""}" href="/review/knowledge"><span class="tree-file-icon">⇄</span><span class="tree-label">已发布知识</span></a>`;
-      nav.innerHTML = homeLink + sourcesLink + knowledgeLink + `<div role="tree" aria-label="知识库目录">${tree.map(node => renderNode(node)).join("")}</div>`;
+      nav.innerHTML = homeLink + sourcesLink + `<div role="tree" aria-label="知识库目录">${tree.map(node => renderNode(node)).join("")}</div>`;
       nav.querySelectorAll("details[data-path]").forEach(folder => {
         folder.addEventListener("toggle", () => {
           const path = folder.dataset.path;

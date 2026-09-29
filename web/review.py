@@ -1554,11 +1554,6 @@ class ReviewService:
             result = [item for item in result if needle in " ".join((item.path, item.title, item.category, item.content)).casefold()]
         return result
 
-    def find_wiki_item(self, identity: str, *, root=None) -> WikiItem | None:
-        if not isinstance(identity, str) or re.fullmatch(r"[0-9a-f]{16}", identity) is None:
-            return None
-        return next((item for item in self.wiki_items(root=root) if item.identity == identity), None)
-
     def _move_panel(self, session_id: str, item: WikiItem, *, root: Path, return_item: str = "") -> str:
         taken = self._promised_wiki_paths(root)
         current_folder = PurePosixPath(item.path).parent.as_posix()
@@ -1586,46 +1581,6 @@ class ReviewService:
             + '<div class="notice category-create-preview" hidden></div>'
             + '<div class="decision-actions"><button type="submit" name="move" value="1" data-busy-label="提交中…">确认调整分类</button></div></form></section>'
         )
-
-    def render_wiki_list(self, *, query: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:
-        items = self.wiki_items(query=query)
-        size = min(max(int(page_size), MIN_PAGE_SIZE), MAX_PAGE_SIZE)
-        pages = max(1, -(-len(items) // size))
-        page = min(max(1, int(page)), pages)
-        first = (page - 1) * size
-        rows = "".join(
-            f'<tr data-href="{self.path_prefix}/knowledge/{item.identity}"><td class="meta index">{number}</td>'
-            f'<td><a href="{self.path_prefix}/knowledge/{item.identity}">{html.escape(item.title)}</a>'
-            f'<div class="meta">{html.escape(item.path)}</div></td><td>{html.escape(item.category)}</td></tr>'
-            for number, item in enumerate(items[first:first + size], start=first + 1)
-        ) or '<tr><td colspan="3">没有符合条件的知识。</td></tr>'
-        def href(number: int) -> str:
-            values = {"page": number, "page_size": size}
-            if query:
-                values["q"] = query
-            return self.path_prefix + "/knowledge?" + urlencode(values)
-        pager = "".join((f'<a href="{href(page-1)}">上一页</a>' if page > 1 else '<span class="disabled">上一页</span>',
-                         f'<span class="page-info">第 {page}/{pages} 页</span>',
-                         f'<a href="{href(page+1)}">下一页</a>' if page < pages else '<span class="disabled">下一页</span>'))
-        body = (self._header() + self._sidebar("review:knowledge") + '<div class="content"><main class="review-shell review-list">'
-                '<h1>已发布知识</h1><p class="meta">选择一条知识，可以把它移动到其他分类。</p>'
-                f'<form method="get" action="{self.path_prefix}/knowledge" class="search-form"><input name="q" value="{html.escape(query)}" placeholder="搜索问题、编号或分类"><button type="submit">搜索</button></form>'
-                '<div class="table-wrap"><table><thead><tr><th class="index">序号</th><th>知识</th><th>当前分类</th></tr></thead>'
-                f'<tbody>{rows}</tbody></table></div><nav class="pager">{pager}</nav></main></div>')
-        return self._page("已发布知识", body)
-
-    def render_wiki_item(self, session_id: str, identity: str, *, notice: str = "") -> bytes | None:
-        root = self._snapshot_root()
-        item = self.find_wiki_item(identity, root=root)
-        if item is None:
-            return None
-        form = self._move_panel(session_id, item, root=root)
-        body = (self._header() + self._sidebar("review:knowledge") + '<div class="content"><main class="review-shell review-list">'
-                f'<p><a href="{self.path_prefix}/knowledge">← 返回已发布知识</a></p><h1>{html.escape(item.title)}</h1>'
-                f'<div class="meta">当前位置：{html.escape(item.path)}</div>'
-                + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
-                + f'<h2>现有内容</h2><pre>{html.escape(item.content)}</pre>{form}</main></div>')
-        return self._page("调整分类", body)
 
     def submit_move_form(self, body: bytes, *, session_id: str, user_id: str, reviewer_label: str = "") -> tuple[str, str, str]:
         if len(body) > MAX_DECISION_BYTES:

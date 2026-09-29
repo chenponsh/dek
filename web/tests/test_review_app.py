@@ -243,9 +243,6 @@ class ReviewAppTests(unittest.TestCase):
         )
         subprocess.run(["git", "add", "wiki", "ingestion/rough/pending.md"], cwd=self.root / "repo", check=True)
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@invalid", "commit", "-qm", "wiki"], cwd=self.root / "repo", check=True)
-        status, _, listing = self.call("/knowledge", cookie=session)
-        self.assertEqual(status, "200 OK")
-        self.assertRegex(listing.decode(), r'/review/knowledge/[0-9a-f]{16}')
         rough_identity = re.search(r'/review/item/([0-9a-f]{16})', self.call("/", query="status=published", cookie=session)[2].decode()).group(1)
         status, _, detail = self.call("/item/" + rough_identity, query="status=published", cookie=session)
         self.assertEqual(status, "200 OK")
@@ -269,6 +266,12 @@ class ReviewAppTests(unittest.TestCase):
         status, _, after = self.call("/item/" + rough_identity, query="notice=moved", cookie=session)
         self.assertEqual(status, "200 OK")
         self.assertIn("已审核待发布，尚未实际移动", after.decode())
+
+    def test_old_published_knowledge_routes_redirect_to_the_published_status_list(self):
+        for path in ("/knowledge", "/knowledge/deadbeefdeadbeef"):
+            status, headers, _ = self.call(path, cookie=self.authenticate())
+            self.assertEqual(status, "302 Found")
+            self.assertEqual(dict(headers)["Location"], "/review/?status=published")
 
     def test_decision_redirects_to_the_item_and_shows_the_reviewer_nickname(self):
         session = self.authenticate()
