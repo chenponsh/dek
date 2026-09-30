@@ -426,18 +426,13 @@ class ReviewWorkflowTests(unittest.TestCase):
     def test_list_filter_links_show_record_counts(self):
         self.decide(action="approve")
         page = self.service.render_list("opaque-session").decode("utf-8")
-        self.assertIn('>全部</a>', page)
+        self.assertIn('>全部<sup class="filter-count">2</sup></a>', page)
         self.assertIn('>待审核<sup class="filter-count">1</sup></a>', page)
         self.assertIn('>已审核待发布<sup class="filter-count">1</sup></a>', page)
-        self.assertIn('>已发布</a>', page)
-        self.assertIn('>已拒绝</a>', page)
-        self.assertNotIn('>全部<sup', page)
-        self.assertNotIn('>已发布<sup', page)
-        self.assertNotIn('>已拒绝<sup', page)
+        self.assertIn('>已发布<sup class="filter-count">0</sup></a>', page)
+        self.assertIn('>已拒绝<sup class="filter-count">0</sup></a>', page)
         self.assertNotIn('已退回', page)
         self.assertNotIn('status=returned', page)
-        self.assertIn('>已拒绝</a>', page)
-        self.assertNotIn('<sup class="filter-count">0</sup>', page)
 
     def test_review_pages_show_the_signed_in_name_and_a_sign_out_link_like_the_knowledge_base(self):
         list_page = self.service.render_list("opaque-session", status="pending").decode("utf-8")
