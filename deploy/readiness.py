@@ -29,7 +29,10 @@ from fsutil import atomic_write_bytes, read_bounded_regular
 class ReadinessError(RuntimeError): pass
 
 
-MARKER_TTL = timedelta(days=7)
+# Schema 1 used a seven-day lease.  Schema 2 is a configuration-bound
+# attestation: changing any approved reviewer, origin, callback, address or
+# readiness URL invalidates it, but the passage of time alone does not.
+LEGACY_MARKER_TTL = timedelta(days=7)
 
 
 def _contains_placeholder(value) -> bool:
@@ -92,8 +95,8 @@ def marker_payload(value: dict, secret: bytes, *, clock=None,
     if confirmed_authorized_login is not True or confirmed_unauthorized_login is not True:
         raise ReadinessError("both login checks must be confirmed")
     issued_at=_utc_now(clock)
-    unsigned={"schema":1,"status":"verified","config_hmac":_config_hmac(value,secret),
-              "issued_at":_utc_text(issued_at),"expires_at":_utc_text(issued_at+MARKER_TTL),
+    unsigned={"schema":2,"status":"verified","config_hmac":_config_hmac(value,secret),
+              "issued_at":_utc_text(issued_at),
               "confirmed_authorized_login":True,"confirmed_unauthorized_login":True}
     return {**unsigned,"marker_hmac":_marker_hmac(unsigned,secret)}
 
@@ -133,10 +136,12 @@ def validate_marker(target: Path, value: dict, secret: bytes, *, clock=None) -> 
     validate_configuration(value)
     marker,_raw=_read_json_marker(Path(target))
     now=_utc_now(clock)
-    expected_fields={"schema","status","config_hmac","issued_at","expires_at",
-                     "confirmed_authorized_login","confirmed_unauthorized_login","marker_hmac"}
-    if (set(marker)!=expected_fields
-            or marker.get("schema")!=1 or marker.get("status")!="verified"
+    common_fields={"schema","status","config_hmac","issued_at",
+                   "confirmed_authorized_login","confirmed_unauthorized_login","marker_hmac"}
+    schema=marker.get("schema")
+    expected_fields=common_fields | ({"expires_at"} if schema==1 else set())
+    if (schema not in {1,2} or set(marker)!=expected_fields
+            or marker.get("status")!="verified"
             or marker.get("config_hmac")!=_config_hmac(value,secret)
             or marker.get("confirmed_authorized_login") is not True
             or marker.get("confirmed_unauthorized_login") is not True):
@@ -147,13 +152,14 @@ def validate_marker(target: Path, value: dict, secret: bytes, *, clock=None) -> 
             or not hmac.compare_digest(supplied,_marker_hmac(unsigned,secret))):
         raise ReadinessError("invalid readiness marker authentication")
     issued_at=_parse_utc(marker.get("issued_at"),"readiness marker")
-    expires_at=_parse_utc(marker.get("expires_at"),"readiness marker expiry")
-    if expires_at-issued_at!=MARKER_TTL:
-        raise ReadinessError("invalid readiness marker validity period")
     if issued_at>now:
         raise ReadinessError("readiness marker is from the future")
-    if now>=expires_at:
-        raise ReadinessError("readiness marker has expired")
+    if schema==1:
+        expires_at=_parse_utc(marker.get("expires_at"),"readiness marker expiry")
+        if expires_at-issued_at!=LEGACY_MARKER_TTL:
+            raise ReadinessError("invalid readiness marker validity period")
+        if now>=expires_at:
+            raise ReadinessError("readiness marker has expired")
     return marker
 
 

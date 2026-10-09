@@ -36,8 +36,8 @@
   "table_sources": [
     {
       "path": "source/上海/上海局_信息公开.md",
-      "fetcher": "shanghai",
-      "url": "https://sjcx.yjj.sh.gov.cn/api/v1/qa/list?pageNum=1&pageSize=1000",
+      "fetcher": "shanghai_messages",
+      "url": "https://yjj.sh.gov.cn/gzly/index.html",
       "auto_classified": true,
       "auto_ingest": true
     },

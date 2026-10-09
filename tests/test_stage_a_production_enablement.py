@@ -90,7 +90,7 @@ class ReadinessBindingTests(unittest.TestCase):
 
     def test_marker_binds_canonical_approved_config_without_values(self):
         payload = marker_payload(VALID, SECRET, confirmed_authorized_login=True, confirmed_unauthorized_login=True)
-        self.assertEqual(set(payload), {"config_hmac", "issued_at", "expires_at", "schema", "status",
+        self.assertEqual(set(payload), {"config_hmac", "issued_at", "schema", "status",
                                         "confirmed_authorized_login", "confirmed_unauthorized_login", "marker_hmac"})
         self.assertEqual(payload["status"], "verified")
         self.assertTrue(payload["confirmed_authorized_login"])
@@ -217,9 +217,9 @@ class StageARunbookTests(unittest.TestCase):
     def test_automation_marker_requires_confirmed_real_login_checks(self):
         self.assertIn("--confirm-authorized-login",self.runbook)
         self.assertIn("--confirm-unauthorized-login",self.runbook)
-        self.assertIn("seven-day lease",self.runbook)
+        self.assertIn("configuration-bound attestation",self.runbook)
         self.assertIn("scheduled source-ingest unit is deliberately different",self.runbook)
-        self.assertIn("does not block scheduled source ingestion",self.runbook)
+        self.assertIn("Scheduled source ingestion independently performs",self.runbook)
         self.assertNotIn("install -o root -g root -m 0644 /dev/null /var/lib/dek-readiness/automation-ready",self.runbook)
 
     def test_a2_binds_all_credentials_and_shared_consumers(self):

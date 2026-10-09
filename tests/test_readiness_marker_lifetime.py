@@ -10,7 +10,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from deploy.readiness import (
-    MARKER_TTL,
     ReadinessError,
     _marker_hmac,
     marker_payload,
@@ -57,7 +56,7 @@ class MarkerConsumptionLifetimeTests(unittest.TestCase):
         )
         os.chmod(target, 0o444)
 
-    def test_cli_rejects_marker_issued_in_2000(self):
+    def test_cli_accepts_old_but_configuration_bound_marker(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             config = root / "readiness.json"
@@ -68,30 +67,22 @@ class MarkerConsumptionLifetimeTests(unittest.TestCase):
             os.chmod(key, 0o400)
             self._write_marker(marker, clock=lambda: datetime(2000, 1, 1, tzinfo=timezone.utc))
             result = self._run_cli(config, key, marker)
-            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("expired", result.stderr)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_marker_is_authenticated_and_expires_after_fixed_lease(self):
+    def test_marker_is_authenticated_and_has_no_time_expiry(self):
         with tempfile.TemporaryDirectory() as temporary:
             marker = Path(temporary) / "automation-ready"
             self._write_marker(marker, clock=lambda: self.BASE)
             payload = json.loads(marker.read_text(encoding="utf-8"))
-            self.assertEqual(payload["schema"], 1)
+            self.assertEqual(payload["schema"], 2)
             self.assertEqual(
                 set(payload),
-                {"schema", "status", "config_hmac", "issued_at", "expires_at",
+                {"schema", "status", "config_hmac", "issued_at",
                  "confirmed_authorized_login", "confirmed_unauthorized_login", "marker_hmac"},
             )
             self.assertTrue(payload["confirmed_authorized_login"])
             self.assertTrue(payload["confirmed_unauthorized_login"])
-            self.assertEqual(
-                datetime.fromisoformat(payload["expires_at"].replace("Z", "+00:00"))
-                - datetime.fromisoformat(payload["issued_at"].replace("Z", "+00:00")),
-                MARKER_TTL,
-            )
-            validate_marker(marker, CONFIG, SECRET, clock=lambda: self.BASE + MARKER_TTL - timedelta(seconds=1))
-            with self.assertRaisesRegex(ReadinessError, "expired"):
-                validate_marker(marker, CONFIG, SECRET, clock=lambda: self.BASE + MARKER_TTL)
+            validate_marker(marker, CONFIG, SECRET, clock=lambda: self.BASE + timedelta(days=3650))
 
     def test_consumer_rejects_future_issued_marker(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -105,7 +96,7 @@ class MarkerConsumptionLifetimeTests(unittest.TestCase):
             marker = Path(temporary) / "automation-ready"
             self._write_marker(marker, clock=lambda: self.BASE)
             payload = json.loads(marker.read_text(encoding="utf-8"))
-            payload["expires_at"] = "2099-01-01T00:00:00Z"
+            payload["issued_at"] = "2099-01-01T00:00:00Z"
             marker.write_text(json.dumps(payload) + "\n", encoding="utf-8")
             os.chmod(marker, 0o444)
             with self.assertRaisesRegex(ReadinessError, "authentication"):

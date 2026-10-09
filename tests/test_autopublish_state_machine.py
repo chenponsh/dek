@@ -340,11 +340,9 @@ class OutcomeIsolationTests(unittest.TestCase):
 
 
 class ManualPublishTriggerTests(unittest.TestCase):
-    """Nothing publishes automatically once approved: a reviewer must click
-    "发布" in the review UI, which writes a marker that a systemd .path unit
-    turns into a build -> publish -> activate chain (see deploy/systemd/
-    dek-review-publish-manual.{path,service} and web/review_app.py's
-    /publish route)."""
+    """Approval (or a manual retry) writes the marker that a systemd .path
+    unit turns into a build -> publish -> activate chain (see deploy/systemd/
+    dek-review-publish-manual.{path,service} and web/review_app.py)."""
 
     def test_no_periodic_timer_exists_for_builder_publisher_or_activator(self):
         for name in ("dek-builder.timer", "dek-review-publish.timer", "dek-activator.timer"):

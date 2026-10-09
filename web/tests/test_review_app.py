@@ -777,6 +777,22 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/?notice=publish_triggered")
         self.assertNotEqual(trigger_path.read_text(), first_content)
 
+    def test_approval_automatically_arms_the_publish_chain(self):
+        trigger_path = self.root / "state" / "publish-trigger-requested"
+        publish_state = self.root / "state" / "publish-requested-at"
+        self.service.publish_state_path = publish_state
+        self.app = ReviewApp(self.service, CLAIM_SECRET, ("reviewer-1",), expected_origin=REVIEW_ORIGIN,
+                             clock=self.clock, publish_trigger_path=trigger_path)
+        session = self.authenticate()
+        _, form = self.decision_form(session)
+        form.update(action="approve", wiki_path="wiki/01_Test/01-0001.md", candidate_markdown=CANDIDATE)
+        with self.assertLogs("web.review.auth", level="WARNING") as captured:
+            status, _, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
+        self.assertEqual(status, "303 See Other")
+        self.assertEqual(trigger_path.read_text(encoding="utf-8"), "reviewer-1 1900000000\n")
+        self.assertEqual(publish_state.read_text(encoding="utf-8").strip(), str(self.clock_value))
+        self.assertIn("review_auto_publish requested user=reviewer-1", " ".join(captured.output))
+
 
 class ReviewProxyConfigTests(unittest.TestCase):
     def test_main_origin_mounts_review_prefix_and_legacy_host_only_redirects_root(self):

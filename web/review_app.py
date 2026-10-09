@@ -51,7 +51,7 @@ auth_logger = logging.getLogger("web.review.auth")
 
 
 NOTICES = {
-    "approved": "已记录：批准发布。发布流程启用后才会写入知识库。",
+    "approved": "已记录：批准发布。后台将自动构建并发布。",
     "rejected": "已记录：拒绝。",
     "decided": "决定已记录。",
     "ingest_triggered": "已提交拉取请求，新的来源会在后台抓取，稍后刷新查看。",
@@ -305,6 +305,12 @@ class ReviewApp:
                 return self._response(start, status, status.encode("ascii"), (("Content-Type", "text/plain"),))
             rough_path = values.get("rough_path", [""])[0]
             action = values.get("action", [""])[0]
+            if action == "approve" and self.publish_trigger_path is not None:
+                now = self.clock()
+                self.publish_trigger_path.parent.mkdir(parents=True, exist_ok=True)
+                self.publish_trigger_path.write_text(f"{user_id} {int(now)}\n", encoding="utf-8")
+                self.service.record_publish_request(now)
+                auth_logger.warning("review_auto_publish requested user=%s", user_id)
             notice = ACTION_STATUS.get(action, "decided")
             location = "%s/item/%s?notice=%s" % (REVIEW_PREFIX, item_identity(rough_path), notice)
             position_status, position_page, position_size = list_position(parse_qs(environ.get("QUERY_STRING", "")))

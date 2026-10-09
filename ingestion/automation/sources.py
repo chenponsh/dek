@@ -845,6 +845,89 @@ def fetch_shanghai_all(source: dict[str, Any], known: set[tuple[str, str]], sinc
     return fetch_shanghai(source["url"])
 
 
+_SHANGHAI_MESSAGE_ITEM = re.compile(
+    r'<li[^>]*>\s*<a\b[^>]*?href="(?P<href>[^"]+)"[^>]*?title="(?P<title>[^"]+)"[^>]*>.*?</a>'
+    r'\s*<small\b[^>]*>\s*(?P<date>\d{4}[.-]\d{2}[.-]\d{2})\s*</small>',
+    re.S,
+)
+
+
+def parse_shanghai_message_list(page: str, base: str) -> list[ListItem]:
+    items: dict[str, ListItem] = {}
+    for match in _SHANGHAI_MESSAGE_ITEM.finditer(page):
+        url = urllib.parse.urljoin(base, match.group("href"))
+        parsed = urllib.parse.urlparse(url)
+        if re.fullmatch(r"/gzly/\d{8}/[0-9a-f]+\.html", parsed.path, re.I) is None:
+            continue
+        title = html_to_text(match.group("title")).strip()
+        day = match.group("date").replace(".", "-")
+        if title and url not in items:
+            items[url] = ListItem(url, title, day)
+    return list(items.values())
+
+
+def parse_shanghai_message(page: str) -> tuple[str, str, str]:
+    fields: dict[str, str] = {}
+    for row in re.findall(r"(?is)<tr\b[^>]*>(.*?)</tr\s*>", page):
+        cells = re.findall(r"(?is)<td\b[^>]*>(.*?)</td\s*>", row)
+        if len(cells) < 2:
+            continue
+        label = html_to_text(cells[0]).strip().rstrip("：:")
+        value = html_to_text(cells[1]).strip()
+        if label and value:
+            fields[label] = value
+    question = fields.get("留言内容", "") or fields.get("留言标题", "")
+    answer = fields.get("回复内容", "")
+    day = fields.get("留言时间", "")[:10]
+    if not question or not answer or re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) is None:
+        raise SafetyStop("Shanghai public-message article lacks question/answer/date")
+    return question, answer, day
+
+
+def fetch_shanghai_messages(
+    source: dict[str, Any], known: set[tuple[str, str]], since: str,
+    get: Callable[[str], str] = http_get,
+) -> tuple[list[Row], dict[str, Any]]:
+    """Read the official static public-message pages after the legacy JSON API was retired."""
+    first = get(source["url"])
+    total_match = re.search(r"\btotalPage\s*:\s*(\d+)", first)
+    total_pages = int(total_match.group(1)) if total_match else 1
+    if total_pages < 1 or total_pages > 200:
+        raise SafetyStop("Shanghai public-message page count is invalid")
+    listing: list[ListItem] = []
+    for page_number in range(1, total_pages + 1):
+        page = first if page_number == 1 else get(urllib.parse.urljoin(source["url"], f"index_{page_number}.html"))
+        items = parse_shanghai_message_list(page, source["url"])
+        if not items:
+            raise SafetyStop(f"Shanghai public-message page {page_number} lists no articles")
+        listing.extend(items)
+        if min(item.date for item in items) <= since:
+            break
+    rows: list[Row] = []
+    filtered: list[dict[str, str]] = []
+    skipped: list[dict[str, str]] = []
+    for item in listing:
+        if item.date <= since:
+            continue
+        try:
+            question, answer, day = parse_shanghai_message(get(item.url))
+        except SafetyStop as exc:
+            skipped.append({"url": item.url, "reason": str(exc)})
+            continue
+        if (normalize(question), day) in known:
+            continue
+        if not on_topic(item.title, question + "\n" + answer):
+            filtered.append({"url": item.url, "title": item.title, "reason": "不属于化学药品制剂主题"})
+            continue
+        rows.append(Row(question, answer, day, url=item.url))
+    meta: dict[str, Any] = {"remote_count": len(listing), "latest_date": max((item.date for item in listing), default=None)}
+    if filtered:
+        meta["filtered_out"] = filtered
+    if skipped:
+        meta["skipped_items"] = skipped
+    return rows, meta
+
+
 FILE_FETCHERS: dict[str, Callable[..., tuple[list[NewNote], dict[str, Any]]]] = {
     "anhui": fetch_anhui_notes,
 }
@@ -853,6 +936,7 @@ FILE_FETCHERS: dict[str, Callable[..., tuple[list[NewNote], dict[str, Any]]]] = 
 FETCHERS: dict[str, Callable[..., tuple[list[Row], dict[str, Any]]]] = {
     "jiangsu": fetch_jiangsu,
     "shanghai": fetch_shanghai_all,
+    "shanghai_messages": fetch_shanghai_messages,
     "articles": fetch_article_source,
     "beijing": fetch_beijing,
     "jspcc": fetch_jspcc,

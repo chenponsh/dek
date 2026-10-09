@@ -365,6 +365,49 @@ class NifdcTests(unittest.TestCase):
         self.assertEqual(seen, [False])
 
 
+class ShanghaiPublicMessageTests(unittest.TestCase):
+    def test_listing_ignores_navigation_links_that_look_like_dated_items(self):
+        page = '''
+        <li><a href="../index.html" title="首页">首页</a><small>2026-09-22</small></li>
+        <li><a href="./20261008/abc123.html" title="药品注册检验">药品注册检验</a><small>2026-09-03</small></li>
+        '''
+        items = sources.parse_shanghai_message_list(page, "https://yjj.sh.gov.cn/gzly/index.html")
+        self.assertEqual([(item.title, item.date, item.url) for item in items], [
+            ("药品注册检验", "2026-09-03", "https://yjj.sh.gov.cn/gzly/20261008/abc123.html"),
+        ])
+
+    URL = "https://yjj.sh.gov.cn/gzly/index.html"
+    LISTING = '''
+    <li><a href="/gzly/20261008/a.html" title="药品说明书" target="_blank">药品说明书</a>
+    <small class="listTime">2026.09.22</small></li>
+    <script>$(".pagination").pagination({totalPage: 1});</script>
+    '''
+    ARTICLE = '''
+    <tr><td>留言标题：</td><td>药品说明书</td></tr>
+    <tr><td>留言内容：</td><td>药品说明书如何标注？</td></tr>
+    <tr><td>留言时间：</td><td>2026-09-22</td></tr>
+    <tr><td>回复内容：</td><td><p>应当按照药品说明书规定标注。</p></td></tr>
+    '''
+
+    def test_static_list_and_article_are_parsed(self):
+        items = sources.parse_shanghai_message_list(self.LISTING, self.URL)
+        self.assertEqual([(item.title, item.date) for item in items], [("药品说明书", "2026-09-22")])
+        self.assertEqual(
+            sources.parse_shanghai_message(self.ARTICLE),
+            ("药品说明书如何标注？", "应当按照药品说明书规定标注。", "2026-09-22"),
+        )
+
+    def test_static_source_returns_an_incremental_row_with_official_url(self):
+        rows, meta = sources.fetch_shanghai_messages(
+            {"url": self.URL}, set(), "2026-09-21",
+            get=lambda url: self.LISTING if url == self.URL else self.ARTICLE,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].date, "2026-09-22")
+        self.assertEqual(rows[0].url, "https://yjj.sh.gov.cn/gzly/20261008/a.html")
+        self.assertEqual(meta["latest_date"], "2026-09-22")
+
+
 class ShandongTests(unittest.TestCase):
     SOURCE = {"url": "http://mpa.shandong.gov.cn/col/col101798/index.html",
               "api_url": "http://mpa.shandong.gov.cn/api/unit", "api_params": {"pageId": "x"}}
