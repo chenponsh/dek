@@ -340,7 +340,7 @@ class JspccTests(unittest.TestCase):
 
 
 class NifdcTests(unittest.TestCase):
-    URL = "https://www.nifdc.org.cn/nifdc/ywzx/jyywzx/cjgxwtjd/index.html"
+    URL = "https://www.nidc.org.cn/nifdc/ywzx/jyywzx/cjgxwtjd/index.html"
 
     def test_list_ignores_navigation_and_reads_bracketed_dates(self):
         items = sources.parse_li_list(fixture("nifdc_list.html"), self.URL)
@@ -353,17 +353,6 @@ class NifdcTests(unittest.TestCase):
 
     def test_stem_cell_articles_are_off_topic(self):
         self.assertFalse(sources.on_topic("中检院干细胞合同检验常见问题(专题第一期)", "药品"))
-
-    def test_insecure_tls_is_used_only_when_the_source_asks_for_it(self):
-        seen = []
-
-        def fake(url, timeout=45, verify=True):
-            seen.append(verify)
-            return fixture("nifdc_list.html")
-        with patch.object(sources, "http_get", fake):
-            sources.fetch_article_source({"url": self.URL, "insecure_tls": True}, {i.url for i in sources.parse_li_list(fixture("nifdc_list.html"), self.URL)}, "2000-01-01", get=sources.http_get)
-        self.assertEqual(seen, [False])
-
 
 class ShanghaiPublicMessageTests(unittest.TestCase):
     def test_listing_ignores_navigation_links_that_look_like_dated_items(self):

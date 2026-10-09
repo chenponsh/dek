@@ -189,7 +189,7 @@ BODY_SELECTORS: list[Callable[[str, dict[str, str]], bool]] = [
     lambda tag, a: tag == "div" and _has_class(a, "news-content"),
     lambda tag, a: tag == "div" and a.get("id", "").startswith("vsb_content"),
     lambda tag, a: tag == "div" and _has_class(a, "wzcon"),
-    lambda tag, a: tag == "div" and _has_class(a, "text"),  # nifdc.org.cn
+    lambda tag, a: tag == "div" and _has_class(a, "text"),  # nidc.org.cn
 ]
 
 _QUESTION = re.compile(r"^\s*(?:问题\s*[0-9一二三四五六七八九十]*|问|\d+[.、．]|[一二三四五六七八九十]+[、.．])\s*[:：]?\s*(?P<q>.+)$")
@@ -244,8 +244,6 @@ def fetch_article_source(
 ) -> tuple[list[Row], dict[str, Any]]:
     """Article listing -> ArticleRows for articles that are new. `known` holds
     both row keys and the article URLs already in the note."""
-    if source.get("insecure_tls") and get is http_get:
-        get = lambda url: http_get(url, verify=False)  # noqa: E731
     listing = parse_li_list(get(source["url"]), source["url"])
     if not listing:
         raise SafetyStop("column page lists no articles; page structure may have changed")

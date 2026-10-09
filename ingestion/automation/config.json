@@ -82,8 +82,7 @@
       "path": "source/NIFDC/NIFDC_常见共性问题解答.md",
       "fetcher": "articles",
       "layout": "articles",
-      "insecure_tls": true,
-      "url": "https://www.nifdc.org.cn/nifdc/ywzx/jyywzx/cjgxwtjd/index.html",
+      "url": "https://www.nidc.org.cn/nifdc/ywzx/jyywzx/cjgxwtjd/index.html",
       "auto_classified": true,
       "auto_ingest": true
     },
