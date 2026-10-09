@@ -672,29 +672,31 @@ class ReviewAppTests(unittest.TestCase):
         self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         self.assertEqual((self.root / "state" / "publish-requested-at").read_text().strip(), str(self.clock_value))
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertIn('<button type="submit" class="is-busy" disabled aria-busy="true">发布中…</button>', page)
+        self.assertIn('<button type="submit" class="is-busy" disabled aria-busy="true">自动发布中…</button>', page)
         self.assertIn("发布进行中", page)
-        self.assertNotIn("发布已批准内容", page)
+        self.assertNotIn("重试发布", page)
         self.publish_trigger.unlink()                                    # the privileged unit picked the marker up
         self.clock_value += 120                                           # past the cooldown, but still running
         status, headers, _ = self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         self.assertEqual((status, dict(headers)["Location"]), ("303 See Other", REVIEW_PREFIX + "/?notice=publish_already"))
         self.assertFalse(self.publish_trigger.exists())                  # nothing was queued
 
-    def test_the_publish_button_is_back_once_the_data_was_refreshed_after_the_publish(self):
+    def test_publish_control_disappears_once_data_refreshes_with_nothing_waiting(self):
         session = self.busy_app()
         self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         self.snapshot_time = self.clock_value + 90                       # the chain's last step rewrote the review data
         self.clock_value += 100
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertNotIn("发布中…", page)
-        self.assertIn("发布已批准内容", page)
+        self.assertNotIn("自动发布中…", page)
+        self.assertNotIn("重试发布", page)
 
     def test_a_publish_that_never_refreshed_the_data_stops_blocking_after_fifteen_minutes(self):
         session = self.busy_app()
         self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         self.clock_value += 901
-        self.assertIn("发布已批准内容", self.call("/", cookie=session)[2].decode("utf-8"))
+        page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertIn("重试发布", page)
+        self.assertIn("自动发布没有更新数据", page)
 
     def test_a_pull_in_progress_greys_the_pull_button_and_the_decision_buttons_and_refuses_a_second_pull(self):
         session = self.busy_app()

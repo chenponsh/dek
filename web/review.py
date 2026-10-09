@@ -1273,7 +1273,7 @@ class ReviewService:
             chips = f'<div class="path-suggestions">系统建议：{buttons}</div>'
         return f"""<article><h2>{html.escape(heading)}</h2><pre>{html.escape(rough_display(rough.content, suggested))}</pre>
 <form method="post" action="{self.path_prefix}/decision{html.escape(action_query)}"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
-<label>Wiki 路径<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}" data-existing-categories="{html.escape(categories_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<div class="notice category-create-preview" hidden></div><label>候选 Wiki Markdown<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><div class="decision-actions">{decision_buttons}</div></form></article>"""
+<label>Wiki 路径<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}" data-existing-categories="{html.escape(categories_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<div class="notice category-create-preview" hidden></div><label>候选 Wiki Markdown<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><p class="meta decision-hint">批准后系统将自动发布，无需再次操作。</p><div class="decision-actions">{decision_buttons}</div></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()
@@ -1368,6 +1368,8 @@ class ReviewService:
         parts = [f'<div class="meta snapshot-line">{snapshot}</div>'] if snapshot else []
         if status["overdue"]:
             parts.append(f'<div class="notice">{clock(status["requested"])} 的拉取没有更新数据，可能失败了。请稍后再试，仍不行请联系管理员。</div>')
+        if publishing["overdue"]:
+            parts.append(f'<div class="notice">{clock(publishing["requested"])} 的自动发布没有更新数据，可能失败了。请点击“重试发布”，仍不行请联系管理员。</div>')
         return "".join(parts)
 
     def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:
@@ -1423,19 +1425,23 @@ class ReviewService:
                          for name, value in (("status", status), ("q", query)) if value)
         size_nav = (f'<form method="get" action="{self.path_prefix}/" class="page-size">每页{hidden}'
                     f'<input type="number" name="page_size" min="5" max="100" step="1" value="{size}" inputmode="numeric" aria-label="每页条数">条</form>')
-        pulling, publishing = self.ingest_status()["in_progress"], self.publish_status()["in_progress"]
+        pulling = self.ingest_status()["in_progress"]
+        publish_status = self.publish_status()
+        publishing = publish_status["in_progress"]
         ingest_button = (
             f'<form method="post" action="{self.path_prefix}/trigger-ingest" class="ingest-trigger-form">'
             + ('<button type="submit" class="is-busy" disabled aria-busy="true">抓取中…</button>' if pulling
                else '<button type="submit" data-busy-label="已提交…">立即拉取最新源</button>')
             + '</form>'
         )
-        publish_button = (
-            f'<form method="post" action="{self.path_prefix}/publish" class="publish-trigger-form">'
-            + ('<button type="submit" class="is-busy" disabled aria-busy="true">发布中…</button>' if publishing
-               else f'<button type="submit" data-busy-label="已提交…">发布已批准内容（{status_counts["approved"]}）</button>')
-            + '</form>'
-        )
+        publish_button = ""
+        if publishing or publish_status["overdue"] or status_counts["approved"]:
+            publish_button = (
+                f'<form method="post" action="{self.path_prefix}/publish" class="publish-trigger-form">'
+                + ('<button type="submit" class="is-busy" disabled aria-busy="true">自动发布中…</button>' if publishing
+                   else f'<button type="submit" data-busy-label="已提交…">重试发布（{status_counts["approved"]}）</button>')
+                + '</form>'
+            )
         body = (
             self._header() + self._sidebar()
             + '<div class="content">'
