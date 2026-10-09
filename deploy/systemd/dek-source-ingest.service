@@ -6,7 +6,7 @@ OnFailure=dek-source-ingest-alert@%n.service
 
 [Service]
 Type=oneshot
-ExecCondition=+/usr/bin/python3 -I /opt/dek-source-ingest/app/deploy/readiness.py --config /etc/dek-readiness.json --hmac-key /var/lib/dek-readiness/marker-hmac-key --validate-marker --marker /var/lib/dek-readiness/automation-ready
+ExecCondition=+/usr/bin/python3 -I /opt/dek-source-ingest/app/deploy/readiness.py --config /etc/dek-readiness.json
 User=dek-source-ingest
 Group=dek-source-ingest
 WorkingDirectory=/var/empty/dek-source-ingest

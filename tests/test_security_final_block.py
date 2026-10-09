@@ -329,11 +329,18 @@ class StrictReadinessMarkerTests(unittest.TestCase):
                 validate_marker(automation, READINESS_CONFIG, secret)
 
     def test_units_use_strict_exec_condition_not_path_existence(self):
-        for name in ("dek-activator.service", "dek-builder.service", "dek-review-publish.service", "dek-source-ingest.service"):
+        for name in ("dek-activator.service", "dek-builder.service", "dek-review-publish.service"):
             unit = (Path("deploy/systemd") / name).read_text(encoding="utf-8")
             self.assertNotIn("ConditionPathExists", unit)
             self.assertIn("ExecCondition=+", unit)
             self.assertIn("--validate-marker", unit)
+        for name in ("dek-source-ingest.service", "dek-source-refresh.service"):
+            ingest = (Path("deploy/systemd") / name).read_text(encoding="utf-8")
+            self.assertNotIn("ConditionPathExists", ingest)
+            self.assertIn("ExecCondition=+", ingest)
+            self.assertIn("readiness.py --config /etc/dek-readiness.json", ingest)
+            self.assertNotIn("--validate-marker", ingest)
+            self.assertNotIn("--confirm-authorized-login", ingest)
 
 
 class FirstActivationFailureTests(unittest.TestCase):

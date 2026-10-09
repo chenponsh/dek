@@ -384,11 +384,17 @@ class DeploymentContractTests(unittest.TestCase):
             self.assertNotIn("User=root", text)
             self.assertIn("NoNewPrivileges=true", text)
             self.assertRegex(text, r"ExecStart=/usr/bin/systemctl start (?:--wait )?dek-[a-z0-9@.-]+\n")
-        for name in ("dek-review-publish.service","dek-source-ingest.service","dek-builder.service","dek-activator.service"):
+        for name in ("dek-review-publish.service","dek-builder.service","dek-activator.service"):
             unit=Path("deploy/systemd",name).read_text()
             self.assertNotIn("ConditionPathExists",unit)
             self.assertIn("ExecCondition=+",unit)
             self.assertIn("--validate-marker --marker /var/lib/dek-readiness/automation-ready",unit)
+        for name in ("dek-source-ingest.service", "dek-source-refresh.service"):
+            ingest=Path("deploy/systemd",name).read_text()
+            self.assertNotIn("ConditionPathExists",ingest)
+            self.assertIn("ExecCondition=+",ingest)
+            self.assertIn("readiness.py --config /etc/dek-readiness.json",ingest)
+            self.assertNotIn("--validate-marker",ingest)
 
     def test_manual_runbook_has_exact_install_backup_and_rollback_inventory(self):
         text = Path("deploy/PRODUCTION_ROLLOUT.md").read_text(encoding="utf-8")

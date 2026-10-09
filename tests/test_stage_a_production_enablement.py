@@ -218,8 +218,8 @@ class StageARunbookTests(unittest.TestCase):
         self.assertIn("--confirm-authorized-login",self.runbook)
         self.assertIn("--confirm-unauthorized-login",self.runbook)
         self.assertIn("seven-day lease",self.runbook)
-        self.assertIn("24 hours before",self.runbook)
-        self.assertIn("every `ExecCondition`",self.runbook)
+        self.assertIn("scheduled source-ingest unit is deliberately different",self.runbook)
+        self.assertIn("does not block scheduled source ingestion",self.runbook)
         self.assertNotIn("install -o root -g root -m 0644 /dev/null /var/lib/dek-readiness/automation-ready",self.runbook)
 
     def test_a2_binds_all_credentials_and_shared_consumers(self):

@@ -468,9 +468,11 @@ python3 -I /run/dek-package-check/deploy/a6_cutover.py recover \
 
 Restart (but do not enable) the review service so an already-running Stage-1 process loads the candidate code, then run the readiness check with the exact approved DNS/IP, TLS and OAuth callback facts (no `--write-marker`; this is a pure network check that fails closed into the rollback path below). Only once it passes should you independently exercise one real allowlisted login and one real denied login. Then write the single automation-ready marker, passing `--confirm-authorized-login --confirm-unauthorized-login` to attest both exercises were just performed; the writer reruns the same DNS/TLS/OAuth check and refuses to write unless both flags are given. The actual online exercises remain a deployment-time BLOCK gate and must never be fabricated from this repository.
 
-The written automation marker is an authenticated, fixed seven-day lease. Its marker HMAC covers the configuration HMAC, both login confirmation flags, UTC `issued_at`, and UTC `expires_at`. The publisher, builder, activator, and source-ingest units re-check that HMAC, the fixed validity interval, future timestamps, and expiry against current UTC in every `ExecCondition`; write-time validation alone is not trusted. A marker with omitted, extended, or edited validity, or with either confirmation flag missing, fails closed.
+The written automation marker is an authenticated, fixed seven-day lease. Its marker HMAC covers the configuration HMAC, both login confirmation flags, UTC `issued_at`, and UTC `expires_at`. The publisher, builder, and activator units re-check that HMAC, the fixed validity interval, future timestamps, and expiry against current UTC in their `ExecCondition`; write-time validation alone is not trusted. A marker with omitted, extended, or edited validity, or with either confirmation flag missing, fails closed.
 
-For long-running automation, schedule a complete reissue at least 24 hours before expiry. Reissue means repeating the readiness check, both real login exercises, and the marker write/validate steps below; never edit timestamps or extend `expires_at`. If the lease expires, enabled timers may continue firing but their services remain skipped by `ExecCondition`; repeat the complete reissue procedure to restore eligibility. There is no permanent-marker or grace-period override.
+The scheduled source-ingest unit is deliberately different: it can only create source notes and pending review drafts, and cannot publish them. Its `ExecCondition` therefore performs the machine-verifiable DNS, TLS, OAuth callback and readiness-endpoint check on every run, without claiming that a human repeated the two login exercises. This lets daily ingestion run unattended while preserving the human approval boundary before publication.
+
+Reissue the manual lease before any later publish/build/activation after expiry. Reissue means repeating the readiness check, both real login exercises, and the marker write/validate steps below; never edit timestamps or extend `expires_at`. An expired lease blocks publisher, builder, and activator but does not block scheduled source ingestion. There is no permanent-marker or grace-period override for the publication path.
 
 ```bash
 NGINX_WORKER_USER='[NGINX_WORKER_USER]'
@@ -521,7 +523,8 @@ fi
 python3 -I /run/dek-package-check/deploy/readiness.py --config /etc/dek-readiness.json --hmac-key /var/lib/dek-readiness/marker-hmac-key --write-marker /var/lib/dek-readiness/automation-ready --confirm-authorized-login --confirm-unauthorized-login || exit 1
 python3 -I /run/dek-package-check/deploy/readiness.py --config /etc/dek-readiness.json --hmac-key /var/lib/dek-readiness/marker-hmac-key --validate-marker --marker /var/lib/dek-readiness/automation-ready || exit 1
 
-# The production unit is started only after its ExecCondition can validate the marker.
+# The production ingestion unit performs its own live machine-verifiable readiness check.
+# The marker above remains the gate for publisher, builder and activator.
 # A fresh private expected-output binding and nonce make this proof specific to this invocation.
 FINAL_REPORT=/var/lib/dek-source-ingest/proofs/latest-report.json
 FINAL_EXPECTED=/var/lib/dek-source-ingest/proofs/latest-report.expected.json

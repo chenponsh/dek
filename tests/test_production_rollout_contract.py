@@ -104,6 +104,8 @@ class StageAExactInstallContractTests(unittest.TestCase):
         production_unit = Path("deploy/systemd/dek-source-ingest.service").read_text(encoding="utf-8")
         self.assertNotIn("ExecCondition=", proof_unit)
         self.assertIn("ExecCondition=", production_unit)
+        self.assertIn("readiness.py --config /etc/dek-readiness.json", production_unit)
+        self.assertNotIn("--validate-marker", production_unit)
         self.assertNotIn("[Install]", proof_unit)
 
     def test_a6_failed_activity_contract_requires_manual_rollback_without_recovery_mutation(self):
