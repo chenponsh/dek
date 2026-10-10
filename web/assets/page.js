@@ -77,9 +77,9 @@
     const reviewAction = reviewHref
       ? `<div class="document-actions"><a href="${e(safeHref(reviewHref))}">调整分类</a></div>`
       : "";
-    const titleBlock = reviewAction
-      ? `<div class="document-title-row"><h1>${e(data.title)}</h1>${reviewAction}</div>`
-      : `<h1>${e(data.title)}</h1>`;
+    const breadcrumbBlock = reviewAction
+      ? `<div class="document-top-row"><div class="breadcrumbs">${crumbs}</div>${reviewAction}</div>`
+      : `<div class="breadcrumbs">${crumbs}</div>`;
     // The home page's breadcrumb already says 首页, so it gets no HOME chip.
     const kind = data.kind === "home" ? "" : `<span class="kind">${e(String(data.kind).toUpperCase())}</span>`;
     return `<header><button id="menu-toggle" aria-label="打开目录">☰</button><img class="brand-logo" src="${e(root)}assets/logo.png" alt="臣邦医药" width="150" height="28"><strong>DEK 知识库</strong>`
@@ -87,7 +87,7 @@
       + `<div class="user-menu" data-auth-me="${e(root)}auth/me"><a class="review-entry" href="/review/">知识审核</a><span id="user-name">正在读取…</span><a href="${e(root)}auth/logout">退出</a></div>`
       + `<button id="theme-toggle" aria-label="切换主题">◐</button></header>`
       + `<aside class="sidebar"><nav id="nav-tree" data-manifest="${e(root)}manifest.json" data-current="${e(data.path)}"></nav></aside>`
-      + `<main class="document${home}"><div class="breadcrumbs">${crumbs}</div>${kind}${titleBlock}<div class="badges">${badges}</div>${propertiesHtml(data)}<article>${bodyHtml || ""}</article><section class="backlinks"><h2>反向链接</h2>${backlinks}</section></main>`;
+      + `<main class="document${home}">${breadcrumbBlock}${kind}<h1>${e(data.title)}</h1><div class="badges">${badges}</div>${propertiesHtml(data)}<article>${bodyHtml || ""}</article><section class="backlinks"><h2>反向链接</h2>${backlinks}</section></main>`;
   }
 
   // A folder's overview table lists its entries as 项目 | 问题 | ...; 项目 should be the entry's
