@@ -14,7 +14,8 @@ tail -3 /var/lib/dek-review/decisions/decisions.jsonl | python3 -c "
 import sys, json, datetime
 for l in sys.stdin:
     d = json.loads(l); t = datetime.datetime.fromisoformat(d['created_at']).astimezone(datetime.timezone(datetime.timedelta(hours=8))).strftime('%H:%M:%S')
-    print(' ', t, d['decision_id'][:10], d['action'], d['rough_path'].split('/')[-1][:44], '->', d.get('wiki_path'))"
+    subject = d.get('rough_path') or d.get('source_wiki_path') or '?'
+    print(' ', t, d['decision_id'][:10], d['action'], subject.split('/')[-1][:44], '->', d.get('wiki_path'))"
 echo "errors in the last 15 min (builder / publisher / activator / refresh):"
 journalctl -u dek-builder.service -u dek-review-publish.service -u dek-activator.service -u dek-source-refresh.service --since "-15min" --no-pager 2>/dev/null \
   | grep -E "DEK build failed|BundleError|DEK activation failed|DEK publish skipped|Traceback" | sed 's/.*python3\[[0-9]*\]: //' | cut -c1-200 | sort | uniq -c | head -8
