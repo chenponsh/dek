@@ -1,6 +1,7 @@
 import re
 import subprocess
 import json
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -241,6 +242,21 @@ class SiteBuildTests(unittest.TestCase):
         for drawn in ("<header>", 'class="sidebar"', 'class="breadcrumbs"', 'class="backlinks"', 'id="theme-toggle"'):
             self.assertIn(drawn, seen)
         self.assertTrue((self.out / "assets" / "page.js").is_file())
+
+    def test_numbered_wiki_entry_links_directly_to_its_category_adjustment_page(self):
+        relative = "wiki/01_注册/01-0001.md"
+        (self.vault / relative).write_text(
+            "---\nno: 1\nquestion: 可调整分类的知识\n---\n\n正文。\n", encoding="utf-8",
+        )
+        build_site(self.vault, self.out)
+        identity = hashlib.sha256(relative.encode("utf-8")).hexdigest()[:16]
+        wiki = rendered_page(self.out / "wiki/01_注册/01-0001.html")
+        overview = rendered_page(self.out / "wiki/01_注册/条目.html")
+        source = rendered_page(self.out / "source/CDE/来源.html")
+
+        self.assertIn(f'href="/review/knowledge/{identity}">调整分类</a>', wiki)
+        self.assertNotIn(">调整分类</a>", overview)
+        self.assertNotIn(">调整分类</a>", source)
 
     def test_metadata_cannot_break_out_of_the_page_data_block(self):
         (self.vault / "wiki" / "01_注册" / "恶意.md").write_text(

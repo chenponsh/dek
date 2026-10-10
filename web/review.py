@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Callable
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, quote, urlencode
 
 import yaml
 from deploy.release_bundle import APPROVAL_ID_PATTERN
@@ -1560,6 +1560,11 @@ class ReviewService:
             result = [item for item in result if needle in " ".join((item.path, item.title, item.category, item.content)).casefold()]
         return result
 
+    def find_wiki_item(self, identity: str, *, root=None) -> WikiItem | None:
+        if not isinstance(identity, str) or re.fullmatch(r"[0-9a-f]{16}", identity) is None:
+            return None
+        return next((item for item in self.wiki_items(root=root) if item.identity == identity), None)
+
     def _move_panel(self, session_id: str, item: WikiItem, *, root: Path, return_item: str = "") -> str:
         taken = self._promised_wiki_paths(root)
         current_folder = PurePosixPath(item.path).parent.as_posix()
@@ -1587,6 +1592,24 @@ class ReviewService:
             + '<div class="notice category-create-preview" hidden></div>'
             + '<div class="decision-actions"><button type="submit" name="move" value="1" data-busy-label="提交中…">确认调整分类</button></div></form></section>'
         )
+
+    def render_wiki_item(self, session_id: str, identity: str, *, notice: str = "") -> bytes | None:
+        root = self._snapshot_root()
+        item = self.find_wiki_item(identity, root=root)
+        if item is None:
+            return None
+        form = self._move_panel(session_id, item, root=root)
+        public_href = "/" + quote(PurePosixPath(item.path).with_suffix(".html").as_posix(), safe="/")
+        body = (
+            self._header() + self._sidebar(item.path)
+            + '<div class="content"><main class="review-shell review-list">'
+            + f'<p><a href="{html.escape(public_href, quote=True)}">← 返回这条 Wiki 内容</a></p>'
+            + f'<h1>{html.escape(item.title)}</h1><div class="meta">当前位置：{html.escape(item.path)}</div>'
+            + self._snapshot_banner()
+            + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")
+            + f'<h2>现有内容</h2><pre>{html.escape(item.content)}</pre>{form}</main></div>'
+        )
+        return self._page("调整分类", body)
 
     def submit_move_form(self, body: bytes, *, session_id: str, user_id: str, reviewer_label: str = "") -> tuple[str, str, str]:
         if len(body) > MAX_DECISION_BYTES:

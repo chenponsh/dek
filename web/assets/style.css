@@ -57,3 +57,4 @@ button[type=submit].is-busy,button[type=submit].is-busy:hover{opacity:.65;cursor
 button.is-busy::after{content:"";display:inline-block;width:.85em;height:.85em;margin-left:.5em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-.1em;animation:dek-spin .8s linear infinite}
 @keyframes dek-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){button.is-busy::after{animation-duration:2.4s}}
+.document-actions{margin:-2px 0 18px}.document-actions a{display:inline-block;padding:7px 14px;border:1px solid var(--accent);border-radius:7px;color:var(--accent);font-size:14px;font-weight:600;text-decoration:none}.document-actions a:hover{background:var(--hover)}

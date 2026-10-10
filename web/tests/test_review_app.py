@@ -1,4 +1,5 @@
 import io
+import hashlib
 import json
 import re
 import socket
@@ -7,7 +8,7 @@ import subprocess
 import threading
 import unittest
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from web.auth import sign_claim
 from web.review import MemoryFormNonceStore, ReviewerLabelStore, ReviewError, ReviewService, rough_binding
@@ -243,35 +244,37 @@ class ReviewAppTests(unittest.TestCase):
         )
         subprocess.run(["git", "add", "wiki", "ingestion/rough/pending.md"], cwd=self.root / "repo", check=True)
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@invalid", "commit", "-qm", "wiki"], cwd=self.root / "repo", check=True)
-        rough_identity = re.search(r'/review/item/([0-9a-f]{16})', self.call("/", query="status=published", cookie=session)[2].decode()).group(1)
-        status, _, detail = self.call("/item/" + rough_identity, query="status=published", cookie=session)
+        source_path = "wiki/01_原分类/01-0001.md"
+        knowledge_identity = hashlib.sha256(source_path.encode("utf-8")).hexdigest()[:16]
+        status, _, detail = self.call("/knowledge/" + knowledge_identity, cookie=session)
         self.assertEqual(status, "200 OK")
         page = detail.decode()
         self.assertIn("调整分类", page)
-        self.assertIn('name="return_item" value="' + rough_identity + '"', page)
+        self.assertIn('name="return_item" value=""', page)
+        self.assertIn(quote("wiki/01_原分类/01-0001.html", safe="/"), page)
         nonce = re.search('name="form_nonce" value="([^"]+)"', page).group(1)
         digest = re.search('name="source_wiki_sha256" value="([^"]+)"', page).group(1)
         status, headers, _ = self.call(
             "/move-decision", method="POST", cookie=session, origin=REVIEW_ORIGIN,
             form={"form_nonce": nonce, "source_wiki_path": "wiki/01_原分类/01-0001.md",
                   "source_wiki_sha256": digest, "action": "move",
-                  "wiki_path": "wiki/02_新分类/02-0001.md", "return_item": rough_identity},
+                  "wiki_path": "wiki/02_新分类/02-0001.md", "return_item": ""},
         )
         self.assertEqual(status, "303 See Other")
-        self.assertEqual(dict(headers)["Location"], f"/review/item/{rough_identity}?notice=moved")
+        self.assertEqual(dict(headers)["Location"], f"/review/knowledge/{knowledge_identity}?notice=moved")
         records = [json.loads(line) for line in (self.root / "state/decisions.jsonl").read_text(encoding="utf-8").splitlines()]
         record = records[-1]
         self.assertEqual(record["action"], "move")
         self.assertEqual(record["wiki_path"], "wiki/02_新分类/02-0001.md")
-        status, _, after = self.call("/item/" + rough_identity, query="notice=moved", cookie=session)
+        status, _, after = self.call("/knowledge/" + knowledge_identity, query="notice=moved", cookie=session)
         self.assertEqual(status, "200 OK")
         self.assertIn("已审核待发布，尚未实际移动", after.decode())
 
-    def test_old_published_knowledge_routes_redirect_to_the_published_status_list(self):
-        for path in ("/knowledge", "/knowledge/deadbeefdeadbeef"):
-            status, headers, _ = self.call(path, cookie=self.authenticate())
-            self.assertEqual(status, "302 Found")
-            self.assertEqual(dict(headers)["Location"], "/review/?status=published")
+    def test_published_knowledge_list_redirects_but_unknown_detail_is_not_found(self):
+        status, headers, _ = self.call("/knowledge", cookie=self.authenticate())
+        self.assertEqual(status, "302 Found")
+        self.assertEqual(dict(headers)["Location"], "/review/?status=published")
+        self.assertEqual(self.call("/knowledge/deadbeefdeadbeef", cookie=self.authenticate())[0], "404 Not Found")
 
     def test_decision_redirects_to_the_item_and_shows_the_reviewer_nickname(self):
         session = self.authenticate()

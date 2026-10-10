@@ -247,10 +247,31 @@ class ReviewApp:
                 return self._response(start, "404 Not Found", b"Not Found")
             return self._response(start, "200 OK", body, (("Content-Type", "text/html; charset=utf-8"),))
 
-        if path == "/knowledge" or path.startswith("/knowledge/"):
+        if path == "/knowledge":
             if method != "GET":
                 return self._response(start, "405 Method Not Allowed", b"Method Not Allowed", (("Allow", "GET"),))
             return self._response(start, "302 Found", headers=(("Location", REVIEW_PREFIX + "/?status=published"),))
+
+        if path.startswith("/knowledge/"):
+            if method != "GET":
+                return self._response(start, "405 Method Not Allowed", b"Method Not Allowed", (("Allow", "GET"),))
+            if not self.reviewers:
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            if not authenticated:
+                return self._begin_login(start, REVIEW_PREFIX + path)
+            if not is_reviewer:
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            query = parse_qs(environ.get("QUERY_STRING", ""))
+            try:
+                body = self.service.render_wiki_item(
+                    session_id, path[len("/knowledge/"):],
+                    notice=self._notice_text(query.get("notice", [""])[0]),
+                )
+            except ReviewError as error:
+                return self._render_failure(start, error)
+            if body is None:
+                return self._response(start, "404 Not Found", b"Not Found")
+            return self._response(start, "200 OK", body, (("Content-Type", "text/html; charset=utf-8"),))
 
         if path == "/decision":
             if method != "POST":
@@ -352,7 +373,7 @@ class ReviewApp:
                 auth_logger.warning("review_move_rejected status=%s reason=%s", status, str(error) or type(error).__name__)
                 return self._response(start, status, status.encode("ascii"), (("Content-Type", "text/plain"),))
             location = (f"{REVIEW_PREFIX}/item/{return_item}?notice=moved" if return_item
-                        else f"{REVIEW_PREFIX}/?status=published&notice=moved")
+                        else f"{REVIEW_PREFIX}/knowledge/{identity}?notice=moved")
             return self._response(start, "303 See Other", headers=(("Location", location),))
 
         if path == "/trigger-ingest":

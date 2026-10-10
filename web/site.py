@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import re
@@ -360,8 +361,10 @@ def _page_data(doc: dict, rendered: str, backlinks: list[dict], by_path: dict[st
     raw_urls = doc["meta"].get("source_urls") or doc["meta"].get("source_url") or doc["meta"].get("url") or []
     if isinstance(raw_urls, str): raw_urls = [raw_urls]
     link = lambda item: {"title": item["title"], "href": _relative_href(doc["output"], item["output"])}
+    is_wiki_entry = doc["kind"] == "wiki" and re.fullmatch(r"\d+-\d{4}\.md", PurePosixPath(doc["path"]).name) is not None
     return {
         "v": 1, "kind": doc["kind"], "title": doc["title"], "path": doc["path"], "root": _site_root(doc["output"]),
+        "reviewHref": "/review/knowledge/" + hashlib.sha256(doc["path"].encode("utf-8")).hexdigest()[:16] if is_wiki_entry else "",
         "tags": [str(tag) for tag in tags],
         "crumbs": _breadcrumb_data(doc, by_path),
         # The home page has no meaningful frontmatter of its own, so no properties panel.
