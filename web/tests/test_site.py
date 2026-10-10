@@ -253,6 +253,7 @@ class SiteBuildTests(unittest.TestCase):
         source = rendered_page(self.out / "source/CDE/来源.html")
 
         self.assertIn('href="/review/knowledge?path=' + quote(relative, safe="") + '">调整分类</a>', wiki)
+        self.assertIn('<div class="document-title-row"><h1>可调整分类的知识</h1><div class="document-actions">', wiki)
         self.assertNotIn(">调整分类</a>", overview)
         self.assertNotIn(">调整分类</a>", source)
 
