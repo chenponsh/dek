@@ -1,7 +1,6 @@
 import re
 import subprocess
 import json
-import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -249,12 +248,11 @@ class SiteBuildTests(unittest.TestCase):
             "---\nno: 1\nquestion: 可调整分类的知识\n---\n\n正文。\n", encoding="utf-8",
         )
         build_site(self.vault, self.out)
-        identity = hashlib.sha256(relative.encode("utf-8")).hexdigest()[:16]
         wiki = rendered_page(self.out / "wiki/01_注册/01-0001.html")
         overview = rendered_page(self.out / "wiki/01_注册/条目.html")
         source = rendered_page(self.out / "source/CDE/来源.html")
 
-        self.assertIn(f'href="/review/knowledge/{identity}">调整分类</a>', wiki)
+        self.assertIn('href="/review/knowledge?path=' + quote(relative, safe="") + '">调整分类</a>', wiki)
         self.assertNotIn(">调整分类</a>", overview)
         self.assertNotIn(">调整分类</a>", source)
 

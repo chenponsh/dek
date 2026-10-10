@@ -70,8 +70,12 @@
     const badges = (data.tags || []).map(tag => `<span class="badge">#${e(tag)}</span>`).join("");
     const backlinks = (data.backlinks || []).length ? linkList(data.backlinks) : '<p class="muted">暂无反向链接</p>';
     const home = data.kind === "home" ? " home-page" : "";
-    const reviewAction = data.reviewHref
-      ? `<div class="document-actions"><a href="${e(safeHref(data.reviewHref))}">调整分类</a></div>`
+    const wikiPath = String(data.path || "");
+    const reviewHref = data.reviewHref || (data.kind === "wiki" && /(^|\/)\d+-\d{4}\.md$/.test(wikiPath)
+      ? "/review/knowledge?path=" + encodeURIComponent(wikiPath)
+      : "");
+    const reviewAction = reviewHref
+      ? `<div class="document-actions"><a href="${e(safeHref(reviewHref))}">调整分类</a></div>`
       : "";
     // The home page's breadcrumb already says 首页, so it gets no HOME chip.
     const kind = data.kind === "home" ? "" : `<span class="kind">${e(String(data.kind).toUpperCase())}</span>`;

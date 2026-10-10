@@ -250,7 +250,23 @@ class ReviewApp:
         if path == "/knowledge":
             if method != "GET":
                 return self._response(start, "405 Method Not Allowed", b"Method Not Allowed", (("Allow", "GET"),))
-            return self._response(start, "302 Found", headers=(("Location", REVIEW_PREFIX + "/?status=published"),))
+            query = parse_qs(environ.get("QUERY_STRING", ""))
+            wiki_path = (query.get("path", [""])[0] or "")[:QUERY_LIMIT]
+            if not wiki_path:
+                return self._response(start, "302 Found", headers=(("Location", REVIEW_PREFIX + "/?status=published"),))
+            if not self.reviewers:
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            if not authenticated:
+                return self._begin_login(start, REVIEW_PREFIX + path + "?" + urllib.parse.urlencode({"path": wiki_path}))
+            if not is_reviewer:
+                return self._response(start, "403 Forbidden", b"Forbidden")
+            try:
+                body = self.service.render_wiki_item(session_id, item_identity(wiki_path))
+            except ReviewError as error:
+                return self._render_failure(start, error)
+            if body is None:
+                return self._response(start, "404 Not Found", b"Not Found")
+            return self._response(start, "200 OK", body, (("Content-Type", "text/html; charset=utf-8"),))
 
         if path.startswith("/knowledge/"):
             if method != "GET":

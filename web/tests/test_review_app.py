@@ -246,7 +246,7 @@ class ReviewAppTests(unittest.TestCase):
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@invalid", "commit", "-qm", "wiki"], cwd=self.root / "repo", check=True)
         source_path = "wiki/01_原分类/01-0001.md"
         knowledge_identity = hashlib.sha256(source_path.encode("utf-8")).hexdigest()[:16]
-        status, _, detail = self.call("/knowledge/" + knowledge_identity, cookie=session)
+        status, _, detail = self.call("/knowledge", query=urlencode({"path": source_path}), cookie=session)
         self.assertEqual(status, "200 OK")
         page = detail.decode()
         self.assertIn("调整分类", page)
@@ -274,6 +274,7 @@ class ReviewAppTests(unittest.TestCase):
         status, headers, _ = self.call("/knowledge", cookie=self.authenticate())
         self.assertEqual(status, "302 Found")
         self.assertEqual(dict(headers)["Location"], "/review/?status=published")
+        self.assertEqual(self.call("/knowledge", query=urlencode({"path": "wiki/missing/01-0001.md"}), cookie=self.authenticate())[0], "404 Not Found")
         self.assertEqual(self.call("/knowledge/deadbeefdeadbeef", cookie=self.authenticate())[0], "404 Not Found")
 
     def test_decision_redirects_to_the_item_and_shows_the_reviewer_nickname(self):
