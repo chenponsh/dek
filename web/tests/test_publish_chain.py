@@ -117,6 +117,44 @@ class PublishChainTests(unittest.TestCase):
             self.assertIn("status: promoted", text)
             self.assertIn(f"wiki_target: wiki/01_A/01-000{'abc'.index(n) + 1}.md", text)
 
+    def test_waiting_approvals_become_one_signed_build_package(self):
+        from deploy.builder_entrypoint import process_packages
+        from deploy.publisher_entrypoint import batch_identity, process_batch
+        from deploy.release_bundle import BundleBuilder
+
+        decisions=[self.decision(name) for name in "abc"]
+        archive=self.root/"archive"; approved=self.root/"approved"; builds=self.root/"builds"
+        for directory in (archive,approved,builds): directory.mkdir()
+        for decision in decisions:
+            decision["snapshot_bundle_sha256"]="f"*64
+        (archive/("f"*64+".bundle")).write_bytes(b"test")
+        self.publisher.verify_review_snapshot=lambda *args: None
+        batch_id,status=process_batch(self.publisher,decisions,approved,builds,archive)
+        self.assertEqual(status,"wait")
+        self.assertEqual(batch_id,batch_identity(decisions))
+        packages=[path for path in approved.iterdir() if path.is_dir() and not path.name.startswith(".")]
+        self.assertEqual([path.name for path in packages],[batch_id])
+        approval=json.loads((packages[0]/"approval.json").read_text())
+        self.assertEqual([item["decision_id"] for item in approval["batch_decisions"]],
+                         [item["decision_id"] for item in decisions])
+        self.assertNotIn("parent_commit",approval)  # the fixture starts before any decision-derived release
+        clone=self.root/"batch-check"
+        git(self.root,"clone","--no-checkout","-q",str(packages[0]/"repository.bundle"),str(clone))
+        for number,name in enumerate("abc",start=1):
+            self.assertIn(f"内容{name}",git(clone,"show",f'{approval["commit"]}:wiki/01_A/01-000{number}.md'))
+        def runner(command,**kwargs):
+            command=list(command)
+            if "web.site" in command:
+                output=Path(command[command.index("--output")+1]); output.mkdir(parents=True); (output/"index.html").write_text("ok")
+            elif "qa.dek_qa.build_index" in command:
+                Path(command[command.index("--output")+1]).write_text('{"version":4,"documents":[]}')
+            return b""
+        failures=self.root/"failures"
+        process_packages(BundleBuilder(self.publisher.signing_key.public_key(),runner=runner),approved,builds,failures)
+        self.assertEqual(len([path for path in builds.iterdir() if path.is_dir()]),1)
+        self.assertEqual(process_batch(self.publisher,decisions,approved,builds,archive)[1],"pushed")
+        self.assertEqual(self.origin_head(),approval["commit"])
+
     def test_pushing_the_last_of_a_chain_first_publishes_all_of_it_and_the_rest_are_already_in(self):
         d = [self.decision(n) for n in "ab"]
         first, a1 = self.prepare(d[0])

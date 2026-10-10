@@ -85,7 +85,7 @@ def _record_subject(record: dict) -> str:
     return prefix + value if isinstance(value, str) and value else ""
 
 
-def verify_gate_queue_snapshot(gate: dict, queue: Path, *, decision_id: str = "") -> None:
+def verify_gate_queue_snapshot(gate: dict, queue: Path, *, decision_id: str = "", decision_ids=()) -> None:
     """Accept unrelated records appended after push, but never a superseding decision.
 
     The signed gate still binds the exact queue prefix seen by the publisher.  A
@@ -101,7 +101,8 @@ def verify_gate_queue_snapshot(gate: dict, queue: Path, *, decision_id: str = ""
         expected_size=gate.get("decision_queue_size")
         if type(expected_size) is not int or expected_size < 0 or details.st_size < expected_size:
             raise ActivationError("decision queue snapshot no longer current")
-        digest=hashlib.sha256(); total=0; subject=""; matched=0; line=b""
+        expected_ids=set(decision_ids) if decision_ids else ({decision_id} if decision_id else set())
+        digest=hashlib.sha256(); total=0; subjects=set(); matched=set(); line=b""
         with os.fdopen(os.dup(descriptor),"rb") as handle:
             while total < expected_size:
                 line=handle.readline(min(1024*1024+1,expected_size-total))
@@ -110,16 +111,16 @@ def verify_gate_queue_snapshot(gate: dict, queue: Path, *, decision_id: str = ""
                 total+=len(line); digest.update(line)
                 if total < expected_size and not line.endswith(b"\n"):
                     raise ActivationError("decision queue snapshot source is unsafe")
-                if decision_id:
+                if expected_ids:
                     try: record=json.loads(line)
                     except (UnicodeDecodeError,json.JSONDecodeError): continue
-                    if isinstance(record,dict) and record.get("decision_id")==decision_id:
-                        matched+=1; subject=_record_subject(record)
+                    if isinstance(record,dict) and record.get("decision_id") in expected_ids:
+                        matched.add(record["decision_id"]); subjects.add(_record_subject(record))
             if gate.get("decision_queue_sha256")!=digest.hexdigest():
                 raise ActivationError("decision queue snapshot no longer current")
             if details.st_size == expected_size:
                 return
-            if not decision_id or matched != 1 or not subject or (expected_size and not line.endswith(b"\n")):
+            if not expected_ids or matched != expected_ids or "" in subjects or (expected_size and not line.endswith(b"\n")):
                 raise ActivationError("decision queue snapshot no longer current")
             for line in handle:
                 if len(line)>1024*1024 or not line.endswith(b"\n"):
@@ -129,7 +130,7 @@ def verify_gate_queue_snapshot(gate: dict, queue: Path, *, decision_id: str = ""
                     raise ActivationError("decision queue snapshot source is unsafe") from exc
                 if not isinstance(record,dict) or not _record_subject(record):
                     raise ActivationError("decision queue snapshot source is unsafe")
-                if _record_subject(record)==subject:
+                if _record_subject(record) in subjects:
                     raise ActivationError("decision queue snapshot no longer current")
     except OSError as exc:
         raise ActivationError("decision queue snapshot source is unreadable") from exc
@@ -154,7 +155,17 @@ class QueueBoundActivator:
         with queue_lock(self.queue,read_only=True):
             gate=json.loads((candidate/"activation-ready.json").read_text(encoding="utf-8"))
             release=json.loads((candidate/"release.json").read_text(encoding="utf-8"))
-            verify_gate_queue_snapshot(gate,self.queue,decision_id=str(release.get("decision_id", "")))
+            batch=release.get("batch_decisions")
+            if batch is not None and (not isinstance(batch,list) or not batch
+                    or any(not isinstance(item,dict) or set(item)!={"decision_id","decision_sha256"}
+                           or not re.fullmatch(r"[A-Za-z0-9_-]{8,79}",str(item.get("decision_id","")))
+                           or not re.fullmatch(r"[0-9a-f]{64}",str(item.get("decision_sha256",""))) for item in batch)):
+                raise ActivationError("publication batch binding invalid")
+            decision_ids=tuple(item["decision_id"] for item in batch) if isinstance(batch,list) else ()
+            if len(set(decision_ids))!=len(decision_ids):
+                raise ActivationError("publication batch binding invalid")
+            verify_gate_queue_snapshot(gate,self.queue,decision_id=str(release.get("decision_id", "")),
+                                       decision_ids=decision_ids)
             return self.activator.activate(candidate)
 
 

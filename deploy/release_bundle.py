@@ -503,6 +503,36 @@ class ReleasePublisher:
         (output/"approval.sig").write_bytes(self.signing_key.sign(_canonical(approval)))
         return approval
 
+    def bind_batch_approval(self, package: Path, decisions: list[dict], *, parent_commit: str | None) -> dict:
+        """Rebind the final package in a prepared chain to the complete decision batch.
+
+        Every change was independently checked by ``prepare_change``.  This final
+        publisher signature makes the one built/pushed release explicitly depend
+        on every reviewed decision rather than only on the chain's last item.
+        """
+        if not decisions:
+            raise BundleError("empty publication batch")
+        entries=[]
+        for decision in decisions:
+            decision_id=str(decision.get("decision_id", ""))
+            approval_generation(decision_id, decision_id)
+            digest=hashlib.sha256(json.dumps(decision,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+            entries.append({"decision_id":decision_id,"decision_sha256":digest})
+        batch_digest=hashlib.sha256(json.dumps(entries,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        batch_id="batch-"+batch_digest[:32]
+        approval=json.loads((package/"approval.json").read_text(encoding="utf-8"))
+        try: self.signing_key.public_key().verify((package/"approval.sig").read_bytes(),_canonical(approval))
+        except Exception as exc: raise BundleError("prepared approval signature invalid") from exc
+        approval.update({"decision_id":batch_id,"nonce":batch_id,"decision_sha256":batch_digest,
+                         "batch_decisions":entries})
+        if parent_commit is None:
+            approval.pop("parent_commit",None)
+        else:
+            approval["parent_commit"]=parent_commit
+        (package/"approval.json").write_text(json.dumps(approval,sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
+        (package/"approval.sig").write_bytes(self.signing_key.sign(_canonical(approval)))
+        return approval
+
     SYNC_MAX_REMOVALS = 500
 
     def prepare_sync(self, output: Path) -> dict | None:

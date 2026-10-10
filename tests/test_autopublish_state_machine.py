@@ -12,6 +12,24 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 class PushBoundaryTests(unittest.TestCase):
+    def test_batch_push_authorization_requires_every_decision_to_remain_latest(self):
+        from deploy.publisher_entrypoint import authorized_batch_queue_snapshot
+
+        approvals=[{"decision_id":"approve-a-12345678","rough_path":"ingestion/rough/a.md","action":"approve"},
+                   {"decision_id":"approve-b-12345678","rough_path":"ingestion/rough/b.md","action":"approve"}]
+        rejection={"decision_id":"reject-b-12345678","rough_path":"ingestion/rough/b.md","action":"reject"}
+        class Review:
+            @staticmethod
+            @contextmanager
+            def queue_lock(path,read_only=False):
+                yield
+            iter_valid_decisions=staticmethod(lambda *args,**kwargs: iter([*approvals,rejection]))
+            validate_decision=staticmethod(lambda record,key: record)
+        with tempfile.TemporaryDirectory() as temporary:
+            queue=Path(temporary)/"decisions.jsonl"; queue.write_text("queue\n")
+            with self.assertRaisesRegex(RuntimeError,"batch was superseded"):
+                authorized_batch_queue_snapshot(Review,queue,b"k"*32,approvals,Path(temporary)/"bad",lambda _:None)
+
     def test_push_authorization_revalidates_latest_decision_while_locked(self):
         from deploy.publisher_entrypoint import authorized_queue_snapshot
 
@@ -179,6 +197,27 @@ class QueueGateTests(unittest.TestCase):
                                          "rough_path": approval["rough_path"]}) + "\n")
             with self.assertRaisesRegex(Exception, "queue snapshot"):
                 verify_gate_queue_snapshot(gate, queue, decision_id=approval["decision_id"])
+
+    def test_batch_gate_tracks_all_member_subjects_but_allows_unrelated_append(self):
+        from deploy.publisher_entrypoint import queue_snapshot
+        from deploy.activator_entrypoint import verify_gate_queue_snapshot
+
+        with tempfile.TemporaryDirectory() as temporary:
+            queue=Path(temporary)/"decisions.jsonl"
+            approvals=[{"decision_id":"approve-a-12345678","action":"approve","rough_path":"ingestion/rough/a.md"},
+                       {"decision_id":"approve-b-12345678","action":"approve","rough_path":"ingestion/rough/b.md"}]
+            queue.write_text("".join(json.dumps(item)+"\n" for item in approvals),encoding="utf-8")
+            gate={**queue_snapshot(queue),"status":"pushed"}
+            with queue.open("a",encoding="utf-8") as handle:
+                handle.write(json.dumps({"decision_id":"other-12345678","action":"approve",
+                                         "rough_path":"ingestion/rough/other.md"})+"\n")
+            ids=[item["decision_id"] for item in approvals]
+            verify_gate_queue_snapshot(gate,queue,decision_ids=ids)
+            with queue.open("a",encoding="utf-8") as handle:
+                handle.write(json.dumps({"decision_id":"reject-a-12345678","action":"reject",
+                                         "rough_path":"ingestion/rough/a.md"})+"\n")
+            with self.assertRaisesRegex(Exception,"queue snapshot"):
+                verify_gate_queue_snapshot(gate,queue,decision_ids=ids)
 
 
 class PublicationOrderTests(unittest.TestCase):

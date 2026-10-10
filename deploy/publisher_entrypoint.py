@@ -40,6 +40,12 @@ MAX_QUEUE_BYTES = 1024 * 1024 * 1024
 MAX_OUTCOME_BYTES = 65536
 
 
+class BatchDecisionError(RuntimeError):
+    def __init__(self, decision_id: str, cause: BaseException):
+        self.decision_id, self.cause = decision_id, cause
+        super().__init__(str(cause))
+
+
 def _bounded_regular_bytes(path: Path, limit: int, label: str) -> bytes:
     try:
         return read_bounded_regular(path, maximum=limit)
@@ -90,6 +96,27 @@ def authorized_queue_snapshot(review_module, queue: Path, decision_key: bytes, d
         return queue_snapshot(queue)
 
 
+def authorized_batch_queue_snapshot(review_module, queue: Path, decision_key: bytes, decisions: list[dict],
+                                    quarantine_dir: Path, on_corrupt) -> dict:
+    """Authorize every member of one batch against the latest queue state."""
+    expected={_decision_subject(review_module,item):(item.get("action"),item.get("decision_id")) for item in decisions}
+    if not expected or "" in expected or len(expected)!=len(decisions):
+        raise RuntimeError("publication batch has duplicate or invalid subjects")
+    with review_module.queue_lock(queue,read_only=True):
+        latest={}
+        for record in review_module.iter_valid_decisions(
+                queue,decision_key,quarantine_dir=quarantine_dir,on_corrupt=on_corrupt):
+            try: validated=review_module.validate_decision(record,decision_key)
+            except (Exception,SystemExit): continue
+            subject=_decision_subject(review_module,validated)
+            if subject: latest[subject]=validated
+        for subject,(action,decision_id) in expected.items():
+            found=latest.get(subject)
+            if found is None or found.get("action")!=action or found.get("decision_id")!=decision_id:
+                raise RuntimeError("decision batch was superseded before push")
+        return queue_snapshot(queue)
+
+
 def process_decision(publisher, decision: dict, approved_root: Path, builds_root: Path,
                      review_bundle_archive: Path, push_authorizer=None, chain_from: dict | None = None) -> str:
     """Deterministic, idempotent per-decision publish step.
@@ -127,6 +154,53 @@ def process_decision(publisher, decision: dict, approved_root: Path, builds_root
     else:
         publisher.publish(build, queue_snapshot=snapshot)
     return "pushed"
+
+
+def batch_identity(decisions: list[dict]) -> str:
+    entries=[{"decision_id":item["decision_id"],"decision_sha256":hashlib.sha256(
+        json.dumps(item,sort_keys=True,separators=(",",":")).encode()).hexdigest()} for item in decisions]
+    return "batch-"+hashlib.sha256(json.dumps(entries,sort_keys=True,separators=(",",":")).encode()).hexdigest()[:32]
+
+
+def process_batch(publisher, decisions: list[dict], approved_root: Path, builds_root: Path,
+                  review_bundle_archive: Path, push_authorizer=None) -> tuple[str,str]:
+    """Prepare many reviewed changes as a chain, then build/push only its signed tip."""
+    if not decisions:
+        raise RuntimeError("empty publication batch")
+    for decision in decisions:
+        try:
+            archive=review_bundle_archive/(decision["snapshot_bundle_sha256"]+".bundle")
+            if not archive.is_file(): raise RuntimeError("original review snapshot bundle is not archived")
+            publisher.verify_review_snapshot(archive,decision["snapshot_commit"],decision["snapshot_tree"],decision["snapshot_bundle_sha256"])
+        except (Exception,SystemExit) as exc:
+            raise BatchDecisionError(decision["decision_id"],exc) from exc
+    batch_id=batch_identity(decisions); target=approved_root/batch_id
+    if not target.exists():
+        staging=approved_root/(".preparing-"+batch_id)
+        if staging.exists(): shutil.rmtree(staging)
+        staging.mkdir()
+        chain=None; first_parent=None; final_part=None
+        try:
+            for number,decision in enumerate(decisions):
+                part=staging/(f"{number:04d}-"+decision["decision_id"])
+                kwargs={"chain_from":chain} if chain is not None else {}
+                try: approval=publisher.prepare_change(part,decision,**kwargs)
+                except (Exception,SystemExit) as exc: raise BatchDecisionError(decision["decision_id"],exc) from exc
+                if number==0: first_parent=approval.get("parent_commit")
+                chain={"bundle":str(part/"repository.bundle"),"commit":approval["commit"]}
+                final_part=part
+            rebound=publisher.bind_batch_approval(final_part,decisions,parent_commit=first_parent)
+            if rebound.get("decision_id")!=batch_id: raise RuntimeError("publication batch identity mismatch")
+            os.replace(final_part,target)
+        finally:
+            if staging.exists(): shutil.rmtree(staging)
+    approval_meta=json.loads((target/"approval.json").read_text(encoding="utf-8"))
+    build=builds_root/f'{approval_meta["decision_id"]}-{approval_meta["nonce"]}'
+    if not (build/"release.json").is_file(): return batch_id,"wait"
+    if not (build/"release.sig").is_file(): publisher.finalize(build)
+    snapshot=push_authorizer(decisions) if push_authorizer is not None else None
+    publisher.publish(build,**({"queue_snapshot":snapshot} if snapshot is not None else {}))
+    return batch_id,"pushed"
 
 def process_sync(publisher, approved_root: Path, builds_root: Path, push_authorizer=None):
     """The sync release: deletions from wiki/ that reached origin, published without a decision.
@@ -339,33 +413,53 @@ def main(argv=None):
         write_state("queue-corruption-"+value["sha256"],value)
         print("DEK queue corruption quarantined: "+value["sha256"],file=sys.stderr)
     valid=load_approved_decisions(modules["web.review"],queue,decision_key,state_root/"quarantine",queue_alert)
-    # Approvals waiting together are prepared as a chain: each package sits on top of the one
-    # before it, so they push (and activate) one after another without ever conflicting.
-    chain={"value":None}
-    def worker(decision):
-        def authorize(current):
-            return authorized_queue_snapshot(modules["web.review"], queue, decision_key, current,
-                                             state_root/"quarantine", queue_alert)
-        status=process_decision(publisher,decision,approved,builds,archive,authorize,chain_from=chain["value"])
-        prepared_dir=approved/decision["decision_id"]
-        if status=="pushed":
-            chain["value"]=None       # origin already holds it; the next one starts from origin
-        elif status=="wait":
-            try:
-                package=json.loads((prepared_dir/"approval.json").read_text(encoding="utf-8"))
-                chain["value"]={"bundle":str(prepared_dir/"repository.bundle"),"commit":package["commit"]}
-            except (OSError,ValueError,KeyError):
-                pass
-        if status=="pushed":
-            return published_result(approved,builds,decision["decision_id"])
-        return status
     def read_state(decision_id):
         try:
             value=json.loads((state_root/(decision_id+".json")).read_text(encoding="utf-8"))
             return value if isinstance(value,dict) else {}
         except (OSError,ValueError):
             return {}
-    process_records(valid,worker,write_state,read_state)
+    waiting=[]
+    for decision in valid:
+        state=read_state(decision["decision_id"]); status=state.get("status")
+        if status in {"published","activated"}: continue
+        if status=="failed" and state.get("retryable") is False:
+            print(f'DEK publish skipped decision={decision["decision_id"]}: cannot be retried '
+                  f'({state.get("last_error","")[:160]})',file=sys.stderr)
+            continue
+        waiting.append(decision)
+    if waiting:
+        # If the builder is between the two publisher passes, finish that exact
+        # prepared batch. New approvals wait for the next manual click.
+        prepared_ids={read_state(item["decision_id"]).get("batch_id") for item in waiting
+                      if read_state(item["decision_id"]).get("status")=="prepared"}
+        for prepared_id in sorted(value for value in prepared_ids if isinstance(value,str)):
+            members=[item for item in waiting if read_state(item["decision_id"]).get("batch_id")==prepared_id]
+            if members and batch_identity(members)==prepared_id and (approved/prepared_id/"approval.json").is_file():
+                waiting=members; break
+        try:
+            def authorize(batch):
+                return authorized_batch_queue_snapshot(modules["web.review"],queue,decision_key,batch,
+                                                       state_root/"quarantine",queue_alert)
+            batch_id,status=process_batch(publisher,waiting,approved,builds,archive,authorize)
+            if status=="wait":
+                for decision in waiting:
+                    write_state(decision["decision_id"],{"status":"prepared","decision_id":decision["decision_id"],"batch_id":batch_id})
+            else:
+                result=published_result(approved,builds,batch_id); write_state(batch_id,result)
+                for decision in waiting:
+                    write_state(decision["decision_id"],{"status":"published","decision_id":decision["decision_id"],
+                                                         "batch_id":batch_id,"commit":result["commit"]})
+        except BatchDecisionError as exc:
+            traceback.print_exc(file=sys.stderr)
+            permanent=any(marker in str(exc.cause) for marker in PERMANENT_FAILURES)
+            write_state(exc.decision_id,{"status":"failed","decision_id":exc.decision_id,
+                        "error_type":type(exc.cause).__name__,"retryable":not permanent,"last_error":str(exc.cause)[-300:]})
+        except (Exception,SystemExit) as exc:
+            traceback.print_exc(file=sys.stderr)
+            for decision in waiting:
+                write_state(decision["decision_id"],{"status":"failed","decision_id":decision["decision_id"],
+                            "error_type":type(exc).__name__,"retryable":True,"last_error":str(exc)[-300:]})
     run_sync_release(modules, publisher, valid, approved, builds, state_root, queue, write_state)
     outcomes=Path("/var/lib/dek-activate/outcomes")
     if outcomes.exists():
