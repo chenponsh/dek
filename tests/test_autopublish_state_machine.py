@@ -147,6 +147,39 @@ class QueueGateTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "queue snapshot"):
                 verify_gate_queue_snapshot(gate, queue)
 
+    def test_unrelated_late_decision_does_not_invalidate_release_subject(self):
+        from deploy.publisher_entrypoint import queue_snapshot
+        from deploy.activator_entrypoint import verify_gate_queue_snapshot
+
+        with tempfile.TemporaryDirectory() as temporary:
+            queue = Path(temporary) / "decisions.jsonl"
+            approval = {"decision_id": "approve-12345678", "action": "approve",
+                        "rough_path": "ingestion/rough/a.md"}
+            queue.write_text(json.dumps(approval) + "\n", encoding="utf-8")
+            gate = {**queue_snapshot(queue), "status": "pushed"}
+            with queue.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"decision_id": "move-1234567890", "action": "move",
+                                         "source_wiki_path": "wiki/01/A/01-0001.md"}) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            verify_gate_queue_snapshot(gate, queue, decision_id=approval["decision_id"])
+
+    def test_late_decision_for_same_subject_still_invalidates_release(self):
+        from deploy.publisher_entrypoint import queue_snapshot
+        from deploy.activator_entrypoint import verify_gate_queue_snapshot
+
+        with tempfile.TemporaryDirectory() as temporary:
+            queue = Path(temporary) / "decisions.jsonl"
+            approval = {"decision_id": "approve-12345678", "action": "approve",
+                        "rough_path": "ingestion/rough/a.md"}
+            queue.write_text(json.dumps(approval) + "\n", encoding="utf-8")
+            gate = {**queue_snapshot(queue), "status": "pushed"}
+            with queue.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"decision_id": "reject-12345678", "action": "reject",
+                                         "rough_path": approval["rough_path"]}) + "\n")
+            with self.assertRaisesRegex(Exception, "queue snapshot"):
+                verify_gate_queue_snapshot(gate, queue, decision_id=approval["decision_id"])
+
 
 class PublicationOrderTests(unittest.TestCase):
     def test_candidates_follow_parent_commit_chain_not_random_decision_id(self):

@@ -78,25 +78,63 @@ def order_candidates_by_ancestry(candidates, active):
     return ordered
 
 
-def verify_gate_queue_snapshot(gate: dict, queue: Path) -> None:
+def _record_subject(record: dict) -> str:
+    action = record.get("action")
+    value = record.get("source_wiki_path") if action in {"move", "cancel_move"} else record.get("rough_path")
+    prefix = "wiki:" if action in {"move", "cancel_move"} else "rough:"
+    return prefix + value if isinstance(value, str) and value else ""
+
+
+def verify_gate_queue_snapshot(gate: dict, queue: Path, *, decision_id: str = "") -> None:
+    """Accept unrelated records appended after push, but never a superseding decision.
+
+    The signed gate still binds the exact queue prefix seen by the publisher.  A
+    later record for the release's own subject invalidates activation; appends
+    for other drafts or Wiki pages no longer waste an otherwise valid build.
+    """
     descriptor=None
     try:
         descriptor=os.open(queue,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0))
         details=os.fstat(descriptor)
         if not stat.S_ISREG(details.st_mode) or details.st_nlink!=1 or details.st_size>1024*1024*1024:
             raise ActivationError("decision queue snapshot source is unsafe")
-        digest=hashlib.sha256(); total=0
-        while True:
-            chunk=os.read(descriptor,65536)
-            if not chunk: break
-            digest.update(chunk); total+=len(chunk)
+        expected_size=gate.get("decision_queue_size")
+        if type(expected_size) is not int or expected_size < 0 or details.st_size < expected_size:
+            raise ActivationError("decision queue snapshot no longer current")
+        digest=hashlib.sha256(); total=0; subject=""; matched=0; line=b""
+        with os.fdopen(os.dup(descriptor),"rb") as handle:
+            while total < expected_size:
+                line=handle.readline(min(1024*1024+1,expected_size-total))
+                if not line:
+                    raise ActivationError("decision queue snapshot no longer current")
+                total+=len(line); digest.update(line)
+                if total < expected_size and not line.endswith(b"\n"):
+                    raise ActivationError("decision queue snapshot source is unsafe")
+                if decision_id:
+                    try: record=json.loads(line)
+                    except (UnicodeDecodeError,json.JSONDecodeError): continue
+                    if isinstance(record,dict) and record.get("decision_id")==decision_id:
+                        matched+=1; subject=_record_subject(record)
+            if gate.get("decision_queue_sha256")!=digest.hexdigest():
+                raise ActivationError("decision queue snapshot no longer current")
+            if details.st_size == expected_size:
+                return
+            if not decision_id or matched != 1 or not subject or (expected_size and not line.endswith(b"\n")):
+                raise ActivationError("decision queue snapshot no longer current")
+            for line in handle:
+                if len(line)>1024*1024 or not line.endswith(b"\n"):
+                    raise ActivationError("decision queue snapshot source is unsafe")
+                try: record=json.loads(line)
+                except (UnicodeDecodeError,json.JSONDecodeError) as exc:
+                    raise ActivationError("decision queue snapshot source is unsafe") from exc
+                if not isinstance(record,dict) or not _record_subject(record):
+                    raise ActivationError("decision queue snapshot source is unsafe")
+                if _record_subject(record)==subject:
+                    raise ActivationError("decision queue snapshot no longer current")
     except OSError as exc:
         raise ActivationError("decision queue snapshot source is unreadable") from exc
     finally:
         if descriptor is not None: os.close(descriptor)
-    if (gate.get("decision_queue_sha256")!=digest.hexdigest()
-            or gate.get("decision_queue_size")!=total):
-        raise ActivationError("decision queue snapshot no longer current")
 
 
 def isolate_activation_candidate(config: ActivatorConfig, candidate: Path, exc: BaseException) -> None:
@@ -115,7 +153,8 @@ class QueueBoundActivator:
         # active-pointer mutation so a later return/reject cannot race the check.
         with queue_lock(self.queue,read_only=True):
             gate=json.loads((candidate/"activation-ready.json").read_text(encoding="utf-8"))
-            verify_gate_queue_snapshot(gate,self.queue)
+            release=json.loads((candidate/"release.json").read_text(encoding="utf-8"))
+            verify_gate_queue_snapshot(gate,self.queue,decision_id=str(release.get("decision_id", "")))
             return self.activator.activate(candidate)
 
 

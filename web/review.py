@@ -781,7 +781,7 @@ def verify_decision_mac(record: dict, key: bytes) -> bool:
 
 def decision_subject(record: dict) -> str:
     """The object whose latest signed decision supersedes earlier ones."""
-    if record.get("action") == "move":
+    if record.get("action") in {"move", "cancel_move"}:
         value = record.get("source_wiki_path")
         return "wiki:" + value if isinstance(value, str) else ""
     value = record.get("rough_path")
@@ -802,14 +802,14 @@ def validate_decision(record: object, key: bytes) -> dict:
     action=record.get("action")
     if ((schema==2 and set(record)!=v2_fields)
             or (schema==3 and action=="approve" and set(record)!=approve_v3_fields)
-            or (schema==3 and action=="move" and set(record)!=move_v3_fields)
-            or schema not in {2,3} or action not in {"approve","reject","return","move"}
-            or (schema==3 and action not in {"approve","move"})
+            or (schema==3 and action in {"move","cancel_move"} and set(record)!=move_v3_fields)
+            or schema not in {2,3} or action not in {"approve","reject","return","move","cancel_move"}
+            or (schema==3 and action not in {"approve","move","cancel_move"})
             or not isinstance(record.get("decision_id"), str) or not APPROVAL_ID_PATTERN.fullmatch(record["decision_id"])):
         raise ReviewError("decision schema invalid")
     if not re.fullmatch(r"[0-9a-f]{40,64}",str(record.get("snapshot_commit",""))) or not re.fullmatch(r"[0-9a-f]{40,64}",str(record.get("snapshot_tree",""))) or not re.fullmatch(r"[0-9a-f]{64}",str(record.get("snapshot_bundle_sha256",""))):
         raise ReviewError("decision schema invalid")
-    if action=="move":
+    if action in {"move","cancel_move"}:
         validate_relative_path(record["source_wiki_path"],WIKI_PREFIX)
         validate_relative_path(record["wiki_path"],WIKI_PREFIX)
         if not HASH_PATTERN.fullmatch(str(record.get("source_wiki_sha256",""))):
@@ -1067,11 +1067,12 @@ class ReviewService:
     def _pending_moves(self, root: Path) -> dict[str, dict]:
         latest: dict[str, dict] = {}
         for record in self._decisions():
-            if record.get("action") == "move" and isinstance(record.get("source_wiki_path"), str):
+            if record.get("action") in {"move", "cancel_move"} and isinstance(record.get("source_wiki_path"), str):
                 latest[record["source_wiki_path"]] = record
         return {
             source: record for source, record in latest.items()
-            if (root / source).is_file() and not (root / str(record.get("wiki_path", ""))).exists()
+            if record.get("action") == "move"
+            and (root / source).is_file() and not (root / str(record.get("wiki_path", ""))).exists()
         }
 
     @staticmethod
@@ -1096,7 +1097,12 @@ class ReviewService:
         candidates = wiki_folder_candidates(root, taken)
         known = {"wiki/" + label for label, _ in candidates}
         promised: dict[str, tuple[str, int, int]] = {}
+        latest: dict[str, dict] = {}
         for record in self._decisions():
+            subject = decision_subject(record)
+            if subject:
+                latest[subject] = record
+        for record in latest.values():
             if record.get("action") not in {"approve", "move"}:
                 continue
             target = record.get("wiki_path")
@@ -1273,7 +1279,7 @@ class ReviewService:
             chips = f'<div class="path-suggestions">系统建议：{buttons}</div>'
         return f"""<article><h2>{html.escape(heading)}</h2><pre>{html.escape(rough_display(rough.content, suggested))}</pre>
 <form method="post" action="{self.path_prefix}/decision{html.escape(action_query)}"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
-<label>Wiki 路径<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}" data-existing-categories="{html.escape(categories_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<div class="notice category-create-preview" hidden></div><label>候选 Wiki Markdown<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><p class="meta decision-hint">批准后系统将自动发布，无需再次操作。</p><div class="decision-actions">{decision_buttons}</div></form></article>"""
+<label>Wiki 路径<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}" data-existing-categories="{html.escape(categories_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<div class="notice category-create-preview" hidden></div><label>候选 Wiki Markdown<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><p class="meta decision-hint">批准后会进入“已审核待发布”，请回到列表手动发布；可以连续审核多条后一次发布。</p><div class="decision-actions">{decision_buttons}</div></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()
@@ -1369,7 +1375,7 @@ class ReviewService:
         if status["overdue"]:
             parts.append(f'<div class="notice">{clock(status["requested"])} 的拉取没有更新数据，可能失败了。请稍后再试，仍不行请联系管理员。</div>')
         if publishing["overdue"]:
-            parts.append(f'<div class="notice">{clock(publishing["requested"])} 的自动发布没有更新数据，可能失败了。请点击“重试发布”，仍不行请联系管理员。</div>')
+            parts.append(f'<div class="notice">{clock(publishing["requested"])} 的发布没有更新数据，可能失败了。请点击“重试发布”，仍不行请联系管理员。</div>')
         return "".join(parts)
 
     def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:
@@ -1436,10 +1442,12 @@ class ReviewService:
         )
         publish_button = ""
         if publishing or publish_status["overdue"] or status_counts["approved"]:
+            publish_label = (f'重试发布（{status_counts["approved"]}）' if publish_status["overdue"]
+                             else f'发布已审核内容（{status_counts["approved"]}）')
             publish_button = (
                 f'<form method="post" action="{self.path_prefix}/publish" class="publish-trigger-form">'
-                + ('<button type="submit" class="is-busy" disabled aria-busy="true">自动发布中…</button>' if publishing
-                   else f'<button type="submit" data-busy-label="已提交…">重试发布（{status_counts["approved"]}）</button>')
+                + ('<button type="submit" class="is-busy" disabled aria-busy="true">发布中…</button>' if publishing
+                   else f'<button type="submit" data-busy-label="已提交…">{publish_label}</button>')
                 + '</form>'
             )
         body = (
@@ -1578,7 +1586,12 @@ class ReviewService:
         if pending is not None:
             pending_notice = (
                 '<div class="notice">分类调整：已审核待发布，尚未实际移动。目标：'
-                + html.escape(str(pending.get("wiki_path", ""))) + '</div>'
+                + html.escape(str(pending.get("wiki_path", "")))
+                + f'<form method="post" action="{self.path_prefix}/move-decision" class="cancel-move-form">'
+                + f'<input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="source_wiki_path" value="{html.escape(item.path)}">'
+                + f'<input type="hidden" name="source_wiki_sha256" value="{item.sha256}"><input type="hidden" name="action" value="cancel_move">'
+                + f'<input type="hidden" name="return_item" value="{html.escape(return_item)}">'
+                + '<button type="submit" class="action-reject" data-busy-label="撤回中…">撤回调整</button></form></div>'
             )
         return (
             '<section class="move-panel"><h2>调整分类</h2>' + pending_notice
@@ -1623,7 +1636,8 @@ class ReviewService:
             if len(items) != 1:
                 raise ReviewError(f"invalid {name}")
             return items[0]
-        if one("action") != "move":
+        action = one("action")
+        if action not in {"move", "cancel_move"}:
             raise ReviewError("invalid action")
         return_values = values.get("return_item", [""])
         if len(return_values) != 1 or (return_values[0] and re.fullmatch(r"[0-9a-f]{16}", return_values[0]) is None):
@@ -1642,23 +1656,35 @@ class ReviewService:
         actual_hash = "sha256:" + hashlib.sha256(raw).hexdigest()
         if not hmac.compare_digest(supplied_hash, actual_hash):
             raise ReviewError("knowledge changed", "409 Conflict")
-        target = one("wiki_path")
-        validate_relative_path(target, WIKI_PREFIX)
-        if target == source:
-            raise ReviewError("move target is unchanged", "409 Conflict")
-        try:
-            (root / target).lstat()
-        except FileNotFoundError:
-            pass
-        except OSError as exc:
-            raise ReviewError("move target is unsafe", "409 Conflict") from exc
+        if action == "cancel_move":
+            pending = self._pending_moves(root).get(source)
+            if pending is None:
+                raise ReviewError("move is not pending", "409 Conflict")
+            target = str(pending["wiki_path"])
+            candidate = str(pending["candidate_markdown"])
+            category_page_path = str(pending.get("category_page_path", ""))
+            category_page_markdown = str(pending.get("category_page_markdown", ""))
         else:
-            raise ReviewError("move target already exists", "409 Conflict")
-        plan = self._category_plan(root, target)
-        try:
-            candidate = rewrite_note_for_target(raw.decode("utf-8"), source, target)
-        except (UnicodeDecodeError, TaxonomyError) as exc:
-            raise ReviewError(str(exc), "409 Conflict") from exc
+            target = one("wiki_path")
+        validate_relative_path(target, WIKI_PREFIX)
+        if action == "move" and target == source:
+            raise ReviewError("move target is unchanged", "409 Conflict")
+        if action == "move":
+            try:
+                (root / target).lstat()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise ReviewError("move target is unsafe", "409 Conflict") from exc
+            else:
+                raise ReviewError("move target already exists", "409 Conflict")
+            plan = self._category_plan(root, target)
+            try:
+                candidate = rewrite_note_for_target(raw.decode("utf-8"), source, target)
+            except (UnicodeDecodeError, TaxonomyError) as exc:
+                raise ReviewError(str(exc), "409 Conflict") from exc
+            category_page_path = plan.page_path if plan else ""
+            category_page_markdown = plan.page_markdown if plan else ""
         decision_id = secrets.token_urlsafe(24)
         commit=subprocess.check_output(["/usr/bin/git","rev-parse","HEAD^{commit}"],cwd=root,env={"PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_GLOBAL":"/dev/null"},text=True).strip()
         tree=subprocess.check_output(["/usr/bin/git","rev-parse","HEAD^{tree}"],cwd=root,env={"PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_GLOBAL":"/dev/null"},text=True).strip()
@@ -1667,10 +1693,10 @@ class ReviewService:
         record={"schema_version":3,"record_type":"decision","decision_id":decision_id,
                 "created_at":datetime.fromtimestamp(self.clock(),timezone.utc).isoformat(timespec="seconds"),
                 "reviewer_digest":"hmac-sha256:"+hmac.new(self.audit_key,user_id.encode(),hashlib.sha256).hexdigest(),
-                "action":"move","source_wiki_path":source,"source_wiki_sha256":actual_hash,
+                "action":action,"source_wiki_path":source,"source_wiki_sha256":actual_hash,
                 "wiki_path":target,"candidate_markdown":candidate,
-                "category_page_path":plan.page_path if plan else "",
-                "category_page_markdown":plan.page_markdown if plan else "","comment":"",
+                "category_page_path":category_page_path,
+                "category_page_markdown":category_page_markdown,"comment":"",
                 "snapshot_commit":commit,"snapshot_tree":tree,"snapshot_bundle_sha256":bundle_digest}
         record["decision_mac"]=decision_mac(record,self.queue_key)
         with queue_lock(self.queue_path):

@@ -269,6 +269,18 @@ class ReviewAppTests(unittest.TestCase):
         status, _, after = self.call("/knowledge/" + knowledge_identity, query="notice=moved", cookie=session)
         self.assertEqual(status, "200 OK")
         self.assertIn("已审核待发布，尚未实际移动", after.decode())
+        self.assertIn("撤回调整", after.decode())
+        cancel_nonce = re.search('name="form_nonce" value="([^"]+)"', after.decode()).group(1)
+        status, headers, _ = self.call(
+            "/move-decision", method="POST", cookie=session, origin=REVIEW_ORIGIN,
+            form={"form_nonce": cancel_nonce, "source_wiki_path": source_path,
+                  "source_wiki_sha256": digest, "action": "cancel_move", "return_item": ""},
+        )
+        self.assertEqual(status, "303 See Other")
+        self.assertIn("notice=move_canceled", dict(headers)["Location"])
+        records = [json.loads(line) for line in (self.root / "state/decisions.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(records[-1]["action"], "cancel_move")
+        self.assertNotIn(source_path, self.service._pending_moves(self.root / "repo"))
 
     def test_published_knowledge_list_redirects_but_unknown_detail_is_not_found(self):
         status, headers, _ = self.call("/knowledge", cookie=self.authenticate())
@@ -676,7 +688,7 @@ class ReviewAppTests(unittest.TestCase):
         self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         self.assertEqual((self.root / "state" / "publish-requested-at").read_text().strip(), str(self.clock_value))
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertIn('<button type="submit" class="is-busy" disabled aria-busy="true">自动发布中…</button>', page)
+        self.assertIn('<button type="submit" class="is-busy" disabled aria-busy="true">发布中…</button>', page)
         self.assertIn("发布进行中", page)
         self.assertNotIn("重试发布", page)
         self.publish_trigger.unlink()                                    # the privileged unit picked the marker up
@@ -691,7 +703,7 @@ class ReviewAppTests(unittest.TestCase):
         self.snapshot_time = self.clock_value + 90                       # the chain's last step rewrote the review data
         self.clock_value += 100
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertNotIn("自动发布中…", page)
+        self.assertNotIn("发布中…", page)
         self.assertNotIn("重试发布", page)
 
     def test_a_publish_that_never_refreshed_the_data_stops_blocking_after_fifteen_minutes(self):
@@ -700,7 +712,7 @@ class ReviewAppTests(unittest.TestCase):
         self.clock_value += 901
         page = self.call("/", cookie=session)[2].decode("utf-8")
         self.assertIn("重试发布", page)
-        self.assertIn("自动发布没有更新数据", page)
+        self.assertIn("发布没有更新数据", page)
 
     def test_a_pull_in_progress_greys_the_pull_button_and_the_decision_buttons_and_refuses_a_second_pull(self):
         session = self.busy_app()
@@ -783,7 +795,7 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/?notice=publish_triggered")
         self.assertNotEqual(trigger_path.read_text(), first_content)
 
-    def test_approval_automatically_arms_the_publish_chain(self):
+    def test_approval_waits_for_manual_publish(self):
         trigger_path = self.root / "state" / "publish-trigger-requested"
         publish_state = self.root / "state" / "publish-requested-at"
         self.service.publish_state_path = publish_state
@@ -792,12 +804,10 @@ class ReviewAppTests(unittest.TestCase):
         session = self.authenticate()
         _, form = self.decision_form(session)
         form.update(action="approve", wiki_path="wiki/01_Test/01-0001.md", candidate_markdown=CANDIDATE)
-        with self.assertLogs("web.review.auth", level="WARNING") as captured:
-            status, _, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
+        status, _, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
         self.assertEqual(status, "303 See Other")
-        self.assertEqual(trigger_path.read_text(encoding="utf-8"), "reviewer-1 1900000000\n")
-        self.assertEqual(publish_state.read_text(encoding="utf-8").strip(), str(self.clock_value))
-        self.assertIn("review_auto_publish requested user=reviewer-1", " ".join(captured.output))
+        self.assertFalse(trigger_path.exists())
+        self.assertFalse(publish_state.exists())
 
 
 class ReviewProxyConfigTests(unittest.TestCase):

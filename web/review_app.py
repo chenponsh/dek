@@ -51,7 +51,7 @@ auth_logger = logging.getLogger("web.review.auth")
 
 
 NOTICES = {
-    "approved": "已记录：批准发布。后台将自动构建并发布。",
+    "approved": "已记录：批准发布。请回到列表，确认后手动发布。",
     "rejected": "已记录：拒绝。",
     "decided": "决定已记录。",
     "ingest_triggered": "已提交拉取请求，新的来源会在后台抓取，稍后刷新查看。",
@@ -62,6 +62,7 @@ NOTICES = {
     "publish_triggered": "已提交发布请求，已批准的内容会在后台构建并发布，稍后刷新查看。",
     "publish_cooldown": "刚触发过一次发布，请稍等片刻再试。",
     "moved": "分类调整已审核待发布，尚未实际移动；发布后生效。",
+    "move_canceled": "分类调整已撤回，不会在下次发布时移动。",
 }
 STATUS_FILTERS = {"pending", "approved", "published", "rejected"}
 
@@ -342,12 +343,6 @@ class ReviewApp:
                 return self._response(start, status, status.encode("ascii"), (("Content-Type", "text/plain"),))
             rough_path = values.get("rough_path", [""])[0]
             action = values.get("action", [""])[0]
-            if action == "approve" and self.publish_trigger_path is not None:
-                now = self.clock()
-                self.publish_trigger_path.parent.mkdir(parents=True, exist_ok=True)
-                self.publish_trigger_path.write_text(f"{user_id} {int(now)}\n", encoding="utf-8")
-                self.service.record_publish_request(now)
-                auth_logger.warning("review_auto_publish requested user=%s", user_id)
             notice = ACTION_STATUS.get(action, "decided")
             location = "%s/item/%s?notice=%s" % (REVIEW_PREFIX, item_identity(rough_path), notice)
             position_status, position_page, position_size = list_position(parse_qs(environ.get("QUERY_STRING", "")))
@@ -388,8 +383,10 @@ class ReviewApp:
                 status = error.status if isinstance(error, ReviewError) else "400 Bad Request"
                 auth_logger.warning("review_move_rejected status=%s reason=%s", status, str(error) or type(error).__name__)
                 return self._response(start, status, status.encode("ascii"), (("Content-Type", "text/plain"),))
-            location = (f"{REVIEW_PREFIX}/item/{return_item}?notice=moved" if return_item
-                        else f"{REVIEW_PREFIX}/knowledge/{identity}?notice=moved")
+            move_action = parse_qs(body.decode("utf-8"), keep_blank_values=True).get("action", [""])[0]
+            notice = "move_canceled" if move_action == "cancel_move" else "moved"
+            location = (f"{REVIEW_PREFIX}/item/{return_item}?notice={notice}" if return_item
+                        else f"{REVIEW_PREFIX}/knowledge/{identity}?notice={notice}")
             return self._response(start, "303 See Other", headers=(("Location", location),))
 
         if path == "/trigger-ingest":

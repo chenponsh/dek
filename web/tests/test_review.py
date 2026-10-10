@@ -873,18 +873,18 @@ class ReviewWorkflowTests(unittest.TestCase):
         # The site-wide and form-wide hover rules stay untouched.
         self.assertIn("button[type=submit]:hover{filter:brightness(.94)}", page)
 
-    def test_list_only_offers_a_retry_publish_button_when_an_approval_is_waiting(self):
+    def test_list_only_offers_a_manual_publish_button_when_an_approval_is_waiting(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertNotIn('class="publish-trigger-form"', page)
 
         self.decide(action="approve")
         page = self.service.render_list("opaque-session").decode("utf-8")
-        self.assertIn('<button type="submit" data-busy-label="已提交…">重试发布（1）</button>', page)
+        self.assertIn('<button type="submit" data-busy-label="已提交…">发布已审核内容（1）</button>', page)
 
-    def test_decision_form_explains_that_approval_publishes_automatically(self):
+    def test_decision_form_explains_that_approval_waits_for_manual_publish(self):
         identity = self.service.list_items()[0].identity
         page = self.service.render_item("opaque-session", identity).decode("utf-8")
-        self.assertIn("批准后系统将自动发布，无需再次操作。", page)
+        self.assertIn("请回到列表手动发布", page)
 
     def test_detail_page_shows_content_and_issues_its_own_nonce(self):
         identity = self.service.list_items()[0].identity
