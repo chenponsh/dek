@@ -60,7 +60,7 @@ class GitSubprocessProxyEnvironmentTests(unittest.TestCase):
         with patch("deploy.release_bundle.subprocess.run", fake_run):
             _run(("true",), env={"LD_PRELOAD": "/tmp/evil.so", "PATH": "/tmp/evil"})
         self.assertNotIn("LD_PRELOAD", captured)
-        self.assertEqual(captured.get("PATH"), "/usr/bin:/bin")
+        self.assertEqual(captured.get("PATH"), "/opt/dek-vendor/python3.11/bin:/opt/dek-vendor/bin:/usr/bin:/bin")
 
     def test_clone_and_push_remote_carry_the_process_proxy_settings(self):
         from deploy.release_bundle import ReleasePublisher
@@ -107,9 +107,16 @@ class ReviewCredentialGateFieldsTests(unittest.TestCase):
                 b"DEK_REVIEW_AUDIT_KEY=" + self.AUDIT_KEY + b"\n"
                 b"DEK_WEB_CLAIM_SECRET=" + self.CLAIM_SECRET + b"\n"
                 b"DEK_REVIEWER_IDS=016523605824315385,12283255131204392\n"
+                b"DEK_REVIEW_DINGTALK_CLIENT_ID=ding-review-client\n"
+                b"DEK_REVIEW_DINGTALK_CLIENT_SECRET=" + self.DINGTALK_SECRET + b"\n"
+                b"DEK_REVIEW_DINGTALK_AGENT_ID=123456\n"
             ))
             values = _environment(path, "review")
-        self.assertEqual(set(values), {"DEK_REVIEW_AUDIT_KEY", "DEK_WEB_CLAIM_SECRET", "DEK_REVIEWER_IDS"})
+        self.assertEqual(set(values), {
+            "DEK_REVIEW_AUDIT_KEY", "DEK_WEB_CLAIM_SECRET", "DEK_REVIEWER_IDS",
+            "DEK_REVIEW_DINGTALK_CLIENT_ID", "DEK_REVIEW_DINGTALK_CLIENT_SECRET",
+            "DEK_REVIEW_DINGTALK_AGENT_ID",
+        })
 
     def test_the_environment_review_app_cannot_start_with_is_rejected(self):
         # No DEK_WEB_CLAIM_SECRET (what web/review_app.py:main() actually

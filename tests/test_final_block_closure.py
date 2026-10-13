@@ -167,7 +167,7 @@ class SourceIngestProofTests(unittest.TestCase):
         run = source.index("result=module.main(candidate_argv)")
         persisted = source.index("persist_current_report(repo, before_reports, args.proof_output,")
         early_return = source.index("if result: return result")
-        clone_removal = source.index("shutil.rmtree(temporary)")
+        clone_removal = source.index("shutil.rmtree(temporary)", persisted)
         self.assertLess(dispatch, run)
         self.assertLess(run, persisted)
         self.assertLess(persisted, early_return)
