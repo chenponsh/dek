@@ -175,11 +175,10 @@ class FinalizeCrashRecoveryTests(unittest.TestCase):
             self.assertEqual(json.loads(after), original_release)
             self.assertFalse((package / "release.sig").exists())
 
-            # A retry (the real recovery path: process_decision() calls
-            # finalize() again when release.sig is still missing) now works.
+            # A retry can validate and canonicalize the build again.
             final = publisher.finalize(package)
             self.assertEqual(final["artifacts"], original_release["artifacts"])
-            self.assertTrue((package / "release.sig").exists())
+            self.assertFalse((package / "release.sig").exists())
 
     def test_overwrite_in_place_never_creates_chmods_or_renames_the_path(self):
         from deploy.release_bundle import _overwrite_in_place
@@ -285,6 +284,35 @@ class PublisherActivationGateTests(unittest.TestCase):
             (candidate / "activation-ready.json").write_text(json.dumps({**gate, "release_sha256": "0" * 64}), encoding="utf-8")
             with self.assertRaisesRegex(ActivationError, "activation gate"):
                 activator._validate_release(candidate)
+
+    def test_legacy_release_signature_gate_remains_accepted(self):
+        from deploy.release_bundle import _canonical_activation_ready, _canonical_release
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            key, package, publisher, approval = self._package(root)
+
+            def successful_run(arguments, **kwargs):
+                if "rev-parse" in arguments:
+                    return (approval["commit"] if "commit" in arguments[-1] else approval["tree"]).encode() + b"\n"
+                return b""
+
+            with patch("deploy.release_bundle._run", side_effect=successful_run):
+                publisher.publish(package)
+            metadata = json.loads((package / "release.json").read_text(encoding="utf-8"))
+            release_signature = key.sign(_canonical_release(metadata))
+            (package / "release.sig").write_bytes(release_signature)
+            gate = json.loads((package / "activation-ready.json").read_text(encoding="utf-8"))
+            gate["release_signature_sha256"] = hashlib.sha256(release_signature).hexdigest()
+            (package / "activation-ready.json").write_text(json.dumps(gate), encoding="utf-8")
+            (package / "activation-ready.sig").write_bytes(key.sign(_canonical_activation_ready(gate)))
+
+            config = ActivatorConfig.under(root / "activate")
+            config.prepare()
+            candidate = config.build_inbox / package.name
+            os.replace(package, candidate)
+            activator = Activator(config, proof_reader=lambda kind, expected: dict(expected), approval_key=key.public_key())
+            activator._validate_release(candidate)
 
 
 class StrictReadinessMarkerTests(unittest.TestCase):

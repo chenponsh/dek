@@ -604,6 +604,15 @@ class ReleasePublisher:
         return digests
 
     def finalize(self, package: Path) -> dict:
+        """Validate and canonicalize the builder output before publication.
+
+        The publisher used to create a separate ``release.sig`` here and then
+        sign ``activation-ready.json`` with the same key a few lines later.
+        The activation gate already binds the exact ``release.json`` digest,
+        Git identity and queue snapshot, so the extra signature added no
+        boundary.  Keep this validation step, but use the single activation
+        signature as the publisher-to-activator authorization.
+        """
         approval=json.loads((package/"approval.json").read_text(encoding="utf-8"))
         try: self.signing_key.public_key().verify((package/"approval.sig").read_bytes(),_canonical(approval))
         except Exception as exc: raise BundleError("prepared approval signature invalid") from exc
@@ -614,19 +623,10 @@ class ReleasePublisher:
         actual=self._complete_static_inventory(package)
         if claimed.get("artifacts")!=actual: raise BundleError("built artifacts differ from release bytes")
         final={**approval,"generation":generation,"artifacts":actual}
-        # Fail-closed DAC contract (DAC_MATRIX build-to-activator / publisher-signs-build):
-        # release.json is owned by dek-builder and its activator-readable 0664 mode is the
-        # builder's contract, set once by builder_entrypoint.make_activator_readable() before
-        # the atomic rename.  Overwriting it here (write_text truncates in place) does NOT
-        # change its mode, and the publisher -- not the owner and with an empty capability
-        # set -- MUST NOT chmod it: that would raise EPERM (no CAP_FOWNER) and block every
-        # finalize.  release.sig is created here and owned by the publisher, so pinning it to
-        # 0664 is both allowed and required.  Never touch directory setgid semantics here.
+        # release.json is builder-owned and already activator-readable.  Preserve
+        # its inode and mode: the publisher has no CAP_FOWNER and must not chmod it.
         release_json=package/"release.json"
         _overwrite_in_place(release_json, (json.dumps(final,sort_keys=True,separators=(",",":"))+"\n").encode())
-        release_sig=package/"release.sig"
-        release_sig.write_bytes(self.signing_key.sign(_canonical_release(final)))
-        os.chmod(release_sig,0o664)
         return final
 
     def publish(self, package: Path, *, queue_snapshot: dict | None = None) -> dict:
@@ -649,21 +649,21 @@ class ReleasePublisher:
         never pass dek-activator's own freshness check anyway, so keeping
         an old one around would just relearn this exact failure mode.
         """
-        if not (package/"release.json").is_file() or not (package/"release.sig").is_file():
-            raise BundleError("final release build gate missing")
+        if not (package/"release.json").is_file():
+            raise BundleError("final release build missing")
         approval=json.loads((package/"approval.json").read_text(encoding="utf-8"))
         try: self.signing_key.public_key().verify((package/"approval.sig").read_bytes(),_canonical(approval))
         except Exception as exc: raise BundleError("prepared approval signature invalid") from exc
-        final=json.loads((package/"release.json").read_text(encoding="utf-8"))
-        try: self.signing_key.public_key().verify((package/"release.sig").read_bytes(),_canonical_release(final))
-        except Exception as exc: raise BundleError("final release signature invalid") from exc
+        final=self.finalize(package)
+        release_payload=(json.dumps(final,sort_keys=True,separators=(",",":"))+"\n").encode()
+        if (package/"release.json").read_bytes()!=release_payload:
+            raise BundleError("final release changed after validation")
         if any(final.get(key)!=value for key,value in approval.items()): raise BundleError("final release approval mismatch")
         bundle=package/"repository.bundle"
         if _digest(bundle)!=approval.get("bundle_sha256") or approval.get("origin")!=self.origin: raise BundleError("prepared bundle binding invalid")
         gate={"schema_version":1,"status":"pushed","generation":final["generation"],
               "commit":final["commit"],"tree":final["tree"],"bundle_sha256":final["bundle_sha256"],
-              "release_sha256":_digest(package/"release.json"),
-              "release_signature_sha256":_digest(package/"release.sig")}
+              "release_sha256":hashlib.sha256(release_payload).hexdigest()}
         if queue_snapshot is not None:
             if set(queue_snapshot) != {"decision_queue_sha256", "decision_queue_size"}:
                 raise BundleError("invalid decision queue snapshot")

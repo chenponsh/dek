@@ -143,7 +143,7 @@ class PushBoundaryTests(unittest.TestCase):
             approved = root / "approved"; approved.mkdir()
             builds = root / "builds"; builds.mkdir()
             build = builds / "approve-12345678-n"; build.mkdir()
-            (build / "release.json").write_text("{}"); (build / "release.sig").write_bytes(b"sig")
+            (build / "release.json").write_text("{}")
             self.assertEqual(process_decision(FakePublisher(), decision, approved, builds, archive, push_authorizer), "pushed")
         self.assertEqual(events, ["authorize", "publish"])
 

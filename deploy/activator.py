@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from deploy.release_bundle import BundleError, GENERATION_PATTERN, _canonical, _canonical_activation_ready, _canonical_release, approval_generation
+from deploy.release_bundle import BundleError, GENERATION_PATTERN, _canonical_activation_ready, approval_generation
 from deploy.fsutil import atomic_write_json, fsync_dir
 
 
@@ -174,24 +174,19 @@ class Activator:
             if not HEX.fullmatch(str(metadata.get("commit",""))) or not HEX.fullmatch(str(metadata.get("tree",""))) or not re.fullmatch(r"[0-9a-f]{64}",str(metadata.get("bundle_sha256",""))): raise ActivationError("builder object binding invalid")
             if self.approval_key is None: raise ActivationError("approval verification key missing")
             try:
-                approval=json.loads((source/"approval.json").read_text(encoding="utf-8"))
-                self.approval_key.verify((source/"approval.sig").read_bytes(),_canonical(approval))
-                self.approval_key.verify((source/"release.sig").read_bytes(),_canonical_release(metadata))
-            except Exception as exc: raise ActivationError("signed release approval invalid") from exc
-            for key in ("decision_id","decision_sha256","nonce","origin","commit","tree","bundle_sha256"):
-                if metadata.get(key)!=approval.get(key): raise ActivationError("release is not approval-bound")
-            try: approved_generation=approval_generation(approval.get("decision_id"), approval.get("nonce"))
-            except BundleError as exc: raise ActivationError("builder identity invalid") from exc
-            if metadata.get("generation") != approved_generation: raise ActivationError("generation is not decision-derived")
-            try:
                 gate=json.loads((source/"activation-ready.json").read_text(encoding="utf-8"))
                 self.approval_key.verify((source/"activation-ready.sig").read_bytes(),_canonical_activation_ready(gate))
             except Exception as exc:
                 raise ActivationError("activation gate invalid") from exc
             expected_gate={"schema_version":1,"status":"pushed","generation":metadata["generation"],
                            "commit":metadata["commit"],"tree":metadata["tree"],"bundle_sha256":metadata["bundle_sha256"],
-                           "release_sha256":file_digest(source/"release.json"),
-                           "release_signature_sha256":file_digest(source/"release.sig")}
+                           "release_sha256":file_digest(source/"release.json")}
+            # Existing candidates made before the simplified one-signature
+            # protocol remain valid during rollout and rollback.
+            if "release_signature_sha256" in gate:
+                legacy_signature=source/"release.sig"
+                if not legacy_signature.is_file(): raise ActivationError("legacy release signature missing")
+                expected_gate["release_signature_sha256"]=file_digest(legacy_signature)
             if "parent_commit" in metadata:
                 expected_gate["parent_commit"] = metadata["parent_commit"]
             queue_fields={"decision_queue_sha256","decision_queue_size"}

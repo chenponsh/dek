@@ -3,9 +3,8 @@ decision-to-publisher	dek-review	dek-publisher	/var/lib/dek-review/decisions	dek
 decision-snapshot-to-activator	dek-review	dek-activator	/var/lib/dek-review/decisions	dek-review:dek-decision-read	2750	append under queue lock	read-only hash under same lock; no decision MAC key
 publisher-to-builder	dek-publisher	dek-builder	/var/spool/dek-build/approved	dek-publisher:dek-approved-read	2750	write	read-only
 build-to-activator	dek-builder	dek-activator	/var/spool/dek-activate/builds	dek-builder:dek-build-write	2775	write + make_activator_readable (files 0664)	read-only
-publisher-signs-build	dek-publisher	dek-activator	/var/spool/dek-activate/builds	dek-builder:dek-build-write	2775	write release.sig only; never chmod release.json	verify-only
-publisher-activation-gate	dek-publisher	dek-activator	/var/spool/dek-activate/builds/*/activation-ready.{json,sig}	dek-publisher:dek-build-write	0664	write only after successful push	read and signature-verify
-# publisher-signs-build cross-component contract: release.json is builder-owned and its activator-readable 0664 comes solely from builder_entrypoint.make_activator_readable(); overwriting it does not change its mode, and the publisher (not the owner, empty capability set) must not chmod it — that would EPERM without CAP_FOWNER and block finalize.
+publisher-activation-gate	dek-publisher	dek-activator	/var/spool/dek-activate/builds/*/{release.json,activation-ready.json,activation-ready.sig}	dek-builder:dek-build-write	0664	validate release.json; sign gate only after successful push	read, hash and signature-verify
+# release.json remains builder-owned and receives its activator-readable 0664 mode from builder_entrypoint.make_activator_readable(); publisher validation overwrites bytes in place and never chmods it. The signed activation gate binds its exact digest.
 review-bundle-to-publisher	dek-review	dek-publisher	/var/lib/dek-review/bundle-archive	dek-review:dek-bundle-read	2750	archive	read-only
 activator-to-web-qa	dek-activator	dek-web,dek-qa	/var/lib/dek-activate/releases	dek-activator:dek-release-read	2750	write	read-only
 outcome-to-publisher	dek-activator	dek-publisher	/var/lib/dek-activate/outcomes	dek-activator:dek-outcome-read	2750	write	read-only

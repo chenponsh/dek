@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives import serialization
 
 from deploy.activator import ActivationError, Activator, ActivatorConfig, file_digest, atomic_json as activator_atomic_json
 from deploy.activator_entrypoint import order_candidates_by_ancestry
-from deploy.release_bundle import BundleBuilder, BundleError, ReleasePublisher, _canonical_release
+from deploy.release_bundle import BundleBuilder, BundleError, ReleasePublisher
 from deploy.readiness import ReadinessError, validate_configuration
 from qa.dek_qa.index import build_index
 from qa.dek_qa.mcp_server import ActiveIndex
@@ -137,7 +137,7 @@ class BundleBoundarySliceTests(unittest.TestCase):
                     activator.activate(source)
             self.assertFalse(config.active.exists())
 
-    def test_final_generation_and_complete_artifacts_are_publisher_signed(self):
+    def test_final_generation_and_complete_artifacts_are_publisher_validated(self):
         key=Ed25519PrivateKey.generate()
         with tempfile.TemporaryDirectory() as temporary:
             package=Path(temporary)
@@ -152,7 +152,8 @@ class BundleBoundarySliceTests(unittest.TestCase):
             final=publisher.finalize(package)
             self.assertEqual(final["generation"],"decision-12345678-decision-12345678")
             self.assertEqual(final["artifacts"],artifacts)
-            key.public_key().verify((package/"release.sig").read_bytes(), _canonical_release(final))
+            self.assertFalse((package/"release.sig").exists())
+            self.assertEqual(json.loads((package/"release.json").read_text()),final)
 
     def test_publish_refuses_to_push_before_fixed_build_gate(self):
         key=Ed25519PrivateKey.generate(); publisher=object.__new__(ReleasePublisher); publisher.signing_key=key; publisher.origin="https://github.com/chenponsh/dek.git"
@@ -192,7 +193,6 @@ class BundleBoundarySliceTests(unittest.TestCase):
                 output.mkdir(parents=True,exist_ok=False)
                 (output/"approval.json").write_text(json.dumps({"decision_id":decision["decision_id"],"nonce":decision["decision_id"]}))
                 calls.append(("prepare",decision["decision_id"]))
-            def finalize(self,package): (package/"release.sig").write_text("sig"); calls.append(("finalize",package.name))
             def publish(self,package): calls.append(("publish",package.name))
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary); approved=root/"approved"; approved.mkdir(); builds=root/"builds"; builds.mkdir(); archive=root/"archive"; archive.mkdir()
@@ -203,7 +203,6 @@ class BundleBoundarySliceTests(unittest.TestCase):
             build=builds/"decision-12345678-decision-12345678"; build.mkdir(); (build/"release.json").write_text("{}")
             self.assertEqual(process_decision(pub,decision,approved,builds,archive),"pushed")
             self.assertEqual(process_decision(pub,decision,approved,builds,archive),"pushed")
-            self.assertEqual(calls.count(("finalize","decision-12345678-decision-12345678")),1)
             self.assertEqual(calls.count(("publish","decision-12345678-decision-12345678")),2)
             self.assertIn(("verify","deadbeef.bundle"),calls)
     def test_builder_crash_never_leaves_complete_target_and_retry_recovers(self):
@@ -534,7 +533,8 @@ class Round3SliceTests(unittest.TestCase):
                 process_decision(publisher, decision, approved, builds, archive)
             except (BundleError, FileNotFoundError, OSError):
                 pass
-            self.assertTrue((builds / generation / "release.sig").is_file(), "publisher must locate the generation directory and finalize")
+            self.assertFalse((builds / generation / "release.sig").exists(), "current releases use only the signed activation gate")
+            self.assertEqual(json.loads((builds / generation / "release.json").read_text())["generation"], generation)
 
     def test_activator_is_read_only_on_builds_dac_declaration(self):
         sysusers = Path("deploy/sysusers/dek-review-deploy.conf").read_text(encoding="utf-8")
@@ -915,15 +915,13 @@ class Round5SliceTests(unittest.TestCase):
 
 
 class Round9SliceTests(unittest.TestCase):
-    """Round 9: publisher finalize overwrites the builder-owned release.json without EPERM.
+    """Publisher validation overwrites the builder-owned release.json without EPERM.
 
     Cross-component DAC contract: the builder's ``make_activator_readable()`` is the sole
     source of ``release.json``'s activator-readable 0664 mode.  Overwriting a file in place
     (``write_text`` truncates, it does not recreate the inode) never changes its mode, and
     the publisher is not ``release.json``'s owner (``dek-builder`` owns it), so the publisher
-    MUST NOT ``chmod`` ``release.json`` -- that would raise EPERM without ``CAP_FOWNER`` and
-    block every finalize.  The publisher only ``chmod``s ``release.sig``, which it created
-    and therefore owns.
+    MUST NOT ``chmod`` ``release.json`` -- that would raise EPERM without ``CAP_FOWNER``.
     """
 
     REPO_ROOT = str(Path(__file__).resolve().parents[2])
@@ -980,10 +978,10 @@ class Round9SliceTests(unittest.TestCase):
         return subprocess.run(command, cwd=self.REPO_ROOT, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, text=True)
 
-    def test_finalize_chmods_only_publisher_owned_release_sig(self):
+    def test_finalize_does_not_chmod_builder_owned_release(self):
         code = Path("deploy/release_bundle.py").read_text(encoding="utf-8")
-        self.assertIn("os.chmod(release_sig", code)
         self.assertNotIn("os.chmod(release_json", code)
+        self.assertNotIn("release_sig.write_bytes", code)
 
     @unittest.skipUnless(os.geteuid() == 0 and shutil.which("setpriv"), "requires root and setpriv")
     def test_finalize_as_publisher_overwrites_builder_release_json_without_eperm_and_preserves_mode(self):
@@ -1017,16 +1015,7 @@ class Round9SliceTests(unittest.TestCase):
             self.assertEqual(final["generation"], "decision-12345678-decision-12345678")
             self.assertEqual(final["artifacts"], artifacts)
 
-            # release.sig: publisher-created and publisher-owned, chmod 0664 (other-read,
-            # group-write, owner-write; never other-write).
-            sig = package / "release.sig"
-            self.assertTrue(sig.is_file())
-            sig_mode = stat.S_IMODE(sig.stat().st_mode)
-            self.assertEqual(sig_mode & 0o004, 0o004, "release.sig must be other-readable")
-            self.assertEqual(sig_mode & 0o002, 0, "release.sig must not be other-writable")
-            self.assertEqual(sig_mode & 0o020, 0o020, "release.sig must be group-writable")
-            self.assertEqual(sig_mode & 0o200, 0o200, "release.sig must be owner-writable")
-            key.public_key().verify(sig.read_bytes(), _canonical_release(final))
+            self.assertFalse((package / "release.sig").exists())
 
             # approval.* and the static artifacts are untouched by finalize.
             for name, (digest, mode) in untouched.items():
@@ -1051,8 +1040,7 @@ class Round9SliceTests(unittest.TestCase):
                 publisher.finalize(package)
             finally:
                 os.umask(old)
-            modes = {n: stat.S_IMODE((package / n).stat().st_mode) for n in ("release.json", "release.sig")}
-            digests = {n: hashlib.sha256((package / n).read_bytes()).hexdigest() for n in ("release.json", "release.sig")}
+            mode = stat.S_IMODE((package / "release.json").stat().st_mode)
             commit, tree = approval["commit"], approval["tree"]
 
             def fake_run(arguments, *, cwd=None, env=None, timeout=120):
@@ -1071,11 +1059,8 @@ class Round9SliceTests(unittest.TestCase):
 
             with mock.patch.object(rb, "_run", side_effect=fake_run):
                 publisher.publish(package)
-            for name in ("release.json", "release.sig"):
-                self.assertEqual(stat.S_IMODE((package / name).stat().st_mode), modes[name],
-                                 f"{name} mode must survive publish")
-                self.assertEqual(hashlib.sha256((package / name).read_bytes()).hexdigest(), digests[name],
-                                 f"{name} content must survive publish")
+            self.assertEqual(stat.S_IMODE((package / "release.json").stat().st_mode), mode)
+            self.assertFalse((package / "release.sig").exists())
 
 
 class PrepareChangeRoughPromotionTests(unittest.TestCase):

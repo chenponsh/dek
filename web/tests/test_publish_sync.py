@@ -188,16 +188,14 @@ class SyncEntrypointTests(unittest.TestCase):
                 (output / "approval.json").write_text(json.dumps(meta))
                 (output / "repository.bundle").write_bytes(b"")
                 return meta
-            def finalize(self, build): outer.calls.append("finalize"); (build / "release.sig").write_bytes(b"s")
             def publish(self, build, **kwargs): outer.calls.append(("publish", sorted(kwargs)))
         return Fake()
 
-    def build_done(self, release_id="sync-0123456789abcdef", *, signed=False):
+    def build_done(self, release_id="sync-0123456789abcdef"):
         build = self.builds / f"{release_id}-{release_id}"
         build.mkdir()
         (build / "release.json").write_text(json.dumps({"decision_sha256": "d" * 64, "nonce": release_id, "generation": f"{release_id}-{release_id}", "origin": "o",
                                                        "commit": "c" * 40, "tree": "t" * 40, "bundle_sha256": "b" * 64, "artifacts": {"site/index.html": "a" * 64}, "parent_commit": "p" * 40}))
-        if signed: (build / "release.sig").write_bytes(b"s")
 
     def test_nothing_to_remove_does_nothing(self):
         from deploy.publisher_entrypoint import process_sync
@@ -211,19 +209,19 @@ class SyncEntrypointTests(unittest.TestCase):
         self.assertEqual(process_sync(self.publisher(), self.approved, self.builds), ("sync-0123456789abcdef", "wait"))   # the same state: no second package
         self.assertEqual([p.name for p in self.approved.iterdir()], ["sync-0123456789abcdef"])
 
-    def test_a_built_release_is_signed_and_pushed_with_the_queue_snapshot(self):
+    def test_a_built_release_is_pushed_with_the_queue_snapshot(self):
         from deploy.publisher_entrypoint import process_sync
         process_sync(self.publisher(), self.approved, self.builds); self.build_done()
         self.calls.clear()
         result = process_sync(self.publisher(), self.approved, self.builds, lambda: {"decision_queue_sha256": "q" * 64, "decision_queue_size": 0})
         self.assertEqual(result, ("sync-0123456789abcdef", "pushed"))
-        self.assertEqual(self.calls, ["prepare", "finalize", ("publish", ["queue_snapshot"])])
+        self.assertEqual(self.calls, ["prepare", ("publish", ["queue_snapshot"])])
 
-    def test_an_already_signed_build_is_not_signed_again(self):
+    def test_a_built_release_does_not_need_an_intermediate_signature(self):
         from deploy.publisher_entrypoint import process_sync
-        process_sync(self.publisher(), self.approved, self.builds); self.build_done(signed=True); self.calls.clear()
+        process_sync(self.publisher(), self.approved, self.builds); self.build_done(); self.calls.clear()
         process_sync(self.publisher(), self.approved, self.builds)
-        self.assertNotIn("finalize", self.calls)
+        self.assertEqual(self.calls, ["prepare", ("publish", [])])
 
     def test_the_state_record_carries_what_the_activator_checks(self):
         from deploy.publisher_entrypoint import published_result
@@ -257,7 +255,7 @@ class SyncEntrypointTests(unittest.TestCase):
 
     def test_once_every_decision_is_published_the_sync_runs_and_records_its_state(self):
         decisions = [{"decision_id": "decision-1-0123456789"}, {"decision_id": "decision-2-0123456789"}]
-        self.build_done(signed=True)
+        self.build_done()
         (self.approved / "sync-0123456789abcdef").mkdir()
         (self.approved / "sync-0123456789abcdef/approval.json").write_text(json.dumps({"decision_id": "sync-0123456789abcdef", "nonce": "sync-0123456789abcdef"}))
         written = self.run_sync(decisions, self.publisher(), states={"decision-1-0123456789": "activated", "decision-2-0123456789": "published"})
@@ -267,7 +265,7 @@ class SyncEntrypointTests(unittest.TestCase):
 
     def test_a_decision_that_can_never_be_published_does_not_hold_the_sync_back(self):
         dead = {"status": "failed", "retryable": False, "last_error": "rough source is unreadable"}
-        self.build_done(signed=True)
+        self.build_done()
         (self.approved / "sync-0123456789abcdef").mkdir()
         (self.approved / "sync-0123456789abcdef/approval.json").write_text(json.dumps({"decision_id": "sync-0123456789abcdef", "nonce": "sync-0123456789abcdef"}))
         written = self.run_sync([{"decision_id": "decision-1-0123456789"}, {"decision_id": "decision-2-0123456789"}], self.publisher(),

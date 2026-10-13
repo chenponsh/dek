@@ -122,7 +122,7 @@ def process_decision(publisher, decision: dict, approved_root: Path, builds_root
     """Deterministic, idempotent per-decision publish step.
 
     Returns "wait" when the fixed builder has not yet produced a build, otherwise
-    finalizes (signs) the built release and pushes. Safe to retry from any crash
+    validates the built release, signs the activation gate and pushes. Safe to retry from any crash
     window: an incomplete staging/preparing directory is discarded and rebuilt, and
     ``publish`` re-verifies the signed bundle before an idempotent push.
     """
@@ -146,8 +146,6 @@ def process_decision(publisher, decision: dict, approved_root: Path, builds_root
     build = builds_root / generation
     if not (build / "release.json").is_file():
         return "wait"
-    if not (build / "release.sig").is_file():
-        publisher.finalize(build)
     snapshot = push_authorizer(decision) if push_authorizer is not None else None
     if snapshot is None:
         publisher.publish(build)
@@ -197,7 +195,6 @@ def process_batch(publisher, decisions: list[dict], approved_root: Path, builds_
     approval_meta=json.loads((target/"approval.json").read_text(encoding="utf-8"))
     build=builds_root/f'{approval_meta["decision_id"]}-{approval_meta["nonce"]}'
     if not (build/"release.json").is_file(): return batch_id,"wait"
-    if not (build/"release.sig").is_file(): publisher.finalize(build)
     snapshot=push_authorizer(decisions) if push_authorizer is not None else None
     publisher.publish(build,**({"queue_snapshot":snapshot} if snapshot is not None else {}))
     return batch_id,"pushed"
@@ -225,8 +222,6 @@ def process_sync(publisher, approved_root: Path, builds_root: Path, push_authori
     build = builds_root / f'{meta["decision_id"]}-{meta["nonce"]}'
     if not (build / "release.json").is_file():
         return release_id, "wait"
-    if not (build / "release.sig").is_file():
-        publisher.finalize(build)
     snapshot = push_authorizer() if push_authorizer is not None else None
     if snapshot is None:
         publisher.publish(build)
