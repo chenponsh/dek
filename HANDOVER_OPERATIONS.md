@@ -41,7 +41,7 @@
 | 抓取配置 | `ingestion/automation/config.json`（来源清单、`earliest_date`） |
 | 抓取程序 | `ingestion/automation/{cli.py,sources.py,fetchers.py,core.py}` |
 
-审核页按钮：`立即拉取最新源`（→ 抓取）、`发布已批准内容`（→ 发布）。抓取约 1～2 分钟，结束后审核页数据快照才更新。
+审核页按钮：`立即拉取最新源`（→ 抓取）、`发布已批准内容`（→ 发布）。抓取约 1～2 分钟，结束后审核页数据快照才更新；发布期间列表每 5 秒自动刷新并显示准备、构建、推送、激活、刷新阶段和已用时间。
 
 ## 2. 每次改动的标准流程
 
@@ -80,6 +80,7 @@
 - 用户批准一条草稿 → 点“发布” → 链路约 1.5 分钟 → 线上版本号 `sequence` +1，`publish_check.sh` 应显示新的 `LIVE: sequence`。
 - 发布结束后会自动刷新审核页的数据快照，草稿显示为“已发布”。
 - 网页只有一个“发布已审核内容”按钮；用户批量批准后点一次即可。一次点击时待发布的多条决定仍逐条校验、逐条保留审计记录，但合成一个签名发布包，只构建、推送和启用一次；任一条校验失败则整批不上线。
+- 发布器每次运行只增量更新一次持久 Git 对象缓存；同一批决定在一个隔离工作区中逐条校验和提交，只生成一次 bundle。激活后审核快照直接复用已校验发布包中的 `main` bundle，不再联网重拉仓库；复用前仍核对激活元数据、release 身份、bundle 哈希和 `main` 指向。
 - **2026-03-01 及之后的原始资料，批准前不公开**（`web/site.py` 的 `_hold_back_unapproved_source`，用户 2026-09-21 定的规则）：摄入会把新抓的来源笔记/表格行直接写进仓库，但网站构建时会把它们拿掉——带 `date` 的来源笔记要有已批准的 wiki 条目通过 `source:` 指向它才保留；来源表格里日期 ≥ 2026-03-01 的行，要有指向该来源笔记、且问题文字对得上的 wiki 条目才保留。数据没删，条目批准并发布后下一次构建自然出现。`SOURCE_APPROVAL_FLOOR` 必须等于 `ingestion/automation/config.json` 的 `earliest_date`（有测试守着）。问答机器人的索引本来就只含 wiki。
 - 已知的死决定：`FdW3lrI_…`（一条已不存在的北京旧草稿）。日志里的 `DEK publish skipped … cannot be retried` 就是它，不是新故障；审核页会把它显示成“已发布”（草稿不在了），仅显示问题。
 
@@ -137,7 +138,7 @@ journalctl -u dek-builder.service --since -15min --no-pager | grep -E "DEK build
 **已上线/已装的改动**
 - **审核人**：名单在 `/var/lib/dek-review/secrets/environment` 的 `DEK_REVIEWER_IDS`（逗号分隔，root 可写，0400，含密钥，**只读那一行**：`grep '^DEK_REVIEWER_IDS='`）。加人 = 备份该文件到 `/var/backups/dek-review/` → 改这一行 → `systemctl restart dek-review`（会让已打开的批准表单失效）。新审核人**还必须在钉钉应用的“可见范围”里**，否则登录回调 403（日志 `dingtalk_callback_failed reason=not_kbot_allowed`），这一步只能在钉钉后台由应用管理员做。名字只有在此人登录并处理过条目后才会出现在审核记录里；目前 3 个 ID：`016523605824315385`（彭文艳）、`01086234663824398893`、`01652031411213823`（后两位尚无登录记录，名字未知）。
 - **来源列表**：审核页目录里“首页”下面的“来源列表”（`/review/sources`，仅审核人）：15 个来源，每个显示网址和“已抓到的最新发布日期”（按来源笔记，不是 wiki）。
-- **审核页按钮**：批准/拒绝/拉取/发布点击后变灰转圈，进行中刷新仍是灰的；发布进度记在 `/var/lib/dek-review/state/publish-requested-at`；进行中再点会被服务端拒绝。数据快照/抓取中/发布中合成一条提示。详情页和列表同宽。页眉有用户名和退出。
+- **审核页按钮**：批准/拒绝/拉取/发布点击后变灰转圈，进行中刷新仍是灰的；发布进度记在 `/var/lib/dek-review/state/publish-requested-at` 和 `publish-stage-*` 标记；列表每 5 秒自动刷新并显示当前阶段和已用时间，进行中再点会被服务端拒绝。数据快照/抓取中/发布中合成一条提示。详情页和列表同宽。页眉有用户名和退出。
 - **审核页不再把“草稿和页面都没了”的批准记录显示为已发布**，它们占用的 wiki 编号也释放（重置后必然出现这种记录）。
 - **机器人（钉钉）**：来源行和列表由程序生成（`source_line`、`publications_text`），**只给官网来源网址，任何时候不给知识库地址**（曾因兜底规则让模型偶尔给出 regkb 地址）；`dek_kb_recent` 支持 `since`/`until` 精确日期范围，数量以 `publication_count` 为准；同问题同解答同日期的条目在索引里合并显示。运行用的 SOUL 是另一个文件 `/var/lib/dek-qa/hermes/profiles/dek-qa/SOUL.md`（改仓库里的 `qa/config/SOUL.md` 后要复制过去再重启 dek-qa，备份放 `/var/backups/dek-qa/`）。**实际回复排版没在钉钉里实测过**。
 - **摄入**：草稿序号避开历史报告里用过的名字（重置后同日重抓不会和旧批准记录重名）；同一次抓取内“问题+解答完全相同”的行合成一份草稿（`rough_also_sources`）。

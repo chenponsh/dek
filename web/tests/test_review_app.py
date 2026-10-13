@@ -1,6 +1,7 @@
 import io
 import hashlib
 import json
+import os
 import re
 import shutil
 import socket
@@ -698,11 +699,17 @@ class ReviewAppTests(unittest.TestCase):
         self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         self.assertEqual((self.root / "state" / "publish-requested-at").read_text().strip(), str(self.clock_value))
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertIn('<button type="submit" class="is-busy" disabled aria-busy="true">发布中…</button>', page)
-        self.assertIn("发布进行中", page)
+        self.assertIn('<button type="submit" class="is-busy" disabled aria-busy="true">等待任务启动…</button>', page)
+        self.assertIn("发布进行中：等待任务启动", page)
+        self.assertIn("data-publish-progress=true",page)
         self.assertNotIn("重试发布", page)
+        stage=self.root/"state"/"publish-stage-build"; stage.touch(); os.utime(stage,(self.clock_value+1,self.clock_value+1))
+        self.clock_value += 65
+        page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertIn("执行检查与构建…",page)
+        self.assertIn("已用时 1 分 5 秒",page)
         self.publish_trigger.unlink()                                    # the privileged unit picked the marker up
-        self.clock_value += 120                                           # past the cooldown, but still running
+        self.clock_value += 55                                            # past the cooldown, but still running
         status, headers, _ = self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         self.assertEqual((status, dict(headers)["Location"]), ("303 See Other", REVIEW_PREFIX + "/?notice=publish_already"))
         self.assertFalse(self.publish_trigger.exists())                  # nothing was queued
@@ -713,7 +720,7 @@ class ReviewAppTests(unittest.TestCase):
         self.snapshot_time = self.clock_value + 90                       # the chain's last step rewrote the review data
         self.clock_value += 100
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertNotIn("发布中…", page)
+        self.assertNotIn("等待任务启动…", page)
         self.assertNotIn("重试发布", page)
 
     def test_a_publish_that_never_refreshed_the_data_stops_blocking_after_fifteen_minutes(self):

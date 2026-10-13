@@ -176,19 +176,14 @@ def process_batch(publisher, decisions: list[dict], approved_root: Path, builds_
     if not target.exists():
         staging=approved_root/(".preparing-"+batch_id)
         if staging.exists(): shutil.rmtree(staging)
-        staging.mkdir()
-        chain=None; first_parent=None; final_part=None
+        staging.mkdir(); final_part=staging/"batch"
         try:
-            for number,decision in enumerate(decisions):
-                part=staging/(f"{number:04d}-"+decision["decision_id"])
-                kwargs={"chain_from":chain} if chain is not None else {}
-                try: approval=publisher.prepare_change(part,decision,**kwargs)
-                except (Exception,SystemExit) as exc: raise BatchDecisionError(decision["decision_id"],exc) from exc
-                if number==0: first_parent=approval.get("parent_commit")
-                chain={"bundle":str(part/"repository.bundle"),"commit":approval["commit"]}
-                final_part=part
-            rebound=publisher.bind_batch_approval(final_part,decisions,parent_commit=first_parent)
-            if rebound.get("decision_id")!=batch_id: raise RuntimeError("publication batch identity mismatch")
+            try: approval=publisher.prepare_batch(final_part,decisions)
+            except (Exception,SystemExit) as exc:
+                failed=getattr(exc,"decision_id",decisions[0]["decision_id"])
+                cause=getattr(exc,"cause",exc)
+                raise BatchDecisionError(failed,cause) from exc
+            if approval.get("decision_id")!=batch_id: raise RuntimeError("publication batch identity mismatch")
             os.replace(final_part,target)
         finally:
             if staging.exists(): shutil.rmtree(staging)

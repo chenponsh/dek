@@ -152,6 +152,79 @@ def persist_current_report(repo: Path, before: dict[Path, str], output: Path, *,
 
 
 REVIEW_INPUT = Path("/var/lib/dek-review/input")
+ACTIVE_CONTROL = Path("/run/dek-active-control/active.json")
+ACTIVE_RELEASES = Path("/run/dek-active-releases")
+MAX_ACTIVE_METADATA_BYTES = 1024 * 1024
+MAX_REPOSITORY_BUNDLE_BYTES = 1024 * 1024 * 1024
+
+
+def refresh_review_bundle_from_active(active_path: Path = ACTIVE_CONTROL,
+                                      releases_root: Path = ACTIVE_RELEASES,
+                                      review_input: Path = REVIEW_INPUT) -> None:
+    """Atomically reuse the immutable bundle from the proved active release."""
+    try:
+        active_raw=read_bounded_regular(active_path,maximum=MAX_ACTIVE_METADATA_BYTES)
+        active=json.loads(active_raw)
+    except (OSError,UnicodeDecodeError,json.JSONDecodeError) as exc:
+        raise SystemExit("active release metadata is unavailable") from exc
+    generation=str(active.get("generation","")) if isinstance(active,dict) else ""
+    commit=str(active.get("commit","")) if isinstance(active,dict) else ""
+    tree=str(active.get("tree","")) if isinstance(active,dict) else ""
+    digest=str(active.get("bundle_sha256","")) if isinstance(active,dict) else ""
+    if (not re.fullmatch(r"[A-Za-z0-9_-]{17,159}",generation)
+            or not re.fullmatch(r"[0-9a-f]{40,64}",commit)
+            or not re.fullmatch(r"[0-9a-f]{40,64}",tree)
+            or not re.fullmatch(r"[0-9a-f]{64}",digest)):
+        raise SystemExit("active release metadata is invalid")
+    releases=Path(releases_root).resolve(strict=True)
+    candidate=releases/generation
+    if candidate.is_symlink():
+        raise SystemExit("active release path is unsafe")
+    release=candidate.resolve(strict=True)
+    if release.parent!=releases:
+        raise SystemExit("active release path is unsafe")
+    try:
+        release_meta=json.loads(read_bounded_regular(release/"release.json",maximum=MAX_ACTIVE_METADATA_BYTES))
+    except (OSError,UnicodeDecodeError,json.JSONDecodeError) as exc:
+        raise SystemExit("active release is unreadable") from exc
+    if any(release_meta.get(name)!=active.get(name) for name in ("generation","commit","tree","bundle_sha256")):
+        raise SystemExit("active release identity mismatch")
+    source=release/"repository.bundle"
+    try:
+        details=source.lstat()
+    except OSError as exc:
+        raise SystemExit("active repository bundle is unreadable") from exc
+    if (not stat.S_ISREG(details.st_mode) or details.st_nlink!=1
+            or details.st_size<=0 or details.st_size>MAX_REPOSITORY_BUNDLE_BYTES):
+        raise SystemExit("active repository bundle is unsafe")
+    listed=subprocess.run(
+        ("/usr/bin/git","--no-pager","-c","core.hooksPath=/dev/null","-c","credential.helper=",
+         "-c","protocol.allow=never","-c","protocol.file.allow=always","bundle","list-heads",str(source),"refs/heads/main"),
+        env={"HOME":"/var/empty/dek-source-ingest","PATH":"/usr/bin:/bin","LANG":"C.UTF-8","LC_ALL":"C.UTF-8",
+             "GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_SYSTEM":"/dev/null","GIT_CONFIG_GLOBAL":"/dev/null",
+             "GIT_TERMINAL_PROMPT":"0","GIT_ASKPASS":"/bin/false"},
+        stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30,check=False)
+    if listed.returncode or listed.stdout.decode("utf-8","replace").strip()!=f"{commit} refs/heads/main":
+        raise SystemExit("active repository bundle has no matching main branch")
+    review_input=Path(review_input); staging=None; actual=hashlib.sha256()
+    try:
+        descriptor,name=tempfile.mkstemp(prefix=".repository-active-",suffix=".bundle",dir=review_input)
+        staging=Path(name)
+        with os.fdopen(descriptor,"wb") as target, source.open("rb") as incoming:
+            for chunk in iter(lambda:incoming.read(1024*1024),b""):
+                actual.update(chunk); target.write(chunk)
+            target.flush(); os.fsync(target.fileno())
+        if actual.hexdigest()!=digest:
+            raise SystemExit("active repository bundle digest mismatch")
+        if read_bounded_regular(active_path,maximum=MAX_ACTIVE_METADATA_BYTES)!=active_raw:
+            raise SystemExit("active release changed during snapshot refresh")
+        os.chmod(staging,0o640); os.replace(staging,review_input/"repository.bundle"); staging=None
+        directory=os.open(review_input,os.O_RDONLY|getattr(os,"O_DIRECTORY",0))
+        try: os.fsync(directory)
+        finally: os.close(directory)
+    finally:
+        if staging is not None:
+            staging.unlink(missing_ok=True)
 
 
 def write_review_bundle(run, git, repo: Path, temporary: str, review_input: Path | None = None) -> None:
@@ -171,17 +244,22 @@ def main(argv=None):
     invocation_started = datetime.now(timezone.utc)
     run_nonce = secrets.token_urlsafe(32)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--isolated-clone", type=Path, required=True)
-    parser.add_argument("--origin", required=True)
-    parser.add_argument("--proof-output", type=Path, required=True)
-    parser.add_argument("--expected-output", type=Path, required=True)
+    parser.add_argument("--isolated-clone", type=Path)
+    parser.add_argument("--origin")
+    parser.add_argument("--proof-output", type=Path)
+    parser.add_argument("--expected-output", type=Path)
     parser.add_argument("--package-root", type=Path, required=True)
     parser.add_argument("--pre-cutover-proof", action="store_true")
-    parser.add_argument("command", choices=("scheduled-run", "refresh-bundle"))
+    parser.add_argument("command", choices=("scheduled-run", "refresh-bundle", "refresh-active-bundle"))
     args = parser.parse_args(argv)
     installed = args.package_root.resolve(strict=True)
     if installed != _INSTALL_ROOT:
         raise SystemExit("package root does not match the executing entrypoint")
+    if args.command=="refresh-active-bundle":
+        refresh_review_bundle_from_active()
+        return 0
+    if any(value is None for value in (args.isolated_clone,args.origin,args.proof_output,args.expected_output)):
+        raise SystemExit("clone and proof paths are required for ingestion")
     fixed=os.environ.get("DEK_FIXED_ORIGIN","")
     if args.origin != fixed or not fixed.startswith("https://"): raise SystemExit("origin is not fixed service policy")
     credential=Path(os.environ["DEK_GIT_CREDENTIAL_FILE"])

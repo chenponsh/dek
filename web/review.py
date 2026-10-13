@@ -1340,6 +1340,13 @@ class ReviewService:
     # --- how fresh the list is, and whether a pull is on its way -------------------------
     INGEST_WAIT_SECONDS = 600
     PUBLISH_WAIT_SECONDS = 900
+    PUBLISH_STAGES = (
+        ("publish-stage-prepare", "准备发布包"),
+        ("publish-stage-build", "执行检查与构建"),
+        ("publish-stage-push", "推送版本"),
+        ("publish-stage-activate", "激活上线"),
+        ("publish-stage-refresh", "刷新审核列表"),
+    )
 
     def snapshot_time(self) -> float | None:
         """When the data behind the list was produced (the review bundle's write time)."""
@@ -1363,6 +1370,11 @@ class ReviewService:
         self._record_request(self.ingest_state_path, when)
 
     def record_publish_request(self, when: float) -> None:
+        if self.publish_state_path is not None:
+            for name,_label in self.PUBLISH_STAGES:
+                try: self.publish_state_path.with_name(name).unlink()
+                except FileNotFoundError: pass
+                except OSError: pass
         self._record_request(self.publish_state_path, when)
 
     def _request_status(self, path: Path | None, wait: int) -> dict:
@@ -1377,7 +1389,7 @@ class ReviewService:
                 requested = None
         pending = requested is not None and (snapshot is None or requested > snapshot)
         age = self.clock() - requested if requested is not None else 0
-        return {"snapshot": snapshot, "requested": requested,
+        return {"snapshot": snapshot, "requested": requested, "age_seconds":max(0,int(age)),
                 "in_progress": bool(pending and 0 <= age < wait),
                 "overdue": bool(pending and age >= wait)}
 
@@ -1387,7 +1399,15 @@ class ReviewService:
 
     def publish_status(self) -> dict:
         """A publish is `in_progress` until its last step refreshes the review data."""
-        return self._request_status(self.publish_state_path, self.PUBLISH_WAIT_SECONDS)
+        result=self._request_status(self.publish_state_path,self.PUBLISH_WAIT_SECONDS)
+        result.update({"stage":"waiting","stage_label":"等待任务启动"})
+        if self.publish_state_path is not None and result["requested"] is not None:
+            for name,label in self.PUBLISH_STAGES:
+                try: modified=self.publish_state_path.with_name(name).stat().st_mtime
+                except OSError: continue
+                if modified+1>=result["requested"]:
+                    result.update({"stage":name.removeprefix("publish-stage-"),"stage_label":label})
+        return result
 
     def _snapshot_banner(self) -> str:
         """One message for the data's state: how old it is, and what is running that will replace it."""
@@ -1403,7 +1423,10 @@ class ReviewService:
             running.append(f'抓取进行中（{clock(status["requested"])} 开始，约需 1～2 分钟）。'
                            '完成后请刷新页面；进行期间不能批准或拒绝，避免处理到旧列表里已经不存在的内容。')
         if publishing["in_progress"]:
-            running.append(f'发布进行中（{clock(publishing["requested"])} 开始，约需 1～2 分钟）。'
+            elapsed=publishing["age_seconds"]
+            elapsed_text=f'{elapsed//60} 分 {elapsed%60} 秒' if elapsed>=60 else f'{elapsed} 秒'
+            running.append(f'发布进行中：{html.escape(publishing["stage_label"])}（已用时 {elapsed_text}，'
+                           f'{clock(publishing["requested"])} 开始，约需 1～2 分钟）。'
                            '完成后请刷新页面；进行期间发布按钮暂不能再点。')
         if running:
             return f'<div class="notice snapshot-wait">{"<br>".join(running)}<br><span class="meta">{snapshot}</span></div>' if snapshot \
@@ -1483,14 +1506,14 @@ class ReviewService:
                              else f'发布已审核内容（{status_counts["approved"]}）')
             publish_button = (
                 f'<form method="post" action="{self.path_prefix}/publish" class="publish-trigger-form">'
-                + ('<button type="submit" class="is-busy" disabled aria-busy="true">发布中…</button>' if publishing
+                + (f'<button type="submit" class="is-busy" disabled aria-busy="true">{html.escape(publish_status["stage_label"])}…</button>' if publishing
                    else f'<button type="submit" data-busy-label="已提交…">{publish_label}</button>')
                 + '</form>'
             )
         body = (
             self._header() + self._sidebar()
             + '<div class="content">'
-            + '<main class="review-shell review-list">'
+            + f'<main class="review-shell review-list"{" data-publish-progress=true" if publishing else ""}>'
             + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions">{ingest_button}{publish_button}</div></div>'
             + self._snapshot_banner()
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")

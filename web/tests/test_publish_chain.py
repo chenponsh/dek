@@ -150,8 +150,13 @@ class PublishChainTests(unittest.TestCase):
             decision["snapshot_bundle_sha256"]="f"*64
         (archive/("f"*64+".bundle")).write_bytes(b"test")
         self.publisher.verify_review_snapshot=lambda *args: None
+        original_clone=self.publisher._clone_remote; clone_calls=[]
+        def counted_clone(destination):
+            clone_calls.append(destination); return original_clone(destination)
+        self.publisher._clone_remote=counted_clone
         batch_id,status=process_batch(self.publisher,decisions,approved,builds,archive)
         self.assertEqual(status,"wait")
+        self.assertEqual(len(clone_calls),1)
         self.assertEqual(batch_id,batch_identity(decisions))
         packages=[path for path in approved.iterdir() if path.is_dir() and not path.name.startswith(".")]
         self.assertEqual([path.name for path in packages],[batch_id])
@@ -159,8 +164,10 @@ class PublishChainTests(unittest.TestCase):
         self.assertEqual([item["decision_id"] for item in approval["batch_decisions"]],
                          [item["decision_id"] for item in decisions])
         self.assertNotIn("parent_commit",approval)  # the fixture starts before any decision-derived release
+        heads=git(self.root,"bundle","list-heads",str(packages[0]/"repository.bundle"))
+        self.assertIn(f'{approval["commit"]} refs/heads/main',heads)
         clone=self.root/"batch-check"
-        git(self.root,"clone","--no-checkout","-q",str(packages[0]/"repository.bundle"),str(clone))
+        git(self.root,"clone","--branch","main","--no-checkout","-q",str(packages[0]/"repository.bundle"),str(clone))
         for number,name in enumerate("abc",start=1):
             self.assertIn(f"内容{name}",git(clone,"show",f'{approval["commit"]}:wiki/01_A/01-000{number}.md'))
         def runner(command,**kwargs):

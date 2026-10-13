@@ -807,6 +807,14 @@
     if (!event.target.closest(".search-wrap")) results?.classList.remove("open");
   });
 
+  // The review list exposes this marker only while a manual publication is
+  // running. Reloading that list keeps its server-owned stage and elapsed
+  // time current without polling a new privileged API or disturbing an open
+  // decision form on a detail page.
+  if (document.querySelector("[data-publish-progress]")) {
+    window.setTimeout(() => window.location.reload(), 5000);
+  }
+
   function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, character => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"

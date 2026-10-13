@@ -4,12 +4,17 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/rm -f /var/lib/dek-review/state/publish-trigger-requested
+ExecStart=/bin/rm -f /var/lib/dek-review/state/publish-trigger-requested /var/lib/dek-review/state/publish-stage-prepare /var/lib/dek-review/state/publish-stage-build /var/lib/dek-review/state/publish-stage-push /var/lib/dek-review/state/publish-stage-activate /var/lib/dek-review/state/publish-stage-refresh
+ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-prepare
 ExecStart=/usr/bin/systemctl start --wait dek-review-publish.service
+ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-build
 ExecStart=/usr/bin/systemctl start --wait dek-builder.service
+ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-push
 ExecStart=/usr/bin/systemctl start --wait dek-review-publish.service
+ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-activate
 ExecStart=/usr/bin/systemctl start --wait dek-activator.service
 # Last, bring the reviewers' snapshot up to date so the page shows the item as published (a failure here must not fail the publish).
+ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-refresh
 ExecStart=-/usr/bin/systemctl start --wait dek-source-refresh.service
 NoNewPrivileges=true
 PrivateTmp=true

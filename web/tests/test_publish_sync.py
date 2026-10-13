@@ -87,6 +87,8 @@ class PublishSyncTests(unittest.TestCase):
         self.assertEqual(json.loads((package / "approval.json").read_text()), approval)
         self.assertTrue((package / "approval.sig").is_file())
         self.assertEqual(len(approval["decision_sha256"]), 64)
+        heads=git(self.root,"bundle","list-heads",str(package/"repository.bundle"))
+        self.assertIn(f'{approval["commit"]} refs/heads/main',heads)
 
     def test_the_same_state_always_gives_the_same_release_id(self):
         (self.work / "wiki/01_A/01-0002.md").unlink(); self.push_from_work("delete")

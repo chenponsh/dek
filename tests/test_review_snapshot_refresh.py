@@ -2,6 +2,8 @@
 entrypoint, run by dek-source-refresh.service at the end of the manual publish chain). Without it
 the review page keeps showing a published item as 'approved, not yet published' and, after 30
 minutes, the DingTalk notifier reports the publish as stuck."""
+import hashlib
+import json
 import os
 import re
 import sys
@@ -69,24 +71,55 @@ class RefreshBundleModeTests(unittest.TestCase):
             self.run_main("scheduled-run")
         self.assertTrue((self.proof_root / "latest-report.expected.json").exists())
 
+    def test_active_release_bundle_is_reused_without_git_or_credentials(self):
+        active_root=Path(self.tmp.name)/"active"; releases=Path(self.tmp.name)/"releases"
+        review_input=Path(self.tmp.name)/"active-review"; review_input.mkdir()
+        generation="batch-12345678-batch-12345678"; release=releases/generation; release.mkdir(parents=True)
+        raw=b"proved active repository bundle\n"; digest=hashlib.sha256(raw).hexdigest()
+        active={"generation":generation,"commit":"1"*40,"tree":"2"*40,"bundle_sha256":digest}
+        (active_root/"control").mkdir(parents=True)
+        active_path=active_root/"control/active.json"; active_path.write_text(json.dumps(active))
+        (release/"release.json").write_text(json.dumps(active))
+        (release/"repository.bundle").write_bytes(raw)
+
+        listed=mock.Mock(returncode=0,stdout=f'{active["commit"]} refs/heads/main\n'.encode(),stderr=b'')
+        with mock.patch.object(entrypoint.subprocess,"run",return_value=listed):
+            entrypoint.refresh_review_bundle_from_active(active_path,releases,review_input)
+        self.assertEqual((review_input/"repository.bundle").read_bytes(),raw)
+        self.assertEqual((review_input/"repository.bundle").stat().st_mode & 0o777,0o640)
+
+    def test_active_release_bundle_digest_mismatch_is_rejected_without_replacing_snapshot(self):
+        releases=Path(self.tmp.name)/"bad-releases"; review_input=Path(self.tmp.name)/"bad-review"
+        generation="batch-12345678-batch-12345678"; release=releases/generation
+        release.mkdir(parents=True); review_input.mkdir(); (review_input/"repository.bundle").write_bytes(b"old")
+        active={"generation":generation,"commit":"1"*40,"tree":"2"*40,"bundle_sha256":"3"*64}
+        active_path=Path(self.tmp.name)/"bad-active.json"; active_path.write_text(json.dumps(active))
+        (release/"release.json").write_text(json.dumps(active)); (release/"repository.bundle").write_bytes(b"tampered")
+        listed=mock.Mock(returncode=0,stdout=f'{active["commit"]} refs/heads/main\n'.encode(),stderr=b'')
+        with mock.patch.object(entrypoint.subprocess,"run",return_value=listed), self.assertRaisesRegex(SystemExit,"digest mismatch"):
+            entrypoint.refresh_review_bundle_from_active(active_path,releases,review_input)
+        self.assertEqual((review_input/"repository.bundle").read_bytes(),b"old")
+
 
 class UnitFileTests(unittest.TestCase):
     units = REPO / "deploy" / "systemd"
 
-    def test_the_refresh_unit_is_the_ingest_unit_with_only_the_mode_changed(self):
-        ingest = (self.units / "dek-source-ingest.service").read_text(encoding="utf-8").splitlines()
-        refresh = (self.units / "dek-source-refresh.service").read_text(encoding="utf-8").splitlines()
-        drop = lambda lines: [l for l in lines if not l.startswith(("Description=", "OnFailure=", "ExecStart="))]
-        self.assertEqual(drop(ingest), drop(refresh))              # same sandbox, same credentials, same paths
-        start = next(l for l in refresh if l.startswith("ExecStart="))
-        self.assertTrue(start.endswith(" refresh-bundle"))
-        self.assertNotIn("scheduled-run", start)
-        self.assertNotIn("xvfb", start)
+    def test_refresh_uses_only_the_proved_active_release_without_network_credentials(self):
+        refresh = (self.units / "dek-source-refresh.service").read_text(encoding="utf-8")
+        start = next(l for l in refresh.splitlines() if l.startswith("ExecStart="))
+        self.assertTrue(start.endswith(" refresh-active-bundle"))
+        self.assertIn("SupplementaryGroups=dek-release-read",refresh)
+        self.assertIn("BindReadOnlyPaths=/var/lib/dek-activate/control:/run/dek-active-control",refresh)
+        self.assertIn("ReadWritePaths=/var/lib/dek-review/input",refresh)
+        self.assertIn("IPAddressDeny=any",refresh)
+        self.assertNotIn("git-credentials",refresh)
+        self.assertNotIn("HTTP_PROXY",refresh)
 
     def test_the_manual_publish_chain_ends_with_a_refresh_that_cannot_fail_the_publish(self):
         starts = [l for l in (self.units / "dek-review-publish-manual.service").read_text(encoding="utf-8").splitlines() if l.startswith("ExecStart")]
         self.assertEqual(starts[-1], "ExecStart=-/usr/bin/systemctl start --wait dek-source-refresh.service")
-        self.assertEqual(starts[-2], "ExecStart=/usr/bin/systemctl start --wait dek-activator.service")
+        self.assertEqual(starts[-2], "ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-refresh")
+        self.assertEqual(starts[-3], "ExecStart=/usr/bin/systemctl start --wait dek-activator.service")
 
 
 if __name__ == "__main__":

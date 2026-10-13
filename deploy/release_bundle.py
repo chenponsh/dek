@@ -20,6 +20,13 @@ from deploy.fsutil import atomic_write_bytes
 
 class BundleError(RuntimeError): pass
 
+
+class DecisionBundleError(BundleError):
+    """A batch member failed validation; retain its exact decision identity."""
+    def __init__(self, decision_id: str, cause: BaseException):
+        self.decision_id, self.cause = decision_id, cause
+        super().__init__(str(cause))
+
 STATIC_SUFFIXES = {".html", ".css", ".js", ".json", ".map", ".txt", ".xml", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2", ".pdf"}
 GIT = ("/usr/bin/git", "--no-pager", "-c", "core.hooksPath=/dev/null", "-c", "credential.helper=", "-c", "credential.interactive=never", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=", "-c", "diff.external=", "-c", "protocol.allow=never", "-c", "protocol.https.allow=always")
 APPROVAL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,79}$")
@@ -415,173 +422,182 @@ class ReleasePublisher:
         if _run_status((*GIT,"merge-base","--is-ancestor",tip,commit),cwd=clone).returncode!=0: return None
         return commit
 
-    def prepare_change(self, output: Path, decision: dict, *, chain_from: dict | None = None) -> dict:
-        """Apply one signed publish or move decision in its own clone.
-
-        The change goes on top of what is published now (or, in a chain, on top of the
-        previous package), not on the older snapshot the reviewer looked at: the draft
-        and the target path are re-checked there, so nothing else the reviewer did not
-        see is touched, and the push is always a fast-forward.
-        """
+    def _commit_change(self, clone: Path, decision: dict, *, published_tip: str, base: str) -> tuple[str,str,str|None]:
+        """Validate and commit one decision in an already isolated work tree."""
         action=decision.get("action")
         if action not in {"approve","move"}: raise BundleError("only publishable decisions produce releases")
-        decision_id=str(decision.get("decision_id","")); nonce=decision_id
-        approval_generation(decision_id, nonce)
-        if not self.test_only_local_origin:
-            validate_systemd_credential(self.credential_file)
-        output.mkdir(parents=True,exist_ok=False)
-        with tempfile.TemporaryDirectory(prefix="dek-publisher-clone-") as temporary:
-            clone=Path(temporary)/"clone"
-            self._clone_remote(clone)
-            snapshot=str(decision.get("snapshot_commit",""))
-            exact_snapshot=_run((*GIT,"rev-parse",f"{snapshot}^{{commit}}"),cwd=clone).decode().strip()
-            snapshot_tree=_run((*GIT,"rev-parse",f"{exact_snapshot}^{{tree}}"),cwd=clone).decode().strip()
-            if exact_snapshot!=snapshot or snapshot_tree!=decision.get("snapshot_tree"): raise BundleError("review snapshot identity mismatch")
-            tip=_run((*GIT,"rev-parse","HEAD^{commit}"),cwd=clone).decode().strip()
-            if _run_status((*GIT,"merge-base","--is-ancestor",exact_snapshot,tip),cwd=clone).returncode!=0:
-                raise BundleError("review snapshot is not part of the published history")
-            base=tip
-            if chain_from:
-                chained=self._chain_base(clone,chain_from,tip)
-                if chained: base=chained
-            _run((*GIT,"reset","--hard",base),cwd=clone)
-            parent_commit=_nearest_decision_commit(clone,base)
-            target_relative=str(decision.get("wiki_path",""))
-            wiki=clone/target_relative
-            candidate_bytes=str(decision.get("candidate_markdown","")).encode("utf-8")
-            signed_page=str(decision.get("category_page_path","") or "")
-            signed_markdown=str(decision.get("category_page_markdown","") or "")
-            if decision.get("schema_version")==3 or action=="move":
-                # release_bundle is also imported by the separately installed
-                # source-ingest service, whose minimal tree intentionally has
-                # no web package. Taxonomy is publisher-only, so load it here.
-                from web.taxonomy import TaxonomyError, inspect_wiki_target, rewrite_note_for_target
-                try:
-                    plan=inspect_wiki_target(clone,target_relative)
-                except TaxonomyError as exc:
-                    raise BundleError("category authorization conflict") from exc
-                if plan is not None:
-                    if signed_page!=plan.page_path or signed_markdown!=plan.page_markdown:
-                        raise BundleError("category authorization conflict")
-                    write_candidate_regular(clone,signed_page,signed_markdown.encode("utf-8"))
-                elif signed_page:
-                    page=clone/signed_page
-                    if not page.is_file() or page.is_symlink() or page.read_text(encoding="utf-8")!=signed_markdown:
-                        raise BundleError("category authorization conflict")
+        decision_id=str(decision.get("decision_id","")); approval_generation(decision_id,decision_id)
+        snapshot=str(decision.get("snapshot_commit",""))
+        exact_snapshot=_run((*GIT,"rev-parse",f"{snapshot}^{{commit}}"),cwd=clone).decode().strip()
+        snapshot_tree=_run((*GIT,"rev-parse",f"{exact_snapshot}^{{tree}}"),cwd=clone).decode().strip()
+        if exact_snapshot!=snapshot or snapshot_tree!=decision.get("snapshot_tree"): raise BundleError("review snapshot identity mismatch")
+        if _run_status((*GIT,"merge-base","--is-ancestor",exact_snapshot,published_tip),cwd=clone).returncode!=0:
+            raise BundleError("review snapshot is not part of the published history")
+        _run((*GIT,"reset","--hard",base),cwd=clone)
+        parent_commit=_nearest_decision_commit(clone,base)
+        target_relative=str(decision.get("wiki_path",""))
+        wiki=clone/target_relative
+        candidate_bytes=str(decision.get("candidate_markdown","")).encode("utf-8")
+        signed_page=str(decision.get("category_page_path","") or "")
+        signed_markdown=str(decision.get("category_page_markdown","") or "")
+        if decision.get("schema_version")==3 or action=="move":
+            # release_bundle is also imported by the separately installed
+            # source-ingest service, whose minimal tree intentionally has
+            # no web package. Taxonomy is publisher-only, so load it here.
+            from web.taxonomy import TaxonomyError, inspect_wiki_target, rewrite_note_for_target
+            try:
+                plan=inspect_wiki_target(clone,target_relative)
+            except TaxonomyError as exc:
+                raise BundleError("category authorization conflict") from exc
+            if plan is not None:
+                if signed_page!=plan.page_path or signed_markdown!=plan.page_markdown:
+                    raise BundleError("category authorization conflict")
+                write_candidate_regular(clone,signed_page,signed_markdown.encode("utf-8"))
+            elif signed_page:
+                page=clone/signed_page
+                if not page.is_file() or page.is_symlink() or page.read_text(encoding="utf-8")!=signed_markdown:
+                    raise BundleError("category authorization conflict")
 
-            if action=="approve":
-                rough=clone/str(decision.get("rough_path",""))
-                if not rough.resolve().is_relative_to((clone/"ingestion/rough").resolve()):
-                    raise BundleError("decision path escapes repository")
-                if wiki.is_file() and wiki.read_bytes()!=candidate_bytes:
-                    raise BundleError("wiki_path already published with different content")
+        if action=="approve":
+            rough=clone/str(decision.get("rough_path",""))
+            if not rough.resolve().is_relative_to((clone/"ingestion/rough").resolve()):
+                raise BundleError("decision path escapes repository")
+            if wiki.is_file() and wiki.read_bytes()!=candidate_bytes:
+                raise BundleError("wiki_path already published with different content")
+            try:
+                rough_details=rough.lstat()
+            except OSError as exc:
+                raise BundleError("rough source is unreadable") from exc
+            if not stat.S_ISREG(rough_details.st_mode) or rough_details.st_nlink!=1:
+                raise BundleError("rough source is not an exact regular file")
+            raw=rough.read_bytes()
+            if "sha256:"+hashlib.sha256(raw).hexdigest()!=decision.get("rough_sha256"):
+                raise BundleError("rough binding changed")
+            wiki=write_candidate_regular(clone,target_relative,candidate_bytes)
+            text=raw.decode("utf-8").replace("status: pending_review","status: promoted",1)
+            text=re.sub(r"(?m)^wiki_target:.*$",f"wiki_target: {target_relative}",text,count=1)
+            rough.write_text(text,encoding="utf-8")
+        else:
+            source_relative=str(decision.get("source_wiki_path",""))
+            source=clone/source_relative
+            if (not source.resolve().is_relative_to((clone/"wiki").resolve())
+                    or not wiki.resolve().is_relative_to((clone/"wiki").resolve())):
+                raise BundleError("decision path escapes repository")
+            try:
+                source_details=source.lstat()
+            except OSError as exc:
+                raise BundleError("move source is unreadable") from exc
+            if not stat.S_ISREG(source_details.st_mode) or source_details.st_nlink!=1:
+                raise BundleError("move source is unreadable")
+            raw=source.read_bytes()
+            if "sha256:"+hashlib.sha256(raw).hexdigest()!=decision.get("source_wiki_sha256"):
+                raise BundleError("move source changed")
+            if wiki.exists() or wiki.is_symlink():
+                raise BundleError("move target already exists")
+            try:
+                expected=rewrite_note_for_target(raw.decode("utf-8"),source_relative,target_relative).encode("utf-8")
+            except (UnicodeDecodeError,TaxonomyError) as exc:
+                raise BundleError("move source is unreadable") from exc
+            if expected!=candidate_bytes:
+                raise BundleError("move candidate changed")
+            wiki=write_candidate_regular(clone,target_relative,candidate_bytes)
+            source.unlink()
+            redirects_path=clone/"wiki/_redirects.json"
+            if redirects_path.exists():
+                details=redirects_path.lstat()
+                if not stat.S_ISREG(details.st_mode) or details.st_nlink!=1:
+                    raise BundleError("redirect map is unsafe")
                 try:
-                    rough_details=rough.lstat()
-                except OSError as exc:
-                    raise BundleError("rough source is unreadable") from exc
-                if not stat.S_ISREG(rough_details.st_mode) or rough_details.st_nlink!=1:
-                    raise BundleError("rough source is not an exact regular file")
-                raw=rough.read_bytes()
-                if "sha256:"+hashlib.sha256(raw).hexdigest()!=decision.get("rough_sha256"):
-                    raise BundleError("rough binding changed")
-                wiki=write_candidate_regular(clone,target_relative,candidate_bytes)
-                text=raw.decode("utf-8").replace("status: pending_review","status: promoted",1)
-                text=re.sub(r"(?m)^wiki_target:.*$",f"wiki_target: {target_relative}",text,count=1)
-                rough.write_text(text,encoding="utf-8")
+                    redirects=json.loads(redirects_path.read_text(encoding="utf-8"))
+                except (OSError,UnicodeDecodeError,json.JSONDecodeError) as exc:
+                    raise BundleError("redirect map is invalid") from exc
+                if not isinstance(redirects,dict) or not all(isinstance(k,str) and isinstance(v,str) for k,v in redirects.items()):
+                    raise BundleError("redirect map is invalid")
             else:
-                source_relative=str(decision.get("source_wiki_path",""))
-                source=clone/source_relative
-                if (not source.resolve().is_relative_to((clone/"wiki").resolve())
-                        or not wiki.resolve().is_relative_to((clone/"wiki").resolve())):
-                    raise BundleError("decision path escapes repository")
-                try:
-                    source_details=source.lstat()
-                except OSError as exc:
-                    raise BundleError("move source is unreadable") from exc
-                if not stat.S_ISREG(source_details.st_mode) or source_details.st_nlink!=1:
-                    raise BundleError("move source is unreadable")
-                raw=source.read_bytes()
-                if "sha256:"+hashlib.sha256(raw).hexdigest()!=decision.get("source_wiki_sha256"):
-                    raise BundleError("move source changed")
-                if wiki.exists() or wiki.is_symlink():
-                    raise BundleError("move target already exists")
-                try:
-                    expected=rewrite_note_for_target(raw.decode("utf-8"),source_relative,target_relative).encode("utf-8")
-                except (UnicodeDecodeError,TaxonomyError) as exc:
-                    raise BundleError("move source is unreadable") from exc
-                if expected!=candidate_bytes:
-                    raise BundleError("move candidate changed")
-                wiki=write_candidate_regular(clone,target_relative,candidate_bytes)
-                source.unlink()
-                redirects_path=clone/"wiki/_redirects.json"
-                if redirects_path.exists():
-                    details=redirects_path.lstat()
-                    if not stat.S_ISREG(details.st_mode) or details.st_nlink!=1:
-                        raise BundleError("redirect map is unsafe")
-                    try:
-                        redirects=json.loads(redirects_path.read_text(encoding="utf-8"))
-                    except (OSError,UnicodeDecodeError,json.JSONDecodeError) as exc:
-                        raise BundleError("redirect map is invalid") from exc
-                    if not isinstance(redirects,dict) or not all(isinstance(k,str) and isinstance(v,str) for k,v in redirects.items()):
-                        raise BundleError("redirect map is invalid")
-                else:
-                    redirects={}
-                # Collapse redirect chains, and remove a historical redirect
-                # when its old location becomes the live target again.
-                redirects.pop(target_relative,None)
-                for old,current in list(redirects.items()):
-                    if current==source_relative:
-                        redirects[old]=target_relative
-                redirects[source_relative]=target_relative
-                atomic_write_bytes(redirects_path,(json.dumps(redirects,ensure_ascii=False,sort_keys=True,separators=(",",":"))+"\n").encode("utf-8"),mode=0o644)
+                redirects={}
+            # Collapse redirect chains, and remove a historical redirect
+            # when its old location becomes the live target again.
+            redirects.pop(target_relative,None)
+            for old,current in list(redirects.items()):
+                if current==source_relative:
+                    redirects[old]=target_relative
+            redirects[source_relative]=target_relative
+            atomic_write_bytes(redirects_path,(json.dumps(redirects,ensure_ascii=False,sort_keys=True,separators=(",",":"))+"\n").encode("utf-8"),mode=0o644)
 
-            _run((*GIT,"add","-A","--","wiki",*( [str(decision.get("rough_path"))] if action=="approve" else [] )),cwd=clone)
-            _run((*GIT,"-c",f"user.name={PUBLISHER_COMMIT_NAME}","-c",f"user.email={PUBLISHER_COMMIT_EMAIL}","commit","-m",f"publish: {decision_id}"),cwd=clone)
-            exact=_run((*GIT,"rev-parse","HEAD^{commit}"),cwd=clone).decode().strip(); tree=_run((*GIT,"rev-parse","HEAD^{tree}"),cwd=clone).decode().strip()
-            tree_entry=_run((*GIT,"ls-tree","HEAD","--",wiki.relative_to(clone).as_posix()),cwd=clone).decode("utf-8","strict").strip()
-            committed=_run((*GIT,"show",f"HEAD:{wiki.relative_to(clone).as_posix()}"),cwd=clone)
-            if not re.match(r"^100(?:644|755) blob [0-9a-f]{40,64}\t",tree_entry) or committed!=candidate_bytes:
-                raise BundleError("candidate Markdown was not committed as the exact regular file")
-            bundle=output/"repository.bundle"
-            _run((*GIT,"branch","--force","dek-approved",exact),cwd=clone)
-            _run((*GIT,"bundle","create",str(bundle),"refs/heads/dek-approved"),cwd=clone)
-        decision_digest=hashlib.sha256(json.dumps(decision,sort_keys=True,separators=(",",":")).encode()).hexdigest()
-        approval={"schema_version":2,"decision_id":decision_id,"decision_sha256":decision_digest,"nonce":nonce,"origin":self.origin,"commit":exact,"tree":tree,"bundle_sha256":_digest(bundle)}
-        if parent_commit is not None:
-            approval["parent_commit"]=parent_commit
+        _run((*GIT,"add","-A","--","wiki",*( [str(decision.get("rough_path"))] if action=="approve" else [] )),cwd=clone)
+        _run((*GIT,"-c",f"user.name={PUBLISHER_COMMIT_NAME}","-c",f"user.email={PUBLISHER_COMMIT_EMAIL}","commit","-m",f"publish: {decision_id}"),cwd=clone)
+        exact=_run((*GIT,"rev-parse","HEAD^{commit}"),cwd=clone).decode().strip(); tree=_run((*GIT,"rev-parse","HEAD^{tree}"),cwd=clone).decode().strip()
+        tree_entry=_run((*GIT,"ls-tree","HEAD","--",wiki.relative_to(clone).as_posix()),cwd=clone).decode("utf-8","strict").strip()
+        committed=_run((*GIT,"show",f"HEAD:{wiki.relative_to(clone).as_posix()}"),cwd=clone)
+        if not re.match(r"^100(?:644|755) blob [0-9a-f]{40,64}\t",tree_entry) or committed!=candidate_bytes:
+            raise BundleError("candidate Markdown was not committed as the exact regular file")
+        return exact,tree,parent_commit
+
+    def _write_bundle(self, clone: Path, output: Path, commit: str) -> Path:
+        bundle=output/"repository.bundle"
+        _run((*GIT,"branch","--force","dek-approved",commit),cwd=clone)
+        # The builder consumes dek-approved; the review snapshot consumer
+        # clones main. Both names bind the same exact commit so the activated,
+        # already-verified bundle can serve both without another remote clone.
+        _run((*GIT,"update-ref","refs/heads/main",commit),cwd=clone)
+        main=_run((*GIT,"rev-parse","refs/heads/main^{commit}"),cwd=clone).decode().strip()
+        if main!=commit: raise BundleError("prepared main branch identity mismatch")
+        _run((*GIT,"bundle","create",str(bundle),"refs/heads/dek-approved","refs/heads/main"),cwd=clone)
+        return bundle
+
+    def _sign_approval(self, output: Path, approval: dict) -> dict:
         (output/"approval.json").write_text(json.dumps(approval,sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
         (output/"approval.sig").write_bytes(self.signing_key.sign(_canonical(approval)))
         return approval
 
-    def bind_batch_approval(self, package: Path, decisions: list[dict], *, parent_commit: str | None) -> dict:
-        """Rebind the final package in a prepared chain to the complete decision batch.
-
-        Every change was independently checked by ``prepare_change``.  This final
-        publisher signature makes the one built/pushed release explicitly depend
-        on every reviewed decision rather than only on the chain's last item.
-        """
-        if not decisions:
-            raise BundleError("empty publication batch")
-        entries=[]
-        for decision in decisions:
-            decision_id=str(decision.get("decision_id", ""))
-            approval_generation(decision_id, decision_id)
-            digest=hashlib.sha256(json.dumps(decision,sort_keys=True,separators=(",",":")).encode()).hexdigest()
-            entries.append({"decision_id":decision_id,"decision_sha256":digest})
-        batch_digest=hashlib.sha256(json.dumps(entries,sort_keys=True,separators=(",",":")).encode()).hexdigest()
-        batch_id="batch-"+batch_digest[:32]
-        approval=json.loads((package/"approval.json").read_text(encoding="utf-8"))
-        try: self.signing_key.public_key().verify((package/"approval.sig").read_bytes(),_canonical(approval))
-        except Exception as exc: raise BundleError("prepared approval signature invalid") from exc
-        approval.update({"decision_id":batch_id,"nonce":batch_id,"decision_sha256":batch_digest,
-                         "batch_decisions":entries})
-        if parent_commit is None:
-            approval.pop("parent_commit",None)
-        else:
+    def prepare_change(self, output: Path, decision: dict, *, chain_from: dict | None = None) -> dict:
+        """Apply one signed publish or move decision in its own clone."""
+        decision_id=str(decision.get("decision_id","")); nonce=decision_id
+        approval_generation(decision_id,nonce)
+        if not self.test_only_local_origin: validate_systemd_credential(self.credential_file)
+        output.mkdir(parents=True,exist_ok=False)
+        with tempfile.TemporaryDirectory(prefix="dek-publisher-clone-") as temporary:
+            clone=Path(temporary)/"clone"; self._clone_remote(clone)
+            tip=_run((*GIT,"rev-parse","HEAD^{commit}"),cwd=clone).decode().strip(); base=tip
+            if chain_from:
+                chained=self._chain_base(clone,chain_from,tip)
+                if chained: base=chained
+            exact,tree,parent_commit=self._commit_change(clone,decision,published_tip=tip,base=base)
+            bundle=output/"repository.bundle"
+            self._write_bundle(clone,output,exact)
+        decision_digest=hashlib.sha256(json.dumps(decision,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        approval={"schema_version":2,"decision_id":decision_id,"decision_sha256":decision_digest,"nonce":nonce,"origin":self.origin,"commit":exact,"tree":tree,"bundle_sha256":_digest(bundle)}
+        if parent_commit is not None:
             approval["parent_commit"]=parent_commit
-        (package/"approval.json").write_text(json.dumps(approval,sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
-        (package/"approval.sig").write_bytes(self.signing_key.sign(_canonical(approval)))
-        return approval
+        return self._sign_approval(output,approval)
+
+    def prepare_batch(self, output: Path, decisions: list[dict]) -> dict:
+        """Validate and commit a complete approval batch in one isolated work tree."""
+        if not decisions: raise BundleError("empty publication batch")
+        if not self.test_only_local_origin: validate_systemd_credential(self.credential_file)
+        output.mkdir(parents=True,exist_ok=False)
+        entries=[]; first_parent=None
+        with tempfile.TemporaryDirectory(prefix="dek-publisher-batch-") as temporary:
+            clone=Path(temporary)/"clone"; self._clone_remote(clone)
+            published_tip=_run((*GIT,"rev-parse","HEAD^{commit}"),cwd=clone).decode().strip()
+            base=published_tip
+            for number,decision in enumerate(decisions):
+                decision_id=str(decision.get("decision_id",""))
+                try:
+                    exact,tree,parent_commit=self._commit_change(clone,decision,published_tip=published_tip,base=base)
+                except (Exception,SystemExit) as exc:
+                    raise DecisionBundleError(decision_id,exc) from exc
+                if number==0: first_parent=parent_commit
+                digest=hashlib.sha256(json.dumps(decision,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+                entries.append({"decision_id":decision_id,"decision_sha256":digest}); base=exact
+            bundle=self._write_bundle(clone,output,exact)
+        batch_digest=hashlib.sha256(json.dumps(entries,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        batch_id="batch-"+batch_digest[:32]; approval_generation(batch_id,batch_id)
+        approval={"schema_version":2,"decision_id":batch_id,"decision_sha256":batch_digest,"nonce":batch_id,
+                  "origin":self.origin,"commit":exact,"tree":tree,"bundle_sha256":_digest(bundle),
+                  "batch_decisions":entries}
+        if first_parent is not None: approval["parent_commit"]=first_parent
+        return self._sign_approval(output,approval)
 
     SYNC_MAX_REMOVALS = 500
 
@@ -621,7 +637,7 @@ class ReleasePublisher:
             exact=_run((*GIT,"rev-parse","HEAD^{commit}"),cwd=clone).decode().strip(); tree=_run((*GIT,"rev-parse","HEAD^{tree}"),cwd=clone).decode().strip()
             bundle=output/"repository.bundle"
             _run((*GIT,"branch","--force","dek-approved",exact),cwd=clone)
-            _run((*GIT,"bundle","create",str(bundle),"refs/heads/dek-approved"),cwd=clone)
+            _run((*GIT,"bundle","create",str(bundle),"refs/heads/dek-approved","refs/heads/main"),cwd=clone)
         approval={"schema_version":2,"decision_id":decision_id,"decision_sha256":digest,"nonce":nonce,"origin":self.origin,"commit":exact,"tree":tree,"bundle_sha256":_digest(bundle),"parent_commit":base}
         (output/"approval.json").write_text(json.dumps(approval,sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
         (output/"approval.sig").write_bytes(self.signing_key.sign(_canonical(approval)))
