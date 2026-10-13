@@ -299,6 +299,13 @@ class BundleBoundarySliceTests(unittest.TestCase):
         tmpfiles=Path("deploy/tmpfiles/dek-review-deploy.conf").read_text(encoding="utf-8")
         self.assertRegex(tmpfiles,r"(?m)^d /var/lib/dek-review/clones 0700 dek-review dek-review -$")
 
+    def test_release_readers_can_traverse_only_the_activation_root(self):
+        tmpfiles=Path("deploy/tmpfiles/dek-review-deploy.conf").read_text(encoding="utf-8")
+        self.assertRegex(tmpfiles,r"(?m)^d /var/lib/dek-activate 0710 dek-activator dek-release-read -$")
+        self.assertRegex(tmpfiles,r"(?m)^d /var/lib/dek-activate/(journal|spent) 0700 dek-activator dek-activator -$")
+        web=Path("deploy/systemd/dek-web.service").read_text(encoding="utf-8")
+        self.assertIn("SupplementaryGroups=dek-release-read",web)
+
 
 class ActivationSliceTests(unittest.TestCase):
     def test_reconcile_multiple_prepared_journals_rereads_active_and_freshly_proves_rollback(self):
