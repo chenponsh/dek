@@ -290,19 +290,69 @@ def _nearest_decision_commit(clone: Path, start: str) -> str | None:
 
 
 class ReleasePublisher:
-    """Uses a new private clone for each decision; never accepts a live work tree."""
-    def __init__(self, fixed_origin: str, signing_key: Ed25519PrivateKey, credential_file: Path, *, test_only_local_origin: bool = False):
+    """Uses a fresh work tree for each decision and may reuse only a bare object cache."""
+    def __init__(self, fixed_origin: str, signing_key: Ed25519PrivateKey, credential_file: Path, *,
+                 test_only_local_origin: bool = False, clone_cache: Path | None = None):
         local = test_only_local_origin and Path(fixed_origin).is_absolute()
         if not local and (not fixed_origin.startswith("https://") or not fixed_origin.endswith("/dek.git")): raise BundleError("fixed HTTPS origin required")
         self.origin, self.signing_key, self.credential_file = fixed_origin, signing_key, Path(credential_file)
         self.test_only_local_origin = local
+        self.clone_cache = Path(clone_cache) if clone_cache is not None else None
+        self._clone_cache_ready = False
+
+    def _remote_env(self) -> dict | None:
+        if getattr(self, "test_only_local_origin", False):
+            return None
+        return {**_auth_env(self.origin, self.credential_file), **_proxy_env()}
+
+    def _refresh_clone_cache(self) -> Path:
+        """Fetch the fixed origin into a publisher-owned bare object cache.
+
+        The cache is never used as a work tree and never supplies the branch
+        identity by itself: each one-shot publisher process first fetches the
+        fixed remote's main ref. A fresh, no-hardlink clone is then made for
+        every operation, preserving work-tree isolation while avoiding full
+        network clones and keeping one batch on one origin snapshot.
+        """
+        root = self.clone_cache
+        if root is None:
+            raise BundleError("clone cache is not configured")
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        details = root.lstat()
+        if not stat.S_ISDIR(details.st_mode) or root.is_symlink():
+            raise BundleError("unsafe publisher clone cache")
+        cache = root / "origin.git"
+        if self._clone_cache_ready:
+            return cache
+        if not cache.exists():
+            with tempfile.TemporaryDirectory(prefix=".origin-", dir=root) as temporary:
+                staging = Path(temporary) / "origin.git"
+                _run((*GIT, "init", "--bare", "--initial-branch=main", str(staging)))
+                os.replace(staging, cache)
+        cache_details = cache.lstat()
+        if not stat.S_ISDIR(cache_details.st_mode) or cache.is_symlink():
+            raise BundleError("unsafe publisher clone cache repository")
+        if _run((*GIT, "rev-parse", "--is-bare-repository"), cwd=cache).strip() != b"true":
+            raise BundleError("publisher clone cache is not bare")
+        fetch = (*GIT, "-c", "protocol.file.allow=always", "fetch", "--force", "--prune", "--no-tags", "--",
+                 self.origin, "+refs/heads/main:refs/heads/main") if self.test_only_local_origin else \
+                (*GIT, "fetch", "--force", "--prune", "--no-tags", "--", self.origin,
+                 "+refs/heads/main:refs/heads/main")
+        _run(fetch, cwd=cache, env=self._remote_env())
+        self._clone_cache_ready = True
+        return cache
 
     def _clone_remote(self, destination: Path) -> None:
+        if self.clone_cache is not None:
+            cache = self._refresh_clone_cache()
+            _run((*GIT, "-c", "protocol.file.allow=always", "clone", "--branch", "main", "--no-local",
+                   "--no-hardlinks", "--", str(cache), str(destination)))
+            return
         if getattr(self, "test_only_local_origin", False):
             _run((*GIT, "-c", "protocol.file.allow=always", "clone", "--no-local", "--no-hardlinks", "--", self.origin, str(destination)))
         else:
             _run((*GIT, "clone", "--no-local", "--no-hardlinks", "--", self.origin, str(destination)),
-                 env={**_auth_env(self.origin, self.credential_file), **_proxy_env()})
+                 env=self._remote_env())
 
     def _push_remote(self, clone: Path, commit: str) -> None:
         local = getattr(self, "test_only_local_origin", False)

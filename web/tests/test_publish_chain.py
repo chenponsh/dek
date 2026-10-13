@@ -100,6 +100,27 @@ class PublishChainTests(unittest.TestCase):
         self.assertEqual(self.origin_head(), approval["commit"])
         self.assertIn("内容a", git(self.origin, "show", "main:wiki/01_A/01-0001.md"))
 
+    def test_publisher_cache_pins_one_tip_per_process_and_refreshes_next_process(self):
+        cached = ReleasePublisher(str(self.origin), Ed25519PrivateKey.generate(), self.root / "no-credential",
+                                  test_only_local_origin=True, clone_cache=self.root / "publisher-cache")
+        first = self.root / "cached-first"
+        cached._clone_remote(first)
+        first_tip = self.origin_head()
+        self.assertEqual(git(first, "rev-parse", "HEAD"), first_tip)
+
+        self.advance_origin("after-cache.txt")
+        second = self.root / "cached-second"
+        cached._clone_remote(second)
+        self.assertEqual(git(second, "rev-parse", "HEAD"), first_tip)
+        self.assertFalse((second / "after-cache.txt").exists())
+
+        next_run = ReleasePublisher(str(self.origin), Ed25519PrivateKey.generate(), self.root / "no-credential",
+                                    test_only_local_origin=True, clone_cache=self.root / "publisher-cache")
+        third = self.root / "cached-third"
+        next_run._clone_remote(third)
+        self.assertEqual(git(third, "rev-parse", "HEAD"), self.origin_head())
+        self.assertEqual((third / "after-cache.txt").read_text(encoding="utf-8"), "later\n")
+
     def test_several_approvals_on_one_snapshot_publish_as_a_chain(self):
         d = [self.decision(n) for n in "abc"]
         first, a1 = self.prepare(d[0])

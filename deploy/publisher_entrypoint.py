@@ -396,10 +396,12 @@ def main(argv=None):
     if set(config)!={"decisions_root","approved_root","state_root","origin","builds_root","review_bundle_archive"}: raise SystemExit("invalid publisher config")
     if config["origin"] != os.environ.get("DEK_FIXED_ORIGIN"): raise SystemExit("origin is not the fixed service policy")
     key=load_pem_private_key(Path(os.environ["DEK_APPROVAL_SIGNING_KEY_FILE"]).read_bytes(),password=None)
-    publisher=modules["deploy.release_bundle"].ReleasePublisher(config["origin"],key,Path(os.environ["DEK_GIT_CREDENTIAL_FILE"]))
     decisions=Path(config["decisions_root"]).resolve(strict=True); approved=Path(config["approved_root"]).resolve(strict=True)
     builds=Path(config["builds_root"]).resolve(strict=True); archive=Path(config["review_bundle_archive"]).resolve(strict=True)
     state_root=Path(config["state_root"]); state_root.mkdir(parents=True,exist_ok=True)
+    publisher=modules["deploy.release_bundle"].ReleasePublisher(
+        config["origin"],key,Path(os.environ["DEK_GIT_CREDENTIAL_FILE"]),
+        clone_cache=state_root/"git-cache")
     def write_state(decision_id,value):
         atomic_write_json(state_root/(decision_id+".json"),value,mode=0o600)
     queue=decisions/"decisions.jsonl"
