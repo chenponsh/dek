@@ -20,6 +20,7 @@ APP_TOKEN_URL = "https://api.dingtalk.com/v1.0/oauth2/accessToken"
 SCOPE_URL = "https://api.dingtalk.com/v1.0/microApp/apps/{agent_id}/scopes"
 USER_BY_UNION_URL = "https://oapi.dingtalk.com/topapi/user/getbyunionid?access_token={token}"
 USER_DETAIL_URL = "https://oapi.dingtalk.com/topapi/v2/user/get?access_token={token}"
+DEPARTMENT_URL = "https://oapi.dingtalk.com/topapi/v2/department/get?access_token={token}"
 WORK_NOTIFICATION_URL = "https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token={token}"
 
 
@@ -100,6 +101,35 @@ class DingTalkClient:
         token = data.get("accessToken")
         if not token: raise LoginError("app_token_failed")
         return str(token)
+    def _department_ancestors(self, token: str, dept_id: str, scope_dept_ids: set, cache: dict) -> set:
+        """Walk a department's parent chain up to the root (or a scope match).
+
+        DingTalk's visible-scope deptIds and a user's own dept_id_list are both
+        flat -- neither side expands to cover sub-departments -- so a scope
+        configured on a parent department would otherwise never match members
+        of its child departments. This resolves the ancestor chain ourselves.
+        """
+        chain, current, seen = set(), str(dept_id), set()
+        while current and current not in seen:
+            seen.add(current)
+            chain.add(current)
+            if current in scope_dept_ids:
+                break
+            if current not in cache:
+                body = json.dumps({"dept_id": current}).encode()
+                data = self._json(urllib.request.Request(
+                    DEPARTMENT_URL.format(token=urllib.parse.quote(token, safe="")), body,
+                    {"Content-Type": "application/json"}, method="POST",
+                ))
+                if not isinstance(data, dict) or data.get("errcode") != 0 or not isinstance(data.get("result"), dict):
+                    raise LoginError("department_response_invalid")
+                parent_id = data["result"].get("parent_id")
+                cache[current] = str(parent_id) if _is_identifier(parent_id) else None
+            parent = cache[current]
+            if parent is None or parent == current:
+                break
+            current = parent
+        return chain
     def is_kbot_allowed(self, user: dict) -> bool:
         union_id = user.get("unionId")
         if not union_id: return False
@@ -157,6 +187,13 @@ class DingTalkClient:
         if not isinstance(department_items, list) or any(not _is_identifier(item) for item in department_items):
             raise LoginError("user_detail_response_invalid")
         departments = {str(item) for item in department_items}
+        scope_dept_ids = {str(item) for item in scope.get("deptIds") or []}
+        if scope_dept_ids and not (departments & scope_dept_ids):
+            cache: dict = {}
+            expanded = set()
+            for dept_id in departments:
+                expanded |= self._department_ancestors(token, dept_id, scope_dept_ids, cache)
+            departments = expanded
         roles = detail.get("role_list") or detail.get("roleList") or detail.get("roles") or []
         if not isinstance(roles, list) or any(
             not isinstance(item, dict) or not _is_identifier(item.get("id")) for item in roles
