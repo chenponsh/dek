@@ -62,6 +62,27 @@ class IsolatedReviewClone:
         self.bundle=Path(bundle); self.clones=Path(clones); self.retain=retain; self._digest=""; self._current:Path|None=None
         self.bundle_archive=Path(bundle_archive) if bundle_archive else None
 
+    @staticmethod
+    def _valid_clone(target: Path) -> bool:
+        if not target.is_dir() or target.is_symlink() or not (target/".git").is_dir():
+            return False
+        environment={"PATH":"/usr/bin:/bin","LANG":"C.UTF-8","LC_ALL":"C.UTF-8","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_SYSTEM":"/dev/null","GIT_CONFIG_GLOBAL":"/dev/null","GIT_ATTR_NOSYSTEM":"1","GIT_TERMINAL_PROMPT":"0","GIT_ASKPASS":"/bin/false","SSH_ASKPASS":"/bin/false"}
+        try:
+            completed=subprocess.run(
+                ["/usr/bin/git","--no-pager","-c","core.hooksPath=/dev/null","-c","credential.helper=","-c","credential.interactive=never","-c","core.fsmonitor=false","-c","protocol.allow=never","rev-parse","--verify","HEAD^{commit}"],
+                cwd=target,env=environment,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,check=False,
+            )
+        except (OSError,subprocess.SubprocessError):
+            return False
+        return completed.returncode==0
+
+    @staticmethod
+    def _remove_invalid_target(target: Path) -> None:
+        if target.is_symlink() or (target.exists() and not target.is_dir()):
+            target.unlink()
+        elif target.exists():
+            import shutil; shutil.rmtree(target)
+
     def current(self)->Path:
         descriptor=os.open(self.bundle,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0))
         try:
@@ -85,8 +106,10 @@ class IsolatedReviewClone:
                 with temporary.open("xb") as handle: handle.write(raw); handle.flush(); os.fsync(handle.fileno())
                 os.chmod(temporary,0o440)
                 os.replace(temporary,archive)
-        if digest==self._digest and self._current is not None: return self._current
+        if digest==self._digest and self._current is not None and self._valid_clone(self._current): return self._current
         self.clones.mkdir(parents=True,exist_ok=True); target=self.clones/digest
+        if target.exists() and not self._valid_clone(target):
+            self._remove_invalid_target(target)
         if not target.exists():
             temporary=self.clones/(".clone-"+digest)
             pinned=self.clones/(".bundle-"+digest)
@@ -101,6 +124,9 @@ class IsolatedReviewClone:
             if completed.returncode: raise ReviewError("review clone failed","503 Service Unavailable")
             os.replace(temporary,target)
             pinned.unlink()
+        if not self._valid_clone(target):
+            self._remove_invalid_target(target)
+            raise ReviewError("review clone invalid","503 Service Unavailable")
         self._digest,self._current=digest,target
         old_clones=sorted((p for p in self.clones.iterdir() if p.is_dir() and not p.name.startswith(".")),key=lambda p:p.stat().st_mtime_ns,reverse=True)
         for old in old_clones[self.retain:]:
@@ -928,6 +954,17 @@ class ReviewService:
         self.labels = labels
         self.path_prefix = path_prefix
         self.suggestions_path = suggestions_path
+
+    def check_ready(self) -> None:
+        """Verify the snapshot can support a decision, not only page rendering."""
+        try:
+            root=self.repository_source.current() if hasattr(self.repository_source,"current") else self.root
+        except ReviewError:
+            raise
+        except (OSError,subprocess.SubprocessError) as exc:
+            raise ReviewError("review repository unavailable","503 Service Unavailable") from exc
+        if root is None or not IsolatedReviewClone._valid_clone(Path(root)):
+            raise ReviewError("review repository invalid","503 Service Unavailable")
 
     def _pending(self, root=None) -> list[RoughBinding]:
         root=root or (self.repository_source.current() if hasattr(self.repository_source,"current") else self.root)

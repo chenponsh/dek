@@ -171,8 +171,13 @@ class ReviewApp:
                 return self._response(start, "405 Method Not Allowed", b"Method Not Allowed", (("Allow", "GET"),))
             if not self.reviewers:
                 return self._response(start,"503 Service Unavailable",b"Unavailable")
+            try:
+                self.service.check_ready()
+            except ReviewError:
+                auth_logger.warning("review_readiness_failed")
+                return self._response(start,"503 Service Unavailable",b"Unavailable",(("Cache-Control","no-store"),))
             body=json.dumps({"status":"ready","login_bounce":self.expected_origin+"/auth/bounce"},separators=(",",":")).encode()
-            return self._response(start,"200 OK",body,(("Content-Type","application/json"),))
+            return self._response(start,"200 OK",body,(("Content-Type","application/json"),("Cache-Control","no-store")))
         method = environ.get("REQUEST_METHOD") or "GET"
         cookies = self._cookies(environ)
 

@@ -2,6 +2,7 @@ import io
 import hashlib
 import json
 import re
+import shutil
 import socket
 import tempfile
 import subprocess
@@ -165,6 +166,15 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(__import__("json").loads(body), {"status": "ready", "login_bounce": REVIEW_ORIGIN + "/auth/bounce"})
         self.app = ReviewApp(self.service, CLAIM_SECRET, (), expected_origin=REVIEW_ORIGIN, clock=self.clock)
         self.assertEqual(self.call("/__ready")[0], "503 Service Unavailable")
+
+    def test_readiness_fails_when_snapshot_cannot_support_a_decision(self):
+        shutil.rmtree(self.root / "repo/.git")
+        with self.assertLogs("web.review.auth", level="WARNING") as captured:
+            status, headers, body = self.call("/__ready")
+        self.assertEqual(status, "503 Service Unavailable")
+        self.assertEqual(body, b"Unavailable")
+        self.assertIn(("Cache-Control", "no-store"), headers)
+        self.assertTrue(any("review_readiness_failed" in line for line in captured.output))
 
     def test_render_failure_returns_controlled_status_instead_of_server_error(self):
         # An unhandled ReviewError from the review repository reached the WSGI

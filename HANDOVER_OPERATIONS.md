@@ -118,6 +118,7 @@ for k, v in res["report"].items(): print(k.split("/", 1)[-1][:44], v.get("status
 EOF
 
 deploy/tools/publish_check.sh                       # 发布后核对
+deploy/tools/runtime_smoke.sh                       # 只读线上复核：服务、入口、审核 Git 快照、就绪门禁
 journalctl -u dek-review --since -30min --no-pager  # 审核页请求（POST /decision、/publish、/trigger-ingest）
 journalctl -u dek-source-ingest.service --since -1h --no-pager   # 抓取
 journalctl -u dek-builder.service --since -15min --no-pager | grep -E "DEK build|BundleError"

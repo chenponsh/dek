@@ -281,6 +281,25 @@ class BundleBoundarySliceTests(unittest.TestCase):
             replacement=root/"new.bundle"; subprocess.run(["git","bundle","create",str(replacement),"refs/heads/main"],cwd=repo,check=True); os.replace(replacement,bundle)
             second=source.current(); self.assertNotEqual(first,second); self.assertEqual((second/"ingestion/rough/a.md").read_text(),"two")
 
+    def test_reviewer_rebuilds_a_cached_clone_if_git_metadata_disappears(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); repo=root/"repo"; repo.mkdir(); bundle=root/"repository.bundle"
+            subprocess.run(["git","init","-q","-b","main"],cwd=repo,check=True)
+            (repo/"ingestion/rough").mkdir(parents=True); (repo/"ingestion/rough/a.md").write_text("one")
+            subprocess.run(["git","add","."],cwd=repo,check=True)
+            subprocess.run(["git","-c","user.name=t","-c","user.email=t@invalid","commit","-qm","one"],cwd=repo,check=True)
+            subprocess.run(["git","bundle","create",str(bundle),"refs/heads/main"],cwd=repo,check=True)
+            source=IsolatedReviewClone(bundle,root/"review-clones")
+            clone=source.current(); shutil.rmtree(clone/".git")
+            rebuilt=source.current()
+            self.assertEqual(rebuilt,clone)
+            self.assertTrue((rebuilt/".git").is_dir())
+            self.assertEqual((rebuilt/"ingestion/rough/a.md").read_text(),"one")
+
+    def test_tmpfiles_never_age_cleans_inside_persistent_review_clones(self):
+        tmpfiles=Path("deploy/tmpfiles/dek-review-deploy.conf").read_text(encoding="utf-8")
+        self.assertRegex(tmpfiles,r"(?m)^d /var/lib/dek-review/clones 0700 dek-review dek-review -$")
+
 
 class ActivationSliceTests(unittest.TestCase):
     def test_reconcile_multiple_prepared_journals_rereads_active_and_freshly_proves_rollback(self):
