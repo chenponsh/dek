@@ -120,7 +120,7 @@ class UnitFileTests(unittest.TestCase):
         starts = [l for l in (self.units / "dek-review-publish-manual.service").read_text(encoding="utf-8").splitlines() if l.startswith("ExecStart")]
         self.assertEqual(starts[-1], "ExecStart=-/usr/bin/systemctl start --wait dek-source-refresh.service")
         self.assertEqual(starts[-2], "ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-refresh")
-        self.assertEqual(starts[-3], "ExecStart=/usr/bin/systemctl start --wait dek-activator.service")
+        self.assertEqual(starts[-3], "ExecStart=/usr/bin/test /var/lib/dek-activate/control/active.json -nt /var/lib/dek-review/state/publish-requested-at")
 
 
 if __name__ == "__main__":

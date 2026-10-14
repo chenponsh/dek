@@ -4,7 +4,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/rm -f /var/lib/dek-review/state/publish-trigger-requested /var/lib/dek-review/state/publish-stage-prepare /var/lib/dek-review/state/publish-stage-build /var/lib/dek-review/state/publish-stage-push /var/lib/dek-review/state/publish-stage-activate /var/lib/dek-review/state/publish-stage-refresh
+ExecStart=/bin/rm -f /var/lib/dek-review/state/publish-trigger-requested /var/lib/dek-review/state/publish-stage-prepare /var/lib/dek-review/state/publish-stage-build /var/lib/dek-review/state/publish-stage-push /var/lib/dek-review/state/publish-stage-activate /var/lib/dek-review/state/publish-stage-refresh /var/lib/dek-review/state/publish-run-finished
 ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-prepare
 ExecStart=/usr/bin/systemctl start --wait dek-review-publish.service
 ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-build
@@ -13,9 +13,12 @@ ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-push
 ExecStart=/usr/bin/systemctl start --wait dek-review-publish.service
 ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-activate
 ExecStart=/usr/bin/systemctl start --wait dek-activator.service
+# Do not refresh an old active release and mistake its new file timestamp for a successful publish.
+ExecStart=/usr/bin/test /var/lib/dek-activate/control/active.json -nt /var/lib/dek-review/state/publish-requested-at
 # Last, bring the reviewers' snapshot up to date so the page shows the item as published (a failure here must not fail the publish).
 ExecStart=/usr/bin/touch /var/lib/dek-review/state/publish-stage-refresh
 ExecStart=-/usr/bin/systemctl start --wait dek-source-refresh.service
+ExecStopPost=/usr/bin/touch /var/lib/dek-review/state/publish-run-finished
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true

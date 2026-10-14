@@ -801,6 +801,17 @@ class ReviewAppTests(unittest.TestCase):
         self.assertIn("重试发布", page)
         self.assertIn("发布没有更新数据", page)
 
+    def test_a_finished_failed_publish_stops_blocking_immediately(self):
+        session = self.busy_app()
+        self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        finished=self.root/"state"/self.service.PUBLISH_FINISHED
+        finished.touch(); os.utime(finished,(self.clock_value+5,self.clock_value+5))
+        self.clock_value += 6
+        page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertNotIn("data-publish-progress", page)
+        self.assertIn("重试发布", page)
+        self.assertIn("发布没有更新数据", page)
+
     def test_a_pull_in_progress_greys_the_pull_button_and_the_decision_buttons_and_refuses_a_second_pull(self):
         session = self.busy_app()
         self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)

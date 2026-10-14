@@ -437,9 +437,12 @@ class ManualPublishTriggerTests(unittest.TestCase):
         build = text.index("systemctl start --wait dek-builder.service")
         publish = text.index(publisher, prepare + 1)
         activate = text.index("systemctl start --wait dek-activator.service")
+        active_check = text.index("/usr/bin/test /var/lib/dek-activate/control/active.json -nt")
         self.assertLess(prepare, build)
         self.assertLess(build, publish)
         self.assertLess(publish, activate)
+        self.assertLess(activate, active_check)
+        self.assertIn("ExecStopPost=/usr/bin/touch /var/lib/dek-review/state/publish-run-finished", text)
 
     def test_runbook_enables_the_manual_path_units_not_removed_timers(self):
         runbook = Path("deploy/PRODUCTION_ROLLOUT.md").read_text(encoding="utf-8")

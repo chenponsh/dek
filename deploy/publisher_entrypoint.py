@@ -416,6 +416,10 @@ def main(argv=None):
     for decision in valid:
         state=read_state(decision["decision_id"]); status=state.get("status")
         if status in {"published","activated"}: continue
+        if (status=="failed" and state.get("retryable") is True
+                and any(marker in str(state.get("last_error", "")) for marker in PERMANENT_FAILURES)):
+            state={**state,"retryable":False}
+            write_state(decision["decision_id"],state)
         if status=="failed" and state.get("retryable") is False:
             print(f'DEK publish skipped decision={decision["decision_id"]}: cannot be retried '
                   f'({state.get("last_error","")[:160]})',file=sys.stderr)

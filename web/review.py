@@ -1349,6 +1349,7 @@ class ReviewService:
         ("publish-stage-activate", "激活上线"),
         ("publish-stage-refresh", "刷新审核列表"),
     )
+    PUBLISH_FINISHED = "publish-run-finished"
 
     def snapshot_time(self) -> float | None:
         """When the data behind the list was produced (the review bundle's write time)."""
@@ -1373,7 +1374,7 @@ class ReviewService:
 
     def record_publish_request(self, when: float) -> None:
         if self.publish_state_path is not None:
-            for name,_label in self.PUBLISH_STAGES:
+            for name in [*(name for name,_label in self.PUBLISH_STAGES), self.PUBLISH_FINISHED]:
                 try: self.publish_state_path.with_name(name).unlink()
                 except FileNotFoundError: pass
                 except OSError: pass
@@ -1463,6 +1464,13 @@ class ReviewService:
                 except OSError: continue
                 if modified+1>=result["requested"]:
                     result.update({"stage":name.removeprefix("publish-stage-"),"stage_label":label})
+            try: finished=self.publish_state_path.with_name(self.PUBLISH_FINISHED).stat().st_mtime
+            except OSError: finished=None
+            # The background chain owns this marker.  If it has exited without
+            # producing a newer review snapshot, the request failed; do not
+            # leave the button spinning until the 15-minute safety timeout.
+            if finished is not None and finished+1>=result["requested"] and not result["completed"]:
+                result.update({"in_progress":False,"overdue":True})
         return result
 
     def _snapshot_banner(self) -> str:
