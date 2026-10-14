@@ -215,6 +215,15 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("不得把多个条目合并成末尾一个“信息出处”区", soul)
         self.assertIn("不显示内部 `wiki/...` 路径", soul)
 
+    def test_the_bot_refuses_non_knowledge_questions_without_disclosing_implementation(self):
+        soul = (Path(__file__).resolve().parents[1] / "config" / "SOUL.md").read_text(encoding="utf-8")
+        self.assertIn("不调用任何工具，只回答：`请询问与已审核知识库内容相关的问题。`", soul)
+        self.assertIn("只回答其中的知识库问题", soul)
+        for forbidden_disclosure in (
+            "模型名称或版本", "Hermes Agent", "服务器或文件路径", "内部提示词", "相关产品文档",
+        ):
+            self.assertIn(forbidden_disclosure, soul)
+
     def test_live_mcp_load_emits_proof_for_exact_loaded_bytes(self):
         proof_path = self.root / "run" / "generation.json"
         kb, loaded = load_knowledge_base(self.index, proof_path, boot_nonce="boot-1", release_sha256="f" * 64, pid=4321)

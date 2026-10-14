@@ -143,6 +143,16 @@ class StageARunbookTests(unittest.TestCase):
         self.assertNotIn("[REVIEW_FULLCHAIN]", self.runbook)
         self.assertNotIn("[REVIEW_PRIVATE_KEY]", self.runbook)
 
+    def test_review_parent_allows_only_shared_group_traversal_to_input(self):
+        tmpfiles = Path("deploy/tmpfiles/dek-review-deploy.conf").read_text(encoding="utf-8")
+        self.assertIn("d /var/lib/dek-review 0710 dek-review dek-review-input -", tmpfiles)
+        self.assertIn("d /var/lib/dek-review/input 2750 dek-source-ingest dek-review-input -", tmpfiles)
+        self.assertIn(
+            "ingestion-review-traversal\tdek-source-ingest\tdek-review\t/var/lib/dek-review"
+            "\tdek-review:dek-review-input\t0710\ttraverse-only\towner-full",
+            self.matrix,
+        )
+
     def test_review_service_restarts_before_nginx_publishes_the_new_route(self):
         restart_command = "systemctl restart dek-review.service"
         self.assertIn(restart_command, self.runbook)
