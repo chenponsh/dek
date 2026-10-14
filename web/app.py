@@ -23,6 +23,13 @@ from .dingtalk_gateway import DingTalkClient, DingTalkGateway, LoginError, Memor
 auth_logger = logging.getLogger("web.auth")
 
 SIGNED_OUT_PAGE = """<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"robots\" content=\"noindex,nofollow\"><title>已退出 · DEK</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f8f9;color:#232323;font:16px/1.6 system-ui,sans-serif}.card{width:min(420px,calc(100% - 40px));padding:38px;text-align:center;background:#fff;border:1px solid rgba(35,35,35,.12);border-top:3px solid #00c5ce;border-radius:12px;box-shadow:0 16px 50px rgba(0,0,0,.08)}h1{font-size:26px;margin:0 0 8px}p{color:#6f6f6f;margin:0 0 25px}a{display:inline-block;padding:9px 20px;border-radius:7px;background:#007c84;color:#fff;text-decoration:none}</style></head><body><main class=\"card\"><h1>已安全退出</h1><p>当前知识库会话已清除。</p><a href=\"/\">重新登录</a></main></body></html>""".encode()
+USER_ERROR_BODIES = {
+    "401 Unauthorized": "登录已失效，请重新登录。",
+    "403 Forbidden": "当前账号没有访问权限。如需使用，请联系管理员。",
+    "404 Not Found": "页面不存在或已被移动。",
+    "405 Method Not Allowed": "当前操作不受支持。",
+    "503 Service Unavailable": "系统暂时无法处理请求，请稍后重试；若仍然失败，请联系管理员。",
+}
 
 
 def decode_request_path(raw_path: str) -> str:
@@ -107,6 +114,11 @@ class KnowledgeApp:
         self.boot_nonce = boot_nonce
         self.release_sha256 = release_sha256
     def _response(self,start,status,body=b"",headers=(),pin=None):
+        if status in USER_ERROR_BODIES and body in {
+            b"Unauthorized", b"Forbidden", b"Not found", b"Not Found", b"Method Not Allowed", b"Unavailable",
+        }:
+            body=USER_ERROR_BODIES[status].encode("utf-8")
+            headers=tuple((key,value) for key,value in headers if key.lower()!="content-type")+(("Content-Type","text/plain; charset=utf-8"),)
         start(status,[("Content-Length",str(len(body))),*headers]); return _PinnedResponse(body,pin) if pin else [body]
     def __call__(self,environ,start):
         path=decode_request_path(environ.get("PATH_INFO") or "/")

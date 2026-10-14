@@ -211,7 +211,7 @@
   // ---- Home page ----------------------------------------------------------
   // The release only carries the directory data (manifest.json); the page itself
   // is built here, from installed code, so changing it needs a deploy, not a release.
-  const HOME_SECTION_TITLES = { wiki: "Wiki · 正式知识", source: "Source · 来源材料" };
+  const HOME_SECTION_TITLES = { wiki: "正式知识", source: "来源材料" };
 
   function countHtml(path, total, className, isSection) {
     const text = isSection ? String(total) : `共 ${total} 篇`;

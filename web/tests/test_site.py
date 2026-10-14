@@ -281,8 +281,8 @@ class SiteBuildTests(unittest.TestCase):
         self.assertNotIn("http-equiv=\"refresh\"", homepage)
         self.assertIn("DEK 知识库", homepage)
         markup = self.home_markup()
-        self.assertIn("Wiki · 正式知识", markup)
-        self.assertIn("Source · 来源材料", markup)
+        self.assertIn("正式知识", markup)
+        self.assertIn("来源材料", markup)
 
     def test_the_built_home_page_is_only_a_shell_the_scripts_fill_in(self):
         # Filters and category cards come from installed scripts + manifest.json, so a
@@ -705,7 +705,7 @@ class SiteBuildTests(unittest.TestCase):
         page = rendered_page((self.out / "source" / "CDE" / "带链接.html"))
         panel = page.split('<details class="note-properties"', 1)[1].split("</details>", 1)[0]
         self.assertIn('<dt>来源链接</dt><dd><a class="external" href="https://example.com/original"', panel)
-        self.assertLess(panel.index("来源链接"), panel.index("笔记路径"))
+        self.assertLess(panel.index("来源链接"), panel.index("内容路径"))
 
     def test_sidebar_has_a_drag_resize_handle(self):
         build_site(self.vault, self.out)

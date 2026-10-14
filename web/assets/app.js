@@ -169,7 +169,7 @@
         const candidate = form.querySelector('[name="candidate_markdown"]');
         if (!input.value.trim() || (approving && !candidate?.value.trim())) {
           event.preventDefault();
-          alert(moving ? "请先选择要移动到的分类。" : "批准前请先在「Wiki 路径」栏搜索并选择一个具体分类文件夹。");
+          alert(moving ? "请先选择要移动到的分类。" : "批准前请先在“知识库分类”栏搜索并选择一个具体分类。");
           input.focus();
           return;
         }
@@ -378,7 +378,7 @@
       const isRoot = node.path === "wiki" || node.path === "source";
       const isCurrentAncestor = current === node.path || current.startsWith(node.path + "/");
       const open = isRoot || isCurrentAncestor || openPaths.has(node.path);
-      const label = node.path === "wiki" ? "Wiki · 正式知识" : node.path === "source" ? "Source · 来源材料" : node.name;
+      const label = node.path === "wiki" ? "正式知识" : node.path === "source" ? "来源材料" : node.name;
       return `<details class="tree-folder${isRoot ? " tree-root" : ""}" data-path="${escapeHtml(node.path)}" ${open ? "open" : ""}><summary role="treeitem"><span class="tree-chevron">›</span><span class="tree-folder-icon">▱</span><span class="tree-label">${escapeHtml(label)}</span><span class="tree-count">${node.count}</span></summary><div role="group">${node.children.map(child => renderNode(child)).join("")}</div></details>`;
     }
 

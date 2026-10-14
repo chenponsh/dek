@@ -92,7 +92,7 @@ def _tree_html(docs: list[dict], current: str, source_output: PurePosixPath) -> 
     for doc in docs:
         groups[doc["kind"]].append(doc)
     chunks = []
-    for kind, label in (("wiki", "Wiki · 正式知识"), ("source", "Source · 来源材料")):
+    for kind, label in (("wiki", "正式知识"), ("source", "来源材料")):
         links = []
         for doc in sorted(groups[kind], key=lambda d: d["path"]):
             cls = " active" if doc["path"] == current else ""
@@ -327,7 +327,7 @@ def _properties_data(doc: dict, by_path: dict[str, dict], by_stem: dict[str, lis
         if value is None or value == "" or value == []:
             continue
         rows.append({"label": label, "value": _property_data(value, doc, by_path, by_stem)})
-    rows.append({"label": "笔记路径", "code": doc["path"]})
+    rows.append({"label": "内容路径", "code": doc["path"]})
     return rows
 
 

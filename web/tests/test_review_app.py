@@ -174,7 +174,7 @@ class ReviewAppTests(unittest.TestCase):
         with self.assertLogs("web.review.auth", level="WARNING") as captured:
             status, headers, body = self.call("/__ready")
         self.assertEqual(status, "503 Service Unavailable")
-        self.assertEqual(body, b"Unavailable")
+        self.assertIn("系统暂时无法处理请求", body.decode("utf-8"))
         self.assertIn(("Cache-Control", "no-store"), headers)
         self.assertTrue(any("review_readiness_failed" in line for line in captured.output))
 
@@ -191,7 +191,7 @@ class ReviewAppTests(unittest.TestCase):
         with self.assertLogs("web.review.auth", level="WARNING") as captured:
             status, _, body = self.call("/", cookie=session)
         self.assertEqual(status, "503 Service Unavailable")
-        self.assertEqual(body, b"Service Unavailable")
+        self.assertIn("系统暂时无法处理请求", body.decode("utf-8"))
         self.assertTrue(any("review_render_failed" in line for line in captured.output))
         self.assertNotIn("clone failed", " ".join(captured.output))
 
@@ -280,7 +280,7 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(record["wiki_path"], "wiki/02_新分类/02-0001.md")
         status, _, after = self.call("/knowledge/" + knowledge_identity, query="notice=moved", cookie=session)
         self.assertEqual(status, "200 OK")
-        self.assertIn("已审核待发布，尚未实际移动", after.decode())
+        self.assertIn("已进入“待发布”", after.decode())
         self.assertIn("撤回调整", after.decode())
         cancel_nonce = re.search('name="form_nonce" value="([^"]+)"', after.decode()).group(1)
         status, headers, _ = self.call(
@@ -398,13 +398,13 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected")
         _, _, after = self.call("/item/" + identity, query="notice=rejected", cookie=session)
         self.assertIn("已拒绝", after.decode("utf-8"))
-        self.assertIn("已记录：拒绝。", after.decode("utf-8"))
+        self.assertIn("已拒绝。", after.decode("utf-8"))
         # A rejected item is locked but can be re-opened, and 批准 then wins.
         status, headers, _ = submit("approve", edit=True, wiki_path="wiki/01_Test/01-0001.md", candidate_markdown=CANDIDATE)
         self.assertEqual(status, "303 See Other")
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=approved")
         _, _, done = self.call("/item/" + identity, cookie=session)
-        self.assertIn("已审核待发布", done.decode("utf-8"))
+        self.assertIn("待发布", done.decode("utf-8"))
         records = [json.loads(line) for line in (self.root / "state/decisions.jsonl").read_text().splitlines()]
         self.assertEqual([r["action"] for r in records], ["reject", "approve"])
         self.assertEqual([r["comment"] for r in records], ["", ""])
@@ -626,10 +626,9 @@ class ReviewAppTests(unittest.TestCase):
         self.snapshot_app(snapshot_age_seconds=300)
         session = self.authenticate()
         list_page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertIn("数据快照：", list_page)
-        self.assertIn("5 分钟前", list_page)
+        self.assertIn("当前数据更新于", list_page)
         identity = re.search(r'/review/item/([0-9a-f]{16})', list_page).group(1)
-        self.assertIn("数据快照：", self.call("/item/" + identity, cookie=session)[2].decode("utf-8"))
+        self.assertIn("当前数据更新于", self.call("/item/" + identity, cookie=session)[2].decode("utf-8"))
         self.assertNotIn("抓取进行中", list_page)
 
     def test_clicking_pull_records_the_time_and_the_pages_say_a_pull_is_running(self):
@@ -638,9 +637,8 @@ class ReviewAppTests(unittest.TestCase):
         self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         self.assertEqual(state.read_text().strip(), str(self.clock_value))
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertIn("正在拉取最新数据", page)
-        self.assertIn("完成前暂不可审核", page)
-        self.assertIn("当前显示", page)
+        self.assertIn("正在更新数据", page)
+        self.assertIn("期间不可审核", page)
         self.assertIn("data-ingest-progress=true", page)
 
     def test_pull_with_missing_snapshot_write_permission_is_rejected_immediately(self):
@@ -653,8 +651,8 @@ class ReviewAppTests(unittest.TestCase):
         self.assertFalse(self.app.ingest_trigger_path.exists())
         self.assertFalse(self.service.ingest_state_path.exists())
         page = self.call("/", query="notice=ingest_permission_denied", cookie=session)[2].decode("utf-8")
-        self.assertIn("拉取未开始", page)
-        self.assertIn("没有写入审核数据的权限", page)
+        self.assertIn("数据更新未开始", page)
+        self.assertIn("服务权限不足", page)
 
     def test_snapshot_write_preflight_checks_parent_traversal_and_target_write(self):
         import pwd
@@ -687,7 +685,7 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=ingest_running")
         self.assertFalse((self.root / "state" / "decisions.jsonl").exists() and (self.root / "state" / "decisions.jsonl").read_text().strip())
         notice = self.call("/item/" + identity, query="notice=ingest_running", cookie=session)[2].decode("utf-8")
-        self.assertIn("这次没有记录任何决定", notice)
+        self.assertIn("本次操作未保存", notice)
 
     def test_once_the_data_is_refreshed_decisions_work_again(self):
         self.snapshot_app()
@@ -708,11 +706,11 @@ class ReviewAppTests(unittest.TestCase):
         page = self.call("/", query="notice=ingest_triggered", cookie=session)[2].decode("utf-8")
         self.assertNotIn("抓取进行中", page)
         self.assertNotIn("data-ingest-progress", page)
-        self.assertIn("数据已更新：", page)
-        self.assertIn("本次拉取用时 1 分 0 秒", page)
+        self.assertIn("当前数据更新于", page)
+        self.assertIn("用时 1 分 0 秒", page)
         self.assertIn("新增 2 条、更新 1 条", page)
         self.assertNotIn("开始，用时", page)
-        self.assertNotIn("已提交拉取请求", page)
+        self.assertNotIn("已开始更新数据", page)
 
     def test_completed_pull_says_when_nothing_changed(self):
         self.snapshot_app()
@@ -736,8 +734,8 @@ class ReviewAppTests(unittest.TestCase):
         self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         self.clock_value += ReviewService.INGEST_WAIT_SECONDS + 5
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertIn("拉取未在预计时间内完成，数据没有更新", page)
-        self.assertIn("服务权限不足或网络异常", page)
+        self.assertIn("数据更新失败", page)
+        self.assertIn("发起的任务未能完成", page)
         self.assertIn("重新拉取", page)
         self.assertNotIn("抓取进行中", page)
         self.assertNotIn("data-ingest-progress", page)
@@ -770,7 +768,8 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual((self.root / "state" / "publish-requested-at").read_text().strip(), str(self.clock_value))
         page = self.call("/", cookie=session)[2].decode("utf-8")
         self.assertIn('<button type="submit" class="is-busy" disabled aria-busy="true">等待任务启动…</button>', page)
-        self.assertIn("发布进行中：等待任务启动", page)
+        self.assertIn("正在发布。", page)
+        self.assertIn("完成后页面会自动更新，请勿重复提交", page)
         self.assertIn("data-publish-progress=true",page)
         self.assertNotIn("重试发布", page)
         stage=self.root/"state"/"publish-stage-build"; stage.touch(); os.utime(stage,(self.clock_value+1,self.clock_value+1))
@@ -799,7 +798,8 @@ class ReviewAppTests(unittest.TestCase):
         self.clock_value += 901
         page = self.call("/", cookie=session)[2].decode("utf-8")
         self.assertIn("重试发布", page)
-        self.assertIn("发布没有更新数据", page)
+        self.assertIn("发布失败", page)
+        self.assertIn("尚未上线，线上数据未受影响", page)
 
     def test_a_finished_failed_publish_stops_blocking_immediately(self):
         session = self.busy_app()
@@ -810,7 +810,8 @@ class ReviewAppTests(unittest.TestCase):
         page = self.call("/", cookie=session)[2].decode("utf-8")
         self.assertNotIn("data-publish-progress", page)
         self.assertIn("重试发布", page)
-        self.assertIn("发布没有更新数据", page)
+        self.assertIn("发布失败", page)
+        self.assertNotIn("已提交发布请求", page)
 
     def test_a_pull_in_progress_greys_the_pull_button_and_the_decision_buttons_and_refuses_a_second_pull(self):
         session = self.busy_app()
@@ -832,30 +833,29 @@ class ReviewAppTests(unittest.TestCase):
         self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         page = self.call("/", query="notice=ingest_triggered", cookie=session)[2].decode("utf-8")
         body = page.split("</style>", 1)[1]
-        self.assertEqual(body.count("正在拉取最新数据（"), 1)
+        self.assertEqual(body.count("正在更新数据。"), 1)
         self.assertEqual(body.count('class="notice'), 1)                  # a single block ...
-        self.assertNotIn("已提交拉取请求", body)                            # ... without the separate "submitted" notice
+        self.assertNotIn("已开始更新数据", body)                            # ... without the separate "submitted" notice
         self.assertNotIn('class="meta snapshot-line"', body)               # ... and the current snapshot time is inside it
-        self.assertNotIn("数据快照：", body)
-        self.assertIn("当前显示", body)
-        self.assertIn("的数据；完成前暂不可审核，请稍后刷新。", body)
+        self.assertNotIn("当前数据更新于", body)
+        self.assertIn("完成后页面会自动更新，期间不可审核。", body)
 
     def test_the_submitted_notice_still_shows_when_nothing_is_running(self):
         session = self.busy_app()
         page = self.call("/", query="notice=ingest_triggered", cookie=session)[2].decode("utf-8")
-        self.assertIn("已提交拉取请求", page)
+        self.assertIn("已开始更新数据", page)
         self.assertIn('class="meta snapshot-line"', page)
 
     def test_the_buttons_are_normal_when_nothing_is_running(self):
         session = self.busy_app()
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertIn('data-busy-label="已提交…">立即拉取最新源</button>', page)
+        self.assertIn('data-busy-label="已提交…">更新最新数据</button>', page)
         self.assertNotIn("is-busy", page.split("</style>", 1)[1])
 
     def test_the_new_notices_have_text(self):
         from web.review_app import NOTICES
-        self.assertIn("已经在进行", NOTICES["ingest_already"])
-        self.assertIn("已经在进行", NOTICES["publish_already"])
+        self.assertIn("请勿重复提交", NOTICES["ingest_already"])
+        self.assertIn("请勿重复提交", NOTICES["publish_already"])
 
     def test_publish_is_404_when_not_configured(self):
         session = self.authenticate()

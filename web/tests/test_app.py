@@ -131,7 +131,8 @@ class AppTests(unittest.TestCase):
                 urlencode({"code": "secret-code", "state": "secret-state"}),
             )
 
-        self.assertEqual((status, body), ("403 Forbidden", b"Forbidden"))
+        self.assertEqual(status, "403 Forbidden")
+        self.assertIn("当前账号没有访问权限", body.decode("utf-8"))
         self.assertEqual(captured.output, ["WARNING:web.auth:dingtalk_callback_failed reason=not_kbot_allowed"])
         self.assertNotIn("secret-code", captured.output[0])
         self.assertNotIn("secret-state", captured.output[0])

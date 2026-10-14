@@ -31,7 +31,7 @@ class ReadOnlyQa:
 
     def handle(self, message: Message) -> dict:
         if message.user_id not in self._users or message.chat_id not in self._chats:
-            return {"status": "denied", "answer": "无权访问该知识库。"}
+            return {"status": "denied", "answer": "当前账号没有访问权限。如需使用，请联系管理员。"}
         key = self.session_key(message)
         self._sessions.setdefault(key, []).append(message.text)
         hits = self._kb.dek_kb_search(message.text, limit=3)

@@ -144,7 +144,7 @@ class RoughBinding:
 
 STATUS_LABELS = {
     "pending": "待审核",
-    "approved": "已审核待发布",
+    "approved": "待发布",
     "rejected": "已拒绝",
     "published": "已发布",
 }
@@ -990,7 +990,7 @@ class ReviewService:
         for rough in self._pending(root):
             nonce = self.nonces.issue(session_id, rough.path, int(self.clock()) + 900, str(root))
             cards.append(self._form_card(rough, nonce, root=root, heading=PurePosixPath(rough.path).name))
-        content = "".join(cards) or "<p>当前没有待审核 rough。</p>"
+        content = "".join(cards) or "<p>当前没有待审核内容。</p>"
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>审核 · DEK</title>{STYLE}</head><body><h1>待审核内容</h1>{content}</body></html>""".encode()
 
     def _snapshot_root(self, root=None) -> Path:
@@ -1073,8 +1073,8 @@ class ReviewService:
             self._header() + self._sidebar("review:sources")
             + '<div class="content"><main class="review-shell review-list">'
             + f'<p><a href="{self.path_prefix}/">← 返回列表</a></p><h1>来源列表</h1>'
-            + '<div class="meta">按来源统计，不是按 wiki：这里是每个来源网址上已经抓到的内容里最新的发布日期（含还没审核的）。'
-              '“—”表示还没有抓到带日期的内容。</div>'
+            + '<div class="meta">这里按来源网址统计最新发布日期，包含尚未审核的内容。'
+              '“—”表示暂未获取到发布日期。</div>'
             + '<div class="table-wrap"><table class="source-table"><colgroup><col class="col-index"><col class="col-source"><col><col class="col-date"></colgroup>'
             + '<thead><tr><th class="index">序号</th><th>来源</th><th>网址</th><th>最新发布日期</th></tr></thead>'
             + f'<tbody>{rows}</tbody></table></div></main></div>'
@@ -1208,7 +1208,7 @@ class ReviewService:
                                + "。请核对后再决定。")
         existing = wiki_questions(str(root)).get(key)
         if existing:
-            notices.append("Wiki 里已有相同问题的条目：" + "、".join(html.escape(path[len("wiki/"):]) for path in existing[:3]) + "。批准前请确认不是重复。")
+            notices.append("知识库中已有相同问题：" + "、".join(html.escape(path[len("wiki/"):]) for path in existing[:3]) + "。请确认不是重复内容后再批准。")
         return "".join(f'<div class="notice duplicate-notice">注意：{text}</div>' for text in notices)
 
     @staticmethod
@@ -1318,7 +1318,7 @@ class ReviewService:
             chips = f'<div class="path-suggestions">系统建议：{buttons}</div>'
         return f"""<article><h2>{html.escape(heading)}</h2><pre>{html.escape(rough_display(rough.content, suggested))}</pre>
 <form method="post" action="{self.path_prefix}/decision{html.escape(action_query)}"><input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="rough_path" value="{html.escape(rough.path)}"><input type="hidden" name="rough_sha256" value="{rough.sha256}"><input type="hidden" name="rough_version" value="{html.escape(rough.version)}">
-<label>Wiki 路径<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索 wiki 文件夹…" data-options="{html.escape(options_json)}" data-existing-categories="{html.escape(categories_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<div class="notice category-create-preview" hidden></div><label>候选 Wiki Markdown<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><p class="meta decision-hint">批准后会进入“已审核待发布”，请回到列表手动发布；可以连续审核多条，合并成一个版本发布。</p><div class="decision-actions">{decision_buttons}</div></form></article>"""
+<label>知识库分类<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索知识库分类…" data-options="{html.escape(options_json)}" data-existing-categories="{html.escape(categories_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<div class="notice category-create-preview" hidden></div><label>待发布内容<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><p class="meta decision-hint">批准后内容会进入“待发布”。可以继续审核，完成后统一发布。</p><div class="decision-actions">{decision_buttons}</div></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()
@@ -1482,7 +1482,7 @@ class ReviewService:
         if status["snapshot"]:
             minutes = max(0, int((self.clock() - status["snapshot"]) // 60))
             ago = "刚刚" if minutes < 1 else f"{minutes} 分钟前" if minutes < 120 else f"{minutes // 60} 小时前"
-            snapshot = f'数据快照：{clock(status["snapshot"])}（{ago}）。列表和内容都来自这一时刻。'
+            snapshot = f'当前数据更新于 {clock(status["snapshot"])}，列表和内容均来自该时间。'
         if status["completed"]:
             elapsed = status["duration_seconds"]
             elapsed_text = f"{elapsed // 60} 分 {elapsed % 60} 秒" if elapsed >= 60 else f"{elapsed} 秒"
@@ -1493,29 +1493,32 @@ class ReviewService:
                 changes = f"新增 {counts[0]} 条、更新 {counts[1]} 条。"
             else:
                 changes = "列表和内容均为最新。"
-            snapshot = (f'数据已更新：{clock_seconds(status["completed_at"])}。'
-                        f'本次拉取用时 {elapsed_text}，{changes}')
+            snapshot = (f'当前数据更新于 {clock_seconds(status["completed_at"])}，'
+                        f'用时 {elapsed_text}，{changes}')
         running = []
         if status["in_progress"]:
-            current = f'当前显示 {clock(status["snapshot"])} 的数据；' if status["snapshot"] else ""
-            running.append(f'正在拉取最新数据（{clock(status["requested"])} 开始，预计 1～2 分钟）。'
-                           f'{current}完成前暂不可审核，请稍后刷新。')
+            running.append(f'正在更新数据。{clock(status["requested"])} 开始，预计 1～2 分钟。'
+                           '完成后页面会自动更新，期间不可审核。')
         if publishing["in_progress"]:
             elapsed=publishing["age_seconds"]
             elapsed_text=f'{elapsed//60} 分 {elapsed%60} 秒' if elapsed>=60 else f'{elapsed} 秒'
-            running.append(f'发布进行中：{html.escape(publishing["stage_label"])}（已用时 {elapsed_text}，'
-                           f'{clock(publishing["requested"])} 开始，约需 1～2 分钟）。'
-                           '完成后请刷新页面；进行期间发布按钮暂不能再点。')
+            running.append(f'正在发布。{clock(publishing["requested"])} 开始，已用时 {elapsed_text}，预计 1～2 分钟。'
+                           '完成后页面会自动更新，请勿重复提交。')
         if running:
             snapshot_is_merged = status["in_progress"] and status["snapshot"]
             return f'<div class="notice snapshot-wait">{"<br>".join(running)}<br><span class="meta">{snapshot}</span></div>' if snapshot and not snapshot_is_merged \
                 else f'<div class="notice snapshot-wait">{"<br>".join(running)}</div>'
         parts = [f'<div class="meta snapshot-line">{snapshot}</div>'] if snapshot else []
         if status["overdue"]:
-            parts.append(f'<div class="notice">{clock(status["requested"])} 的拉取未在预计时间内完成，数据没有更新。'
-                         '可能是服务权限不足或网络异常。请点击“重新拉取”；仍然失败请联系管理员。</div>')
+            parts.append(f'<div class="notice">数据更新失败：{clock(status["requested"])} 发起的任务未能完成。'
+                         '请点击“重新拉取”；若再次失败，请联系管理员。</div>')
         if publishing["overdue"]:
-            parts.append(f'<div class="notice">{clock(publishing["requested"])} 的发布没有更新数据，可能失败了。请点击“重试发布”，仍不行请联系管理员。</div>')
+            parts.append(f'<div class="notice">发布失败：{clock(publishing["requested"])} 发起的内容尚未上线，'
+                         '线上数据未受影响。请点击“重试发布”；若再次失败，请联系管理员。</div>')
+        if publishing["completed"]:
+            elapsed=publishing["duration_seconds"]
+            elapsed_text=f'{elapsed//60} 分 {elapsed%60} 秒' if elapsed>=60 else f'{elapsed} 秒'
+            parts.append(f'<div class="notice">发布完成：{clock(publishing["completed_at"])} 上线，用时 {elapsed_text}。</div>')
         return "".join(parts)
 
     def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:
@@ -1529,7 +1532,7 @@ class ReviewService:
         shown = items[first:first + size]
         tab_size = html.escape(f"&page_size={size}") if size != PAGE_SIZE else ""
         filter_parts = []
-        for key, label in (("", "全部"), ("pending", "待审核"), ("approved", "已审核待发布"), ("published", "已发布"), ("rejected", "已拒绝")):
+        for key, label in (("", "全部"), ("pending", "待审核"), ("approved", "待发布"), ("published", "已发布"), ("rejected", "已拒绝")):
             count = len(all_items) if not key else status_counts[key]
             badge = f'<sup class="filter-count">{count}</sup>'
             filter_parts.append(
@@ -1577,7 +1580,7 @@ class ReviewService:
         ingest_button = (
             f'<form method="post" action="{self.path_prefix}/trigger-ingest" class="ingest-trigger-form">'
             + ('<button type="submit" class="is-busy" disabled aria-busy="true">抓取中…</button>' if pulling
-               else '<button type="submit" data-busy-label="已提交…">立即拉取最新源</button>')
+               else '<button type="submit" data-busy-label="已提交…">更新最新数据</button>')
             + '</form>'
         )
         publish_button = ""
@@ -1725,7 +1728,7 @@ class ReviewService:
         pending_notice = ""
         if pending is not None:
             pending_notice = (
-                '<div class="notice">分类调整：已审核待发布，尚未实际移动。目标：'
+                '<div class="notice">分类调整已进入“待发布”，发布后生效。目标：'
                 + html.escape(str(pending.get("wiki_path", "")))
                 + f'<form method="post" action="{self.path_prefix}/move-decision" class="cancel-move-form">'
                 + f'<input type="hidden" name="form_nonce" value="{nonce}"><input type="hidden" name="source_wiki_path" value="{html.escape(item.path)}">'

@@ -52,21 +52,33 @@ auth_logger = logging.getLogger("web.review.auth")
 
 
 NOTICES = {
-    "approved": "已记录：批准发布。请回到列表，确认后手动发布。",
-    "rejected": "已记录：拒绝。",
-    "decided": "决定已记录。",
-    "ingest_triggered": "已提交拉取请求，新的来源会在后台抓取，稍后刷新查看。",
-    "ingest_cooldown": "刚触发过一次拉取，请稍等几分钟再试。",
-    "ingest_already": "抓取已经在进行，请等它完成并刷新页面后再试。",
-    "ingest_permission_denied": "拉取未开始：抓取服务没有写入审核数据的权限，请联系管理员。",
-    "publish_already": "发布已经在进行，请等它完成并刷新页面后再试。",
-    "ingest_running": "抓取正在进行，完成并刷新页面后才能批准或拒绝，避免处理到旧列表里已经不存在的内容。这次没有记录任何决定。",
-    "publish_triggered": "已提交发布请求，已批准的内容会在后台构建并发布，稍后刷新查看。",
-    "publish_cooldown": "刚触发过一次发布，请稍等片刻再试。",
-    "moved": "分类调整已审核待发布，尚未实际移动；发布后生效。",
-    "move_canceled": "分类调整已撤回，不会在下次发布时移动。",
+    "approved": "已批准，内容已进入“待发布”。可以继续审核，完成后统一发布。",
+    "rejected": "已拒绝。",
+    "decided": "处理结果已保存。",
+    "ingest_triggered": "已开始更新数据，完成后页面会自动更新。",
+    "ingest_cooldown": "数据刚刚开始更新，请稍候。",
+    "ingest_already": "数据正在更新，请勿重复提交。页面将在完成后自动更新。",
+    "ingest_permission_denied": "数据更新未开始：服务权限不足，请联系管理员。",
+    "publish_already": "正在发布，请勿重复提交。页面将在完成后自动更新。",
+    "ingest_running": "数据正在更新，暂不可审核。本次操作未保存。",
+    "publish_triggered": "已开始发布，完成后页面会自动更新。",
+    "publish_cooldown": "发布请求已提交，请稍候。",
+    "moved": "分类调整已进入“待发布”，发布后生效。",
+    "move_canceled": "分类调整已撤回。",
 }
 STATUS_FILTERS = {"pending", "approved", "published", "rejected"}
+USER_ERROR_BODIES = {
+    "400 Bad Request": "请求无效，请刷新页面后重试。",
+    "401 Unauthorized": "登录已失效，请重新登录。",
+    "403 Forbidden": "当前账号没有访问权限。如需使用，请联系管理员。",
+    "404 Not Found": "页面不存在或已被移动。",
+    "405 Method Not Allowed": "当前操作不受支持。",
+    "409 Conflict": "内容已经更新，请刷新页面后重新操作。",
+    "413 Payload Too Large": "提交内容过大，请缩减后重试。",
+    "415 Unsupported Media Type": "提交格式不受支持，请刷新页面后重试。",
+    "500 Internal Server Error": "系统暂时无法处理请求，请稍后重试；若仍然失败，请联系管理员。",
+    "503 Service Unavailable": "系统暂时无法处理请求，请稍后重试；若仍然失败，请联系管理员。",
+}
 
 
 def list_position(query: dict) -> tuple[str, int, int]:
@@ -181,6 +193,13 @@ class ReviewApp:
         self.publish_cooldown_seconds = publish_cooldown_seconds
 
     def _response(self, start, status: str, body: bytes = b"", headers=()):
+        if status in USER_ERROR_BODIES and body in {
+            b"Bad Request", b"Unauthorized", b"Forbidden", b"Not Found", b"Method Not Allowed",
+            b"Conflict", b"Payload Too Large", b"Unsupported Media Type", b"Internal Server Error",
+            b"Service Unavailable", b"Unavailable",
+        }:
+            body = USER_ERROR_BODIES[status].encode("utf-8")
+            headers = tuple((key,value) for key,value in headers if key.lower() != "content-type") + (("Content-Type","text/plain; charset=utf-8"),)
         start(status, [("Content-Length", str(len(body))), *SECURITY_HEADERS, *headers])
         return [body]
 
@@ -451,7 +470,10 @@ class ReviewApp:
         ingest, publish = self.service.ingest_status(), self.service.publish_status()
         if code == "ingest_triggered" and (ingest["in_progress"] or ingest["completed"]):
             return ""
-        if code == "publish_triggered" and (publish["in_progress"] or publish["completed"]):
+        # Once a request has been recorded, the status banner is authoritative
+        # for running, completed and failed outcomes.  Keeping the redirect's
+        # generic notice as well creates contradictory duplicate messages.
+        if code == "publish_triggered" and publish["requested"] is not None:
             return ""
         return NOTICES.get(code, "")
 

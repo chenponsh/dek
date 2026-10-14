@@ -274,7 +274,7 @@ class PageScriptTests(unittest.TestCase):
 
     BASE = {"kind": "wiki", "title": "标题", "path": "wiki/a.md", "root": "../", "tags": [], "crumbs": [], "props": [], "backlinks": [], "toc": [], "sourceNotes": [], "externalLinks": [], "sourceWiki": []}
 
-    PROPS = [{"label": "编号", "value": {"parts": [{"t": "1"}]}}, {"label": "笔记路径", "code": "wiki/a.md"}]
+    PROPS = [{"label": "编号", "value": {"parts": [{"t": "1"}]}}, {"label": "内容路径", "code": "wiki/a.md"}]
 
     def test_unsafe_links_in_the_data_are_dropped(self):
         html = self.render({**self.BASE, "props": self.PROPS,
@@ -308,7 +308,7 @@ class PageScriptTests(unittest.TestCase):
         html = self.render({**self.BASE, "props": self.PROPS, "externalLinks": ["https://example.com/a", "https://example.com/b"]})
         panel = html.split('<details class="note-properties"', 1)[1].split("</details>", 1)[0]
         self.assertEqual(panel.count("打开来源链接"), 2)
-        self.assertLess(panel.index("来源链接</dt>"), panel.index("笔记路径</dt>"))
+        self.assertLess(panel.index("来源链接</dt>"), panel.index("内容路径</dt>"))
         self.assertNotIn("来源链接</dt>", self.render({**self.BASE, "props": self.PROPS}))     # no link, no row
 
     def test_the_home_kind_gets_the_wide_layout_and_no_properties(self):

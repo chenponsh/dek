@@ -809,7 +809,7 @@ class DekQaTests(unittest.TestCase):
         self.assertNotIn("官方来源链接", prompt)
         self.assertIn("不显示内部 `wiki/...` 路径", prompt)
         self.assertIn("用户明确要求内部追溯信息", prompt)
-        self.assertIn("知识库查询失败，请联系管理员检查工具状态。", prompt)
+        self.assertIn("知识库查询失败，请稍后重试；若仍然失败，请联系管理员。", prompt)
         self.assertIn("不得将工具故障伪装成知识库无相关内容", prompt)
         self.assertIn("最近几天/一周/月新增或更新了什么", prompt)
         self.assertIn("默认查看 `recent_publications`，按来源发布日期回答", prompt)

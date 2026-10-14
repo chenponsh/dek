@@ -312,7 +312,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.decide(action="approve")
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         self.assertEqual(item.status, "approved")
-        self.assertEqual(item.status_label, "已审核待发布")
+        self.assertEqual(item.status_label, "待发布")
         self.assertEqual(item.reviewer, "彭文艳")
         self.assertEqual(item.decided_at, "2030-03-17T17:46:40+00:00")
 
@@ -428,7 +428,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertIn('>全部<sup class="filter-count">2</sup></a>', page)
         self.assertIn('>待审核<sup class="filter-count">1</sup></a>', page)
-        self.assertIn('>已审核待发布<sup class="filter-count">1</sup></a>', page)
+        self.assertIn('>待发布<sup class="filter-count">1</sup></a>', page)
         self.assertIn('>已发布<sup class="filter-count">0</sup></a>', page)
         self.assertIn('>已拒绝<sup class="filter-count">0</sup></a>', page)
         self.assertNotIn('已退回', page)
@@ -665,7 +665,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('<td class="source-date">2026-08-03</td>', page)
         self.assertIn('<td class="source-date">—</td>', page)
         self.assertNotIn("javascript:", page)
-        self.assertIn("按来源统计，不是按 wiki", page)
+        self.assertIn("按来源网址统计最新发布日期", page)
 
     def test_the_source_list_is_empty_but_renders_when_the_snapshot_has_no_config(self):
         self.assertEqual(self.service.source_overview(), [])
@@ -681,8 +681,8 @@ class ReviewWorkflowTests(unittest.TestCase):
 
     def test_the_form_labels_are_plain_without_the_long_hints(self):
         page = self.item_page("Q")
-        self.assertIn("<label>Wiki 路径<div class=\"combo\">", page)
-        self.assertIn("<label>候选 Wiki Markdown<textarea name=\"candidate_markdown\"", page)
+        self.assertIn("<label>知识库分类<div class=\"combo\">", page)
+        self.assertIn("<label>待发布内容<textarea name=\"candidate_markdown\"", page)
         for hint in ("可搜索，按文件夹名过滤", "选中后按需修改末尾编号", "已预填草稿，可修改", "批准发布时提交"):
             self.assertNotIn(hint, page)
 
@@ -852,7 +852,7 @@ class ReviewWorkflowTests(unittest.TestCase):
     def test_list_offers_a_manual_ingest_trigger_button(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertIn('<form method="post" action="/trigger-ingest" class="ingest-trigger-form">', page)
-        self.assertIn('<button type="submit" data-busy-label="已提交…">立即拉取最新源</button>', page)
+        self.assertIn('<button type="submit" data-busy-label="已提交…">更新最新数据</button>', page)
 
     def test_list_action_buttons_sit_together_on_the_right_ingest_then_publish(self):
         self.decide(action="approve")
@@ -884,7 +884,7 @@ class ReviewWorkflowTests(unittest.TestCase):
     def test_decision_form_explains_that_approval_waits_for_manual_publish(self):
         identity = self.service.list_items()[0].identity
         page = self.service.render_item("opaque-session", identity).decode("utf-8")
-        self.assertIn("请回到列表手动发布", page)
+        self.assertIn("可以继续审核，完成后统一发布", page)
 
     def test_detail_page_shows_content_and_issues_its_own_nonce(self):
         identity = self.service.list_items()[0].identity
@@ -921,7 +921,7 @@ class ReviewWorkflowTests(unittest.TestCase):
 
     def approved_count(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
-        return int(re.search(r"已审核待发布<sup class=\"filter-count\">(\d+)</sup>", page).group(1)), page
+        return int(re.search(r"待发布<sup class=\"filter-count\">(\d+)</sup>", page).group(1)), page
 
     def status_of(self, name="pending.md"):
         return next(item.status for item in self.service.list_items() if item.path == f"ingestion/rough/{name}")
@@ -931,7 +931,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(self.status_of(), "approved")
         count, page = self.approved_count()
         self.assertEqual(count, 1)
-        self.assertIn("已审核待发布", page)
+        self.assertIn("待发布", page)
 
     def test_an_approval_is_published_once_publishing_marked_its_draft_promoted(self):
         # Publishing keeps the draft file and sets `status: promoted` (it does not delete it).
@@ -1199,8 +1199,8 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.add_filed_entries()
         item = self.rough_about("溶出曲线相似性因子f2如何计算，溶出介质如何选择，溶出度方法学验证", "答。")
         page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
-        self.assertIn("Wiki 里已有相同问题的条目：05_药学研究/0507_溶出曲线/0507-0001.md", page)
-        self.assertIn("批准前请确认不是重复", page)
+        self.assertIn("知识库中已有相同问题：05_药学研究/0507_溶出曲线/0507-0001.md", page)
+        self.assertIn("请确认不是重复内容后再批准", page)
 
     def test_a_unique_draft_gets_no_duplicate_warning_and_names_are_escaped(self):
         item = self.rough_about("一个独一无二的问题", "答。")
