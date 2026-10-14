@@ -28,6 +28,31 @@ test "$review_ready" = '{"status":"ready","login_bounce":"https://regkb.chenpona
 
 bundle=/var/lib/dek-review/input/repository.bundle
 test -f "$bundle" || fail "review repository bundle is missing"
+
+# Check the complete parent-to-file DAC chain using the real service identities.
+# A child can have the correct reader group and still be unreachable when a
+# shared parent loses execute permission, which previously broke publication.
+runuser -u dek-source-ingest -- test -w /var/lib/dek-review/input \
+  || fail "source ingestion cannot traverse to the review input"
+runuser -u dek-qa -- test -r "$bundle" \
+  || fail "suggestion service cannot traverse to the review bundle"
+runuser -u dek-publisher -- test -r /var/lib/dek-review/decisions/decisions.jsonl \
+  || fail "publisher cannot traverse to the review decisions"
+runuser -u dek-publisher -- test -r /var/lib/dek-review/bundle-archive \
+  || fail "publisher cannot traverse to the review bundle archive"
+runuser -u dek-activator -- test -r /var/lib/dek-review/decisions/decisions.jsonl \
+  || fail "activator cannot traverse to the review decisions"
+runuser -u dek-publisher -- test -r /var/lib/dek-activate/outcomes \
+  || fail "publisher cannot traverse to activation outcomes"
+runuser -u dek-source-ingest -- test -r /var/lib/dek-activate/control/active.json \
+  || fail "snapshot refresh cannot traverse to active release metadata"
+runuser -u dek-web -- test -r /var/lib/dek-activate/control/active.json \
+  || fail "web service cannot traverse to active release metadata"
+runuser -u dek-qa -- test -r /var/lib/dek-activate/control/active.json \
+  || fail "QA service cannot traverse to active release metadata"
+runuser -u dek-builder -- test -x /var/lib/dek-qa/venv/bin/python \
+  || fail "builder cannot traverse to the QA virtual environment"
+
 /usr/bin/git bundle verify "$bundle" >/dev/null 2>&1 || fail "review repository bundle is invalid"
 digest=$(sha256sum "$bundle" | cut -d' ' -f1)
 clone=/var/lib/dek-review/clones/$digest

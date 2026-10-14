@@ -7,11 +7,12 @@ publisher-activation-gate	dek-publisher	dek-activator	/var/spool/dek-activate/bu
 # release.json remains builder-owned and receives its activator-readable 0664 mode from builder_entrypoint.make_activator_readable(); publisher validation overwrites bytes in place and never chmods it. The signed activation gate binds its exact digest.
 review-bundle-to-publisher	dek-review	dek-publisher	/var/lib/dek-review/bundle-archive	dek-review:dek-bundle-read	2750	archive	read-only
 activator-to-web-qa	dek-activator	dek-web,dek-qa	/var/lib/dek-activate/releases	dek-activator:dek-release-read	2750	write	read-only
+activate-parent-traversal	dek-publisher,dek-source-ingest,dek-web,dek-qa	dek-activator	/var/lib/dek-activate	dek-activator:dek-release-read	0710	traverse and read public release metadata; outcomes remain separately grouped	owner-full
 outcome-to-publisher	dek-activator	dek-publisher	/var/lib/dek-activate/outcomes	dek-activator:dek-outcome-read	2750	write	read-only
 ingestion-to-review	dek-source-ingest	dek-review	/var/lib/dek-review/input	dek-source-ingest:dek-review-input	2750	atomic-write	read-only
-ingestion-review-traversal	dek-source-ingest	dek-review	/var/lib/dek-review	dek-review:dek-review-input	0710	traverse-only	owner-full
+review-parent-traversal	dek-source-ingest,dek-publisher,dek-activator,dek-qa	dek-review	/var/lib/dek-review	dek-review:dek-review-traverse	0710	traverse-only; child access remains separately grouped	owner-full
 qa-to-activator-proof	dek-qa	dek-activator	/run/dek-proofs/qa	dek-qa:dek-proof-read	2750	atomic-write	read-only
-qa-venv-to-builder	dek-qa	dek-builder	/var/lib/dek-qa/venv	dek-qa:dek-qa-venv-read	0710 parent, 0750 dirs, 0640-0750 files	install (dek-qa's own runtime venv)	read+execute only; /var/lib/dek-qa/secrets stays 0400 dek-qa:dek-qa, unaffected
+qa-venv-to-builder	dek-qa	dek-builder	/var/lib/dek-qa and /var/lib/dek-qa/venv	dek-qa:dek-qa-venv-read	0710 parent, 0750 dirs, 0640-0750 files	install (dek-qa's own runtime venv)	read+execute only; /var/lib/dek-qa/secrets stays 0400 dek-qa:dek-qa, unaffected
 # secret-boundary	owner	consumer	path	owner:group	mode	allowed	all-other-services
 secret-review-environment	root	dek-review	/var/lib/dek-review/secrets/environment	dek-review:dek-review	0400	read-only	deny
 secret-review-decision	root	dek-review	/var/lib/dek-review/secrets/review-decision-key	dek-review:dek-review	0400	read-only	deny

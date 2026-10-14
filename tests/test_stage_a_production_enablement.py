@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -143,15 +144,42 @@ class StageARunbookTests(unittest.TestCase):
         self.assertNotIn("[REVIEW_FULLCHAIN]", self.runbook)
         self.assertNotIn("[REVIEW_PRIVATE_KEY]", self.runbook)
 
-    def test_review_parent_allows_only_shared_group_traversal_to_input(self):
+    def test_review_parent_has_one_traverse_only_group_for_every_child_consumer(self):
         tmpfiles = Path("deploy/tmpfiles/dek-review-deploy.conf").read_text(encoding="utf-8")
-        self.assertIn("d /var/lib/dek-review 0710 dek-review dek-review-input -", tmpfiles)
+        sysusers = Path("deploy/sysusers/dek-review-deploy.conf").read_text(encoding="utf-8")
+        self.assertIn("g dek-review-traverse -", sysusers)
+        for account in ("dek-source-ingest", "dek-publisher", "dek-activator", "dek-qa"):
+            self.assertIn(f"m {account}", sysusers)
+            self.assertRegex(sysusers, rf"(?m)^m {re.escape(account)}\s+dek-review-traverse$")
+        self.assertRegex(sysusers, r"(?m)^m dek-publisher\s+dek-release-read$")
+        publisher = Path("deploy/systemd/dek-review-publish.service").read_text(encoding="utf-8")
+        self.assertRegex(publisher, r"(?m)^SupplementaryGroups=.*\bdek-release-read\b")
+        self.assertIn("d /var/lib/dek-review 0710 dek-review dek-review-traverse -", tmpfiles)
+        self.assertIn("d /var/lib/dek-activate 0710 dek-activator dek-release-read -", tmpfiles)
+        self.assertIn("d /var/lib/dek-qa 0710 dek-qa dek-qa-venv-read -", tmpfiles)
         self.assertIn("d /var/lib/dek-review/input 2750 dek-source-ingest dek-review-input -", tmpfiles)
         self.assertIn(
-            "ingestion-review-traversal\tdek-source-ingest\tdek-review\t/var/lib/dek-review"
-            "\tdek-review:dek-review-input\t0710\ttraverse-only\towner-full",
+            "review-parent-traversal\tdek-source-ingest,dek-publisher,dek-activator,dek-qa"
+            "\tdek-review\t/var/lib/dek-review\tdek-review:dek-review-traverse\t0710",
             self.matrix,
         )
+
+    def test_runtime_smoke_checks_cross_service_review_paths_as_real_accounts(self):
+        smoke = Path("deploy/tools/runtime_smoke.sh").read_text(encoding="utf-8")
+        for account, path in (
+            ("dek-source-ingest", "/var/lib/dek-review/input"),
+            ("dek-qa", '"$bundle"'),
+            ("dek-publisher", "/var/lib/dek-review/decisions/decisions.jsonl"),
+            ("dek-publisher", "/var/lib/dek-review/bundle-archive"),
+            ("dek-activator", "/var/lib/dek-review/decisions/decisions.jsonl"),
+            ("dek-publisher", "/var/lib/dek-activate/outcomes"),
+            ("dek-source-ingest", "/var/lib/dek-activate/control/active.json"),
+            ("dek-web", "/var/lib/dek-activate/control/active.json"),
+            ("dek-qa", "/var/lib/dek-activate/control/active.json"),
+            ("dek-builder", "/var/lib/dek-qa/venv/bin/python"),
+        ):
+            self.assertIn(f"runuser -u {account} -- test", smoke)
+            self.assertIn(path, smoke)
 
     def test_review_service_restarts_before_nginx_publishes_the_new_route(self):
         restart_command = "systemctl restart dek-review.service"

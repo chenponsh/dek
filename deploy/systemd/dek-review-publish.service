@@ -8,7 +8,7 @@ Type=oneshot
 ExecCondition=+/usr/bin/python3 -I /opt/dek-publisher/app/deploy/readiness.py --config /etc/dek-readiness.json --hmac-key /var/lib/dek-readiness/marker-hmac-key --validate-marker --marker /var/lib/dek-readiness/automation-ready
 User=dek-publisher
 Group=dek-publisher
-SupplementaryGroups=dek-decision-read dek-outcome-read dek-build-write dek-bundle-read
+SupplementaryGroups=dek-decision-read dek-outcome-read dek-build-write dek-bundle-read dek-release-read
 WorkingDirectory=/var/empty/dek-publisher
 Environment=PYTHONUNBUFFERED=1
 LoadCredential=git-credentials:/var/lib/dek-git-auth/git-credentials
