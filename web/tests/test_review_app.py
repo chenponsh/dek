@@ -14,7 +14,7 @@ from urllib.parse import quote, urlencode
 
 from web.auth import sign_claim
 from web.review import MemoryFormNonceStore, ReviewerLabelStore, ReviewError, ReviewService, rough_binding
-from web.review_app import ReviewApp, UnixWSGIRequestHandler, UnixWSGIServer
+from web.review_app import ReviewApp, UnixWSGIRequestHandler, UnixWSGIServer, ingest_snapshot_write_ready
 from web.tests.test_review import CANDIDATE, ROUGH
 
 
@@ -638,6 +638,34 @@ class ReviewAppTests(unittest.TestCase):
         self.assertIn("抓取进行中", page)
         self.assertIn("不能批准或拒绝", page)
 
+    def test_pull_with_missing_snapshot_write_permission_is_rejected_immediately(self):
+        self.snapshot_app(snapshot_age_seconds=300)
+        self.app.ingest_preflight = lambda: False
+        session = self.authenticate()
+        status, headers, _ = self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        self.assertEqual(status, "303 See Other")
+        self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/?notice=ingest_permission_denied")
+        self.assertFalse(self.app.ingest_trigger_path.exists())
+        self.assertFalse(self.service.ingest_state_path.exists())
+        page = self.call("/", query="notice=ingest_permission_denied", cookie=session)[2].decode("utf-8")
+        self.assertIn("拉取未开始", page)
+        self.assertIn("没有写入审核数据的权限", page)
+
+    def test_snapshot_write_preflight_checks_parent_traversal_and_target_write(self):
+        import pwd
+        account = pwd.getpwuid(os.getuid()).pw_name
+        parent = self.root / "review-parent"
+        target = parent / "input"
+        target.mkdir(parents=True)
+        bundle = target / "repository.bundle"
+        self.assertTrue(ingest_snapshot_write_ready(bundle, account))
+        parent.chmod(0o600)
+        self.assertFalse(ingest_snapshot_write_ready(bundle, account))
+        parent.chmod(0o700)
+        target.chmod(0o500)
+        self.assertFalse(ingest_snapshot_write_ready(bundle, account))
+        target.chmod(0o700)
+
     def test_a_decision_made_while_the_pull_runs_is_refused_with_a_notice_and_nothing_is_recorded(self):
         self.snapshot_app()
         session = self.authenticate()
@@ -669,7 +697,9 @@ class ReviewAppTests(unittest.TestCase):
         self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         self.clock_value += ReviewService.INGEST_WAIT_SECONDS + 5
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertIn("可能失败", page)
+        self.assertIn("拉取未在预计时间内完成，数据没有更新", page)
+        self.assertIn("服务权限不足或网络异常", page)
+        self.assertIn("重新拉取", page)
         self.assertNotIn("抓取进行中", page)
         status, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected")
@@ -678,7 +708,7 @@ class ReviewAppTests(unittest.TestCase):
         session = self.authenticate()
         page = self.call("/", cookie=session)[2].decode("utf-8")
         self.assertNotIn("抓取进行中", page)
-        self.assertNotIn("可能失败", page)
+        self.assertNotIn("拉取未在预计时间内完成", page)
 
 
     # --- buttons of an action that is still running ---------------------------------------------

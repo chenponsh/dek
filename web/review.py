@@ -1433,7 +1433,8 @@ class ReviewService:
                 else f'<div class="notice snapshot-wait">{"<br>".join(running)}</div>'
         parts = [f'<div class="meta snapshot-line">{snapshot}</div>'] if snapshot else []
         if status["overdue"]:
-            parts.append(f'<div class="notice">{clock(status["requested"])} 的拉取没有更新数据，可能失败了。请稍后再试，仍不行请联系管理员。</div>')
+            parts.append(f'<div class="notice">{clock(status["requested"])} 的拉取未在预计时间内完成，数据没有更新。'
+                         '可能是服务权限不足或网络异常。请点击“重新拉取”；仍然失败请联系管理员。</div>')
         if publishing["overdue"]:
             parts.append(f'<div class="notice">{clock(publishing["requested"])} 的发布没有更新数据，可能失败了。请点击“重试发布”，仍不行请联系管理员。</div>')
         return "".join(parts)

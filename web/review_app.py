@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+import pwd
 import re
 import socket
 import socketserver
@@ -57,6 +58,7 @@ NOTICES = {
     "ingest_triggered": "已提交拉取请求，新的来源会在后台抓取，稍后刷新查看。",
     "ingest_cooldown": "刚触发过一次拉取，请稍等几分钟再试。",
     "ingest_already": "抓取已经在进行，请等它完成并刷新页面后再试。",
+    "ingest_permission_denied": "拉取未开始：抓取服务没有写入审核数据的权限，请联系管理员。",
     "publish_already": "发布已经在进行，请等它完成并刷新页面后再试。",
     "ingest_running": "抓取正在进行，完成并刷新页面后才能批准或拒绝，避免处理到旧列表里已经不存在的内容。这次没有记录任何决定。",
     "publish_triggered": "已提交发布请求，已批准的内容会在后台构建并发布，稍后刷新查看。",
@@ -132,11 +134,40 @@ INGEST_COOLDOWN_SECONDS = 600
 PUBLISH_COOLDOWN_SECONDS = 60
 
 
+def _mode_allows(details, uid: int, gids: set[int], required: int) -> bool:
+    shift = 6 if details.st_uid == uid else 3 if details.st_gid in gids else 0
+    return ((stat.S_IMODE(details.st_mode) >> shift) & required) == required
+
+
+def ingest_snapshot_write_ready(bundle: Path, user_name: str = "dek-source-ingest") -> bool:
+    """Check the writer's Unix mode access before accepting a pull request.
+
+    The ingest process replaces the bundle atomically, so it needs execute on
+    every parent and write+execute on the bundle directory.  This deliberately
+    checks the service identity rather than the review web process's access.
+    """
+    try:
+        account = pwd.getpwnam(user_name)
+        gids = set(os.getgrouplist(account.pw_name, account.pw_gid))
+        directory = Path(bundle).parent.absolute()
+        chain = list(reversed(directory.parents)) + [directory]
+        for candidate in chain:
+            details = os.stat(candidate, follow_symlinks=False)
+            if not stat.S_ISDIR(details.st_mode) or not _mode_allows(details, account.pw_uid, gids, 0o1):
+                return False
+        if not _mode_allows(os.stat(directory, follow_symlinks=False), account.pw_uid, gids, 0o3):
+            return False
+        return not bool(os.statvfs(directory).f_flag & getattr(os, "ST_RDONLY", 1))
+    except (KeyError, OSError):
+        return False
+
+
 class ReviewApp:
     def __init__(
         self, service: ReviewService, claim_secret: bytes, reviewer_ids, *, expected_origin: str = REVIEW_ORIGIN,
         clock=time.time, ingest_trigger_path: Path | None = None, ingest_cooldown_seconds: int = INGEST_COOLDOWN_SECONDS,
         publish_trigger_path: Path | None = None, publish_cooldown_seconds: int = PUBLISH_COOLDOWN_SECONDS,
+        ingest_preflight=None,
     ):
         if expected_origin != REVIEW_ORIGIN:
             raise ValueError("review origin must match the dedicated production origin")
@@ -147,6 +178,7 @@ class ReviewApp:
         self.clock = clock
         self.ingest_trigger_path = ingest_trigger_path
         self.ingest_cooldown_seconds = ingest_cooldown_seconds
+        self.ingest_preflight = ingest_preflight
         self.publish_trigger_path = publish_trigger_path
         self.publish_cooldown_seconds = publish_cooldown_seconds
 
@@ -401,6 +433,7 @@ class ReviewApp:
                 log_label="review_trigger_ingest", triggered_notice="ingest_triggered", cooldown_notice="ingest_cooldown",
                 on_triggered=self.service.record_ingest_request,
                 busy=lambda: self.service.ingest_status()["in_progress"], busy_notice="ingest_already",
+                preflight=self.ingest_preflight, preflight_notice="ingest_permission_denied",
             )
 
         if path == "/publish":
@@ -425,7 +458,7 @@ class ReviewApp:
     def _handle_trigger(self, start, environ, method, authenticated, is_reviewer, user_id, *,
                         trigger_path: Path | None, cooldown_seconds: int,
                         log_label: str, triggered_notice: str, cooldown_notice: str, on_triggered=None,
-                        busy=None, busy_notice: str = ""):
+                        busy=None, busy_notice: str = "", preflight=None, preflight_notice: str = ""):
         """Shared body for every reviewer-initiated, cooldown-protected marker write.
 
         The marker itself does the work: a privileged systemd .path unit watches
@@ -450,6 +483,14 @@ class ReviewApp:
             return self._response(start, "403 Forbidden", b"Forbidden")
         if trigger_path is None:
             return self._response(start, "404 Not Found", b"Not Found")
+        if preflight is not None:
+            try:
+                ready = preflight()
+            except Exception:
+                ready = False
+            if not ready:
+                auth_logger.warning("%s blocked_preflight user=%s", log_label, user_id)
+                return self._response(start, "303 See Other", headers=(("Location", f"{REVIEW_PREFIX}/?notice={preflight_notice}"),))
         now = self.clock()
         cooling_down = False
         if busy is not None and busy():
@@ -566,7 +607,8 @@ def main() -> None:
     )
     serve_unix(
         args.socket, ReviewApp(service, claim_secret, reviewers,
-                              ingest_trigger_path=args.ingest_trigger, publish_trigger_path=args.publish_trigger),
+                              ingest_trigger_path=args.ingest_trigger, publish_trigger_path=args.publish_trigger,
+                              ingest_preflight=lambda: ingest_snapshot_write_ready(args.bundle)),
         socket_group=args.socket_group,
     )
 
