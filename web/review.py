@@ -1405,8 +1405,8 @@ class ReviewService:
         """A pull is `in_progress` until the review data is rewritten (the snapshot moves past the request)."""
         return self._request_status(self.ingest_state_path, self.INGEST_WAIT_SECONDS)
 
-    def _ingest_change_counts(self, status: dict) -> tuple[int, int] | None:
-        """Return applied item counts from the report belonging to this pull.
+    def _ingest_summary(self, status: dict) -> dict | None:
+        """Return the durable result of the latest successful source pull.
 
         A detected remote revision is deliberately not an update: ingestion
         blocks those instead of overwriting reviewed content.  The report's
@@ -1414,8 +1414,6 @@ class ReviewService:
         applied.
         """
         try:
-            requested = float(status["requested"])
-            completed = float(status["completed_at"])
             path = self.ingest_summary_path
             if path is None:
                 return None
@@ -1443,58 +1441,88 @@ class ReviewService:
             new, updated = payload["new_count"], payload["updated_count"]
         except (AttributeError, KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError, ValueError, OverflowError):
             return None
-        # Do not attach an older summary (or a future-dated one) to a newly
-        # completed request merely because it remains beside the bundle.
-        if generated_at + 5 < requested or generated_at > completed + 300:
-            return None
-        if (payload.get("schema") != 1
+        if (payload.get("schema") not in (1, 2)
                 or not isinstance(new, int) or isinstance(new, bool)
                 or not isinstance(updated, int) or isinstance(updated, bool)
                 or not 0 <= new <= 10_000 or not 0 <= updated <= 10_000):
             return None
-        return new, updated
+        try:
+            if payload["schema"] == 2:
+                started_text, completed_text = payload["started_at"], payload["completed_at"]
+                if (not isinstance(started_text, str) or not started_text.endswith("Z")
+                        or not isinstance(completed_text, str) or not completed_text.endswith("Z")):
+                    return None
+                started_at=datetime.fromisoformat(started_text[:-1]+"+00:00").timestamp()
+                completed_at=datetime.fromisoformat(completed_text[:-1]+"+00:00").timestamp()
+            else:
+                # Older summaries predate explicit completion fields.  Their
+                # mtime was written near the end of the pull and survives a
+                # later publish refresh, so it is the safest legacy fallback.
+                started_at=float(status["requested"])
+                completed_at=max(generated_at, details.st_mtime)
+        except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
+            return None
+        if (completed_at < started_at or completed_at-started_at > self.INGEST_WAIT_SECONDS
+                or completed_at > self.clock()+300):
+            return None
+        requested=status.get("requested")
+        if payload["schema"] == 1 and requested is None:
+            return None
+        return {"completed_at":completed_at,
+                "duration_seconds":max(0,int(round(completed_at-started_at))),
+                "counts":(new,updated)}
 
     def publish_status(self) -> dict:
         """A publish is `in_progress` until its last step refreshes the review data."""
         result=self._request_status(self.publish_state_path,self.PUBLISH_WAIT_SECONDS)
-        result.update({"stage":"waiting","stage_label":"等待任务启动"})
+        result.update({"stage":"waiting","stage_label":"等待任务启动","published_at":None})
+        finished=None
         if self.publish_state_path is not None and result["requested"] is not None:
             for name,label in self.PUBLISH_STAGES:
                 try: modified=self.publish_state_path.with_name(name).stat().st_mtime
                 except OSError: continue
                 if modified+1>=result["requested"]:
                     result.update({"stage":name.removeprefix("publish-stage-"),"stage_label":label})
+                    if name == "publish-stage-refresh":
+                        result["published_at"] = modified
             try: finished=self.publish_state_path.with_name(self.PUBLISH_FINISHED).stat().st_mtime
             except OSError: finished=None
-            # The background chain owns this marker.  If it has exited without
-            # producing a newer review snapshot, the request failed; do not
-            # leave the button spinning until the 15-minute safety timeout.
-            if finished is not None and finished+1>=result["requested"] and not result["completed"]:
-                result.update({"in_progress":False,"overdue":True})
+        requested=result["requested"]
+        valid_finished=(requested is not None and finished is not None
+                        and finished+1>=requested and finished-requested<=self.PUBLISH_WAIT_SECONDS)
+        succeeded=bool(valid_finished and result["published_at"] is not None)
+        if succeeded:
+            result.update({"completed":True,"completed_at":finished,
+                           "duration_seconds":max(0,int(round(finished-requested))),
+                           "in_progress":False,"overdue":False})
+        elif valid_finished:
+            result.update({"completed":False,"completed_at":None,"duration_seconds":None,
+                           "in_progress":False,"overdue":True})
+        elif requested is not None:
+            age=result["age_seconds"]
+            result.update({"completed":False,"completed_at":None,"duration_seconds":None,
+                           "in_progress":0<=age<self.PUBLISH_WAIT_SECONDS,
+                           "overdue":age>=self.PUBLISH_WAIT_SECONDS})
         return result
 
     def _snapshot_banner(self) -> str:
         """One message for the data's state: how old it is, and what is running that will replace it."""
         status, publishing = self.ingest_status(), self.publish_status()
         clock = lambda value: datetime.fromtimestamp(value, BEIJING).strftime("%m-%d %H:%M")
-        clock_seconds = lambda value: datetime.fromtimestamp(value, BEIJING).strftime("%m-%d %H:%M:%S")
+        ingest_summary = self._ingest_summary(status)
         snapshot = ""
-        if status["snapshot"]:
-            minutes = max(0, int((self.clock() - status["snapshot"]) // 60))
-            ago = "刚刚" if minutes < 1 else f"{minutes} 分钟前" if minutes < 120 else f"{minutes // 60} 小时前"
-            snapshot = f'当前数据更新于 {clock(status["snapshot"])}，列表和内容均来自该时间。'
-        if status["completed"]:
-            elapsed = status["duration_seconds"]
+        if ingest_summary:
+            elapsed = ingest_summary["duration_seconds"]
             elapsed_text = f"{elapsed // 60} 分 {elapsed % 60} 秒" if elapsed >= 60 else f"{elapsed} 秒"
-            counts = self._ingest_change_counts(status)
+            counts = ingest_summary["counts"]
             if counts == (0, 0):
                 changes = "未发现新增或变更。"
-            elif counts is not None:
-                changes = f"新增 {counts[0]} 条、更新 {counts[1]} 条。"
             else:
-                changes = "列表和内容均为最新。"
-            snapshot = (f'当前数据更新于 {clock_seconds(status["completed_at"])}，'
-                        f'用时 {elapsed_text}，{changes}')
+                changes = f"新增 {counts[0]} 条、更新 {counts[1]} 条。"
+            snapshot = (f'更新时间：{clock(ingest_summary["completed_at"])}，更新用时：{elapsed_text}，'
+                        f'{changes}')
+        elif status["snapshot"]:
+            snapshot = f'当前数据快照：{clock(status["snapshot"])}。'
         running = []
         if status["in_progress"]:
             running.append(f'正在更新数据。{clock(status["requested"])} 开始，预计 1～2 分钟。'
@@ -1508,6 +1536,11 @@ class ReviewService:
             snapshot_is_merged = status["in_progress"] and status["snapshot"]
             return f'<div class="notice snapshot-wait">{"<br>".join(running)}<br><span class="meta">{snapshot}</span></div>' if snapshot and not snapshot_is_merged \
                 else f'<div class="notice snapshot-wait">{"<br>".join(running)}</div>'
+        if publishing["completed"]:
+            elapsed=publishing["duration_seconds"]
+            elapsed_text=f'{elapsed//60} 分 {elapsed%60} 秒' if elapsed>=60 else f'{elapsed} 秒'
+            publish_text=f'发布时间：{clock(publishing["published_at"])}，发布用时：{elapsed_text}。'
+            snapshot = f'{snapshot.rstrip("。")}；{publish_text}' if snapshot else publish_text
         parts = [f'<div class="meta snapshot-line">{snapshot}</div>'] if snapshot else []
         if status["overdue"]:
             parts.append(f'<div class="notice">数据更新失败：{clock(status["requested"])} 发起的任务未能完成。'
@@ -1515,10 +1548,6 @@ class ReviewService:
         if publishing["overdue"]:
             parts.append(f'<div class="notice">发布失败：{clock(publishing["requested"])} 发起的内容尚未上线，'
                          '线上数据未受影响。请点击“重试发布”；若再次失败，请联系管理员。</div>')
-        if publishing["completed"]:
-            elapsed=publishing["duration_seconds"]
-            elapsed_text=f'{elapsed//60} 分 {elapsed%60} 秒' if elapsed>=60 else f'{elapsed} 秒'
-            parts.append(f'<div class="notice">发布完成：{clock(publishing["completed_at"])} 上线，用时 {elapsed_text}。</div>')
         return "".join(parts)
 
     def render_list(self, session_id: str, *, query: str = "", status: str = "", notice: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> bytes:

@@ -74,6 +74,18 @@ class IngestionInvocationBindingTests(unittest.TestCase):
             }, json.loads(output.read_text()))
             self.assertEqual(0o640, output.stat().st_mode & 0o777)
 
+            output = write_ingest_summary(
+                report, output_root,
+                started_at=datetime(2026, 10, 14, 3, 47, 3, tzinfo=timezone.utc),
+                completed_at=datetime(2026, 10, 14, 3, 47, 29, tzinfo=timezone.utc),
+            )
+            self.assertEqual({
+                "schema": 2, "generated_at": "2026-10-14T03:47:29Z",
+                "new_count": 2, "updated_count": 1,
+                "started_at": "2026-10-14T03:47:03Z",
+                "completed_at": "2026-10-14T03:47:29Z",
+            }, json.loads(output.read_text()))
+
     def test_report_requires_exact_nonce_and_strict_fresh_utc_generated_at(self):
         from deploy.source_ingest_entrypoint import persist_current_report, report_snapshot
 

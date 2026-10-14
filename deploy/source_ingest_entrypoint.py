@@ -159,7 +159,9 @@ MAX_ACTIVE_METADATA_BYTES = 1024 * 1024
 MAX_REPOSITORY_BUNDLE_BYTES = 1024 * 1024 * 1024
 
 
-def write_ingest_summary(report_path: Path, review_input: Path = REVIEW_INPUT) -> Path:
+def write_ingest_summary(report_path: Path, review_input: Path = REVIEW_INPUT, *,
+                         started_at: datetime | None = None,
+                         completed_at: datetime | None = None) -> Path:
     """Publish only reviewer-facing counts from an already validated report."""
     try:
         report = json.loads(_report_bytes(report_path))
@@ -174,13 +176,24 @@ def write_ingest_summary(report_path: Path, review_input: Path = REVIEW_INPUT) -
             or not isinstance(updated, int) or isinstance(updated, bool)
             or updated < 0 or updated > 10_000):
         raise RuntimeError("ingestion report has invalid change counts")
-    output = review_input / INGEST_SUMMARY_NAME
-    atomic_write_json(output, {
+    payload = {
         "schema": 1,
         "generated_at": generated,
         "new_count": len(set(rough)),
         "updated_count": updated,
-    }, mode=0o640, prefix=".ingest-summary-")
+    }
+    if started_at is not None or completed_at is not None:
+        if (started_at is None or completed_at is None
+                or started_at.tzinfo is None or completed_at.tzinfo is None):
+            raise RuntimeError("ingestion summary times must be timezone-aware")
+        started_at = started_at.astimezone(timezone.utc)
+        completed_at = completed_at.astimezone(timezone.utc)
+        if completed_at < started_at or completed_at - started_at > MAX_RUN_DURATION:
+            raise RuntimeError("ingestion summary duration is invalid")
+        payload.update({"schema": 2, "started_at": _utc_text(started_at),
+                        "completed_at": _utc_text(completed_at)})
+    output = review_input / INGEST_SUMMARY_NAME
+    atomic_write_json(output, payload, mode=0o640, prefix=".ingest-summary-")
     return output
 
 
@@ -382,6 +395,10 @@ def main(argv=None):
     if "push" in plan:
         run(*git,"push","--",fixed,"HEAD:refs/heads/main")
     write_review_bundle(run, git, repo, temporary)
+    # Preserve the actual pull completion independently from repository.bundle:
+    # publishing also refreshes that bundle, but must not rewrite the last-pull time.
+    write_ingest_summary(args.proof_output, started_at=invocation_started,
+                         completed_at=datetime.now(timezone.utc))
     return 0
 
 if __name__ == "__main__":

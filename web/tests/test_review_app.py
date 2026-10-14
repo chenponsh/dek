@@ -626,9 +626,9 @@ class ReviewAppTests(unittest.TestCase):
         self.snapshot_app(snapshot_age_seconds=300)
         session = self.authenticate()
         list_page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertIn("当前数据更新于", list_page)
+        self.assertIn("当前数据快照", list_page)
         identity = re.search(r'/review/item/([0-9a-f]{16})', list_page).group(1)
-        self.assertIn("当前数据更新于", self.call("/item/" + identity, cookie=session)[2].decode("utf-8"))
+        self.assertIn("当前数据快照", self.call("/item/" + identity, cookie=session)[2].decode("utf-8"))
         self.assertNotIn("抓取进行中", list_page)
 
     def test_clicking_pull_records_the_time_and_the_pages_say_a_pull_is_running(self):
@@ -706,8 +706,8 @@ class ReviewAppTests(unittest.TestCase):
         page = self.call("/", query="notice=ingest_triggered", cookie=session)[2].decode("utf-8")
         self.assertNotIn("抓取进行中", page)
         self.assertNotIn("data-ingest-progress", page)
-        self.assertIn("当前数据更新于", page)
-        self.assertIn("用时 1 分 0 秒", page)
+        self.assertIn("更新时间：", page)
+        self.assertIn("更新用时：1 分 0 秒", page)
         self.assertIn("新增 2 条、更新 1 条", page)
         self.assertNotIn("开始，用时", page)
         self.assertNotIn("已开始更新数据", page)
@@ -785,12 +785,33 @@ class ReviewAppTests(unittest.TestCase):
 
     def test_publish_control_disappears_once_data_refreshes_with_nothing_waiting(self):
         session = self.busy_app()
+        self.service.ingest_summary_path = self.root / "state" / "source-ingest-summary.json"
+        self.service.ingest_summary_path.parent.mkdir(parents=True, exist_ok=True)
+        self.service.ingest_summary_path.write_text(json.dumps({
+            "schema": 2,
+            "generated_at": "2030-03-17T17:45:00Z",
+            "started_at": "2030-03-17T17:45:00Z",
+            "completed_at": "2030-03-17T17:45:23Z",
+            "new_count": 0,
+            "updated_count": 0,
+        }), encoding="utf-8")
+        self.service.ingest_summary_path.chmod(0o640)
         self.call("/publish", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        refresh_stage = self.root / "state" / "publish-stage-refresh"
+        refresh_stage.touch()
+        os.utime(refresh_stage, (self.clock_value + 75, self.clock_value + 75))
+        finished = self.root / "state" / self.service.PUBLISH_FINISHED
+        finished.touch()
+        os.utime(finished, (self.clock_value + 90, self.clock_value + 90))
         self.snapshot_time = self.clock_value + 90                       # the chain's last step rewrote the review data
         self.clock_value += 100
         page = self.call("/", cookie=session)[2].decode("utf-8")
         self.assertNotIn("等待任务启动…", page)
         self.assertNotIn("重试发布", page)
+        self.assertIn("更新时间：03-18 01:45，更新用时：23 秒，未发现新增或变更；发布时间：03-18 01:47，发布用时：1 分 30 秒。", page)
+        self.assertNotIn("列表和内容均来自该时间", page)
+        self.assertNotIn("发布完成：", page)
+        self.assertEqual(page.count('class="meta snapshot-line"'), 1)
 
     def test_a_publish_that_never_refreshed_the_data_stops_blocking_after_fifteen_minutes(self):
         session = self.busy_app()
