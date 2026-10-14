@@ -34,7 +34,10 @@ test -f "$bundle" || fail "review repository bundle is missing"
 # shared parent loses execute permission, which previously broke publication.
 runuser -u dek-source-ingest -- test -w /var/lib/dek-review/input \
   || fail "source ingestion cannot traverse to the review input"
-runuser -u dek-qa -- test -r "$bundle" \
+# dek-suggest runs as dek-qa with dek-review-input added by its unit.  Supply
+# both child-read and parent-traverse groups here without granting either to
+# the long-running QA service.
+runuser -u dek-qa -g dek-review-traverse -G dek-review-input -- test -r "$bundle" \
   || fail "suggestion service cannot traverse to the review bundle"
 runuser -u dek-publisher -- test -r /var/lib/dek-review/decisions/decisions.jsonl \
   || fail "publisher cannot traverse to the review decisions"
@@ -44,7 +47,8 @@ runuser -u dek-activator -- test -r /var/lib/dek-review/decisions/decisions.json
   || fail "activator cannot traverse to the review decisions"
 runuser -u dek-publisher -- test -r /var/lib/dek-activate/outcomes \
   || fail "publisher cannot traverse to activation outcomes"
-runuser -u dek-source-ingest -- test -r /var/lib/dek-activate/control/active.json \
+# dek-source-refresh adds dek-release-read in its unit; emulate that unit here.
+runuser -u dek-source-ingest -g dek-source-ingest -G dek-release-read -- test -r /var/lib/dek-activate/control/active.json \
   || fail "snapshot refresh cannot traverse to active release metadata"
 runuser -u dek-web -- test -r /var/lib/dek-activate/control/active.json \
   || fail "web service cannot traverse to active release metadata"

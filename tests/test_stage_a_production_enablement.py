@@ -166,14 +166,21 @@ class StageARunbookTests(unittest.TestCase):
 
     def test_runtime_smoke_checks_cross_service_review_paths_as_real_accounts(self):
         smoke = Path("deploy/tools/runtime_smoke.sh").read_text(encoding="utf-8")
+        self.assertIn(
+            'runuser -u dek-qa -g dek-review-traverse -G dek-review-input -- test -r "$bundle"',
+            smoke,
+        )
+        self.assertIn(
+            "runuser -u dek-source-ingest -g dek-source-ingest -G dek-release-read -- test -r "
+            "/var/lib/dek-activate/control/active.json",
+            smoke,
+        )
         for account, path in (
             ("dek-source-ingest", "/var/lib/dek-review/input"),
-            ("dek-qa", '"$bundle"'),
             ("dek-publisher", "/var/lib/dek-review/decisions/decisions.jsonl"),
             ("dek-publisher", "/var/lib/dek-review/bundle-archive"),
             ("dek-activator", "/var/lib/dek-review/decisions/decisions.jsonl"),
             ("dek-publisher", "/var/lib/dek-activate/outcomes"),
-            ("dek-source-ingest", "/var/lib/dek-activate/control/active.json"),
             ("dek-web", "/var/lib/dek-activate/control/active.json"),
             ("dek-qa", "/var/lib/dek-activate/control/active.json"),
             ("dek-builder", "/var/lib/dek-qa/venv/bin/python"),
