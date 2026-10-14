@@ -1609,7 +1609,7 @@ class ReviewService:
         ingest_button = (
             f'<form method="post" action="{self.path_prefix}/trigger-ingest" class="ingest-trigger-form">'
             + ('<button type="submit" class="is-busy" disabled aria-busy="true">抓取中…</button>' if pulling
-               else '<button type="submit" data-busy-label="已提交…">更新最新数据</button>')
+               else '<button type="submit" data-busy-label="已提交…">同步最新数据</button>')
             + '</form>'
         )
         publish_button = ""

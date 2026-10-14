@@ -870,7 +870,7 @@ class ReviewAppTests(unittest.TestCase):
     def test_the_buttons_are_normal_when_nothing_is_running(self):
         session = self.busy_app()
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertIn('data-busy-label="已提交…">更新最新数据</button>', page)
+        self.assertIn('data-busy-label="已提交…">同步最新数据</button>', page)
         self.assertNotIn("is-busy", page.split("</style>", 1)[1])
 
     def test_the_new_notices_have_text(self):

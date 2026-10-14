@@ -10,7 +10,7 @@ Environment=PYTHONPATH=/opt/dek-review/app
 EnvironmentFile=/var/lib/dek-review/secrets/environment
 LoadCredential=review-decision-key:/var/lib/dek-review/secrets/review-decision-key
 Environment=DEK_REVIEW_DECISION_KEY_FILE=%d/review-decision-key
-ExecStart=/usr/bin/python3 -I /opt/dek-review/app/deploy/notify_entrypoint.py --bundle /var/lib/dek-review/input/repository.bundle --clones /var/lib/dek-review/clones --queue /var/lib/dek-review/decisions/decisions.jsonl --pending-state /var/lib/dek-review/state/notify-pending-seen.json --stuck-state /var/lib/dek-review/state/notify-stuck-seen.json
+ExecStart=/usr/bin/python3 -I /opt/dek-review/app/deploy/notify_entrypoint.py --bundle /var/lib/dek-review/input/repository.bundle --clones /var/lib/dek-review/clones --queue /var/lib/dek-review/decisions/decisions.jsonl --pending-state /var/lib/dek-review/state/notify-pending-seen.json --stuck-state /var/lib/dek-review/state/notify-stuck-seen.json --publish-success-state /var/lib/dek-review/state/notify-publish-success-seen.json --workflow-failure-state /var/lib/dek-review/state/notify-workflow-failure-seen.json --ingest-request /var/lib/dek-review/state/ingest-requested-at --ingest-summary /var/lib/dek-review/input/source-ingest-summary.json --publish-request /var/lib/dek-review/state/publish-requested-at --source-failure-marker /var/lib/dek-review/input/source-ingest-failed
 UMask=0007
 NoNewPrivileges=true
 PrivateTmp=true

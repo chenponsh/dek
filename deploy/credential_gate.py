@@ -117,7 +117,7 @@ def _environment(path: Path, kind: str) -> dict[str, bytes]:
     required = {
         "web": {"DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET", "DINGTALK_AGENT_ID", "DEK_WEB_REDIRECT_URI", "DEK_WEB_CLAIM_SECRET"},
         "review": {
-            "DEK_REVIEW_AUDIT_KEY", "DEK_WEB_CLAIM_SECRET", "DEK_REVIEWER_IDS",
+            "DEK_REVIEW_AUDIT_KEY", "DEK_WEB_CLAIM_SECRET", "DEK_REVIEWER_IDS", "DEK_FAILURE_REVIEWER_IDS",
             # Used by deploy/notify_entrypoint.py (dek-notify.service, same
             # identity and secrets file as dek-review) to push work
             # notifications for new pending reviews and stuck publishes.

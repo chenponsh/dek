@@ -852,7 +852,7 @@ class ReviewWorkflowTests(unittest.TestCase):
     def test_list_offers_a_manual_ingest_trigger_button(self):
         page = self.service.render_list("opaque-session").decode("utf-8")
         self.assertIn('<form method="post" action="/trigger-ingest" class="ingest-trigger-form">', page)
-        self.assertIn('<button type="submit" data-busy-label="已提交…">更新最新数据</button>', page)
+        self.assertIn('<button type="submit" data-busy-label="已提交…">同步最新数据</button>', page)
 
     def test_list_action_buttons_sit_together_on_the_right_ingest_then_publish(self):
         self.decide(action="approve")

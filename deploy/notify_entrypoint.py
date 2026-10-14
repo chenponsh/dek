@@ -15,7 +15,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve(strict=True).parents[1]))
@@ -25,10 +25,15 @@ from web.review import IsolatedReviewClone, MemoryFormNonceStore, ReviewService,
 REVIEW_ORIGIN = "https://regkb.chenponai.com"
 MAX_TITLE_CHARS = 60
 DEFAULT_STUCK_THRESHOLD_SECONDS = 30 * 60
+BEIJING = timezone(timedelta(hours=8))
 
 
 def reviewer_ids() -> list[str]:
     return [value.strip() for value in os.environ.get("DEK_REVIEWER_IDS", "").split(",") if value.strip()]
+
+
+def failure_reviewer_ids() -> list[str]:
+    return [value.strip() for value in os.environ.get("DEK_FAILURE_REVIEWER_IDS", "").split(",") if value.strip()]
 
 
 def dingtalk_client() -> DingTalkClient:
@@ -58,6 +63,60 @@ def _read_seen(path: Path) -> set[str]:
         return set(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return set()
+
+
+def _new_keyed_messages(current: dict[str, str], state_path: Path, *, baseline_first_run: bool = False) -> list[str]:
+    existed = state_path.exists()
+    seen = _read_seen(state_path)
+    _atomic_write_json(state_path, sorted(current))
+    if baseline_first_run and not existed:
+        return []
+    return [current[key] for key in sorted(current) if key not in seen]
+
+
+def _clock(value: float) -> str:
+    return datetime.fromtimestamp(value, BEIJING).strftime("%m-%d %H:%M")
+
+
+def new_publish_success_messages(service: ReviewService, state_path: Path) -> list[str]:
+    status = service.publish_status()
+    current: dict[str, str] = {}
+    if status["completed"]:
+        elapsed = status["duration_seconds"]
+        elapsed_text = f"{elapsed // 60} 分 {elapsed % 60} 秒" if elapsed >= 60 else f"{elapsed} 秒"
+        key = f'publish:{int(status["requested"])}'
+        current[key] = f'发布成功：{_clock(status["published_at"])} 上线，用时 {elapsed_text}'
+    # Installing this feature must not announce the last historical publish.
+    return _new_keyed_messages(current, state_path, baseline_first_run=True)
+
+
+def new_workflow_failure_messages(service: ReviewService, source_failure_marker: Path,
+                                  state_path: Path, now: float) -> list[str]:
+    current: dict[str, str] = {}
+    marker_time = None
+    try:
+        marker_time = source_failure_marker.stat().st_mtime
+    except OSError:
+        pass
+    if marker_time is not None and marker_time <= now + 300:
+        current[f"source:{source_failure_marker.stat().st_mtime_ns}"] = (
+            f"数据更新失败：{_clock(marker_time)} 的任务未完成，请检查更新流程"
+        )
+
+    ingest = service.ingest_status()
+    marker_covers_request = (marker_time is not None and ingest["requested"] is not None
+                             and marker_time + 5 >= ingest["requested"])
+    if ingest["overdue"] and not marker_covers_request:
+        current[f'ingest:{int(ingest["requested"])}'] = (
+            f'数据更新失败：{_clock(ingest["requested"])} 发起的任务未完成，请检查更新流程'
+        )
+
+    publish = service.publish_status()
+    if publish["overdue"]:
+        current[f'publish:{int(publish["requested"])}'] = (
+            f'发布失败：{_clock(publish["requested"])} 发起的内容尚未上线，请检查发布流程'
+        )
+    return _new_keyed_messages(current, state_path)
 
 
 def new_pending_titles(service: ReviewService, state_path: Path) -> list[str]:
@@ -107,12 +166,21 @@ def main(argv=None) -> int:
     parser.add_argument("--queue", type=Path, required=True)
     parser.add_argument("--pending-state", type=Path, required=True)
     parser.add_argument("--stuck-state", type=Path, required=True)
+    parser.add_argument("--publish-success-state", type=Path, required=True)
+    parser.add_argument("--workflow-failure-state", type=Path, required=True)
+    parser.add_argument("--ingest-request", type=Path, required=True)
+    parser.add_argument("--ingest-summary", type=Path, required=True)
+    parser.add_argument("--publish-request", type=Path, required=True)
+    parser.add_argument("--source-failure-marker", type=Path, required=True)
     parser.add_argument("--stuck-threshold-seconds", type=int, default=DEFAULT_STUCK_THRESHOLD_SECONDS)
     args = parser.parse_args(argv)
 
     ids = reviewer_ids()
     if not ids:
         return 0
+    failure_ids = failure_reviewer_ids()
+    if len(failure_ids) != 1 or failure_ids[0] not in ids:
+        raise RuntimeError("exactly one failure reviewer must also be an authorized reviewer")
 
     decision_key = Path(os.environ["DEK_REVIEW_DECISION_KEY_FILE"]).read_bytes().strip()
     source = IsolatedReviewClone(args.bundle, args.clones)
@@ -122,21 +190,32 @@ def main(argv=None) -> int:
         queue_key=decision_key,
         nonces=MemoryFormNonceStore(clock=time.time),
         clock=time.time,
+        ingest_state_path=args.ingest_request,
+        ingest_summary_path=args.ingest_summary,
+        publish_state_path=args.publish_request,
     )
 
     pending = new_pending_titles(service, args.pending_state)
     stuck = newly_stuck_approved_titles(service, args.stuck_threshold_seconds, time.time(), args.stuck_state)
-    if not pending and not stuck:
-        return 0
-
-    parts = []
+    publish_success = new_publish_success_messages(service, args.publish_success_state)
+    failures = new_workflow_failure_messages(
+        service, args.source_failure_marker, args.workflow_failure_state, time.time()
+    )
+    reviewer_parts = []
     if pending:
-        parts.append(_bulleted(f"有 {len(pending)} 条新内容待审核", pending))
+        reviewer_parts.append(_bulleted(f"有 {len(pending)} 条新内容待审核", pending))
+    reviewer_parts.extend(publish_success)
+    failure_parts = list(failures)
     if stuck:
         minutes = args.stuck_threshold_seconds // 60
-        parts.append(_bulleted(f"有 {len(stuck)} 条已批准超过 {minutes} 分钟仍未发布，请检查发布流程", stuck))
-    message = f"DEK 知识库：\n" + "\n\n".join(parts) + f"\n{REVIEW_ORIGIN}/review/"
-    dingtalk_client().send_work_notification(ids, message)
+        failure_parts.append(_bulleted(f"有 {len(stuck)} 条已批准超过 {minutes} 分钟仍未发布，请检查发布流程", stuck))
+    client = dingtalk_client()
+    if failure_parts:
+        message = f"DEK 知识库：\n" + "\n\n".join(failure_parts) + f"\n{REVIEW_ORIGIN}/review/"
+        client.send_work_notification(failure_ids, message)
+    if reviewer_parts:
+        message = f"DEK 知识库：\n" + "\n\n".join(reviewer_parts) + f"\n{REVIEW_ORIGIN}/review/"
+        client.send_work_notification(ids, message)
     return 0
 
 

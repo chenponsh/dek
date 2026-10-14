@@ -7,7 +7,11 @@ import unittest.mock
 from pathlib import Path
 from urllib.parse import urlencode
 
-from deploy.notify_entrypoint import MAX_TITLE_CHARS, _bulleted, new_pending_titles, notification_title, newly_stuck_approved_titles, reviewer_ids
+from deploy.notify_entrypoint import (
+    MAX_TITLE_CHARS, _bulleted, failure_reviewer_ids, new_pending_titles,
+    main, new_publish_success_messages, new_workflow_failure_messages,
+    notification_title, newly_stuck_approved_titles, reviewer_ids,
+)
 from web.review import MemoryFormNonceStore, ReviewService, rough_binding
 
 
@@ -51,6 +55,13 @@ class ReviewerIdsTests(unittest.TestCase):
     def test_reviewer_ids_is_empty_when_unset(self):
         with unittest.mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(reviewer_ids(), [])
+
+    def test_failure_reviewer_ids_is_independent_from_all_reviewers(self):
+        with unittest.mock.patch.dict(os.environ, {
+            "DEK_REVIEWER_IDS": "peng,other", "DEK_FAILURE_REVIEWER_IDS": "peng",
+        }, clear=True):
+            self.assertEqual(reviewer_ids(), ["peng", "other"])
+            self.assertEqual(failure_reviewer_ids(), ["peng"])
 
 
 class BulletedTests(unittest.TestCase):
@@ -158,6 +169,86 @@ class NotifyEntrypointTests(unittest.TestCase):
         (self.root / "repo/ingestion/rough/a.md").unlink()  # simulates a real publish removing the rough file
         self.assertEqual(newly_stuck_approved_titles(self.service, 1800, later + 60, state), [])
         self.assertEqual(json.loads(state.read_text(encoding="utf-8")), [])
+
+    def test_publish_success_is_baselined_then_each_new_publish_is_reported_once(self):
+        request = self.root / "state/publish-requested-at"
+        self.service.publish_state_path = request
+        request.parent.mkdir(parents=True, exist_ok=True)
+        request.write_text(str(self.clock_value), encoding="utf-8")
+        refresh = request.with_name("publish-stage-refresh")
+        finished = request.with_name(self.service.PUBLISH_FINISHED)
+        refresh.touch(); finished.touch()
+        os.utime(refresh, (self.clock_value + 75, self.clock_value + 75))
+        os.utime(finished, (self.clock_value + 90, self.clock_value + 90))
+        state = self.root / "state/publish-success-seen.json"
+        self.assertEqual(new_publish_success_messages(self.service, state), [])
+
+        self.clock_value += 200
+        self.service.record_publish_request(self.clock_value)
+        refresh.touch(); finished.touch()
+        os.utime(refresh, (self.clock_value + 70, self.clock_value + 70))
+        os.utime(finished, (self.clock_value + 80, self.clock_value + 80))
+        messages = new_publish_success_messages(self.service, state)
+        self.assertEqual(len(messages), 1)
+        self.assertIn("发布成功", messages[0])
+        self.assertIn("用时 1 分 20 秒", messages[0])
+        self.assertEqual(new_publish_success_messages(self.service, state), [])
+
+    def test_publish_and_ingest_failures_are_reported_once(self):
+        ingest_request = self.root / "state/ingest-requested-at"
+        publish_request = self.root / "state/publish-requested-at"
+        ingest_request.parent.mkdir(parents=True, exist_ok=True)
+        ingest_request.write_text(str(self.clock_value - 700), encoding="utf-8")
+        publish_request.write_text(str(self.clock_value - 60), encoding="utf-8")
+        self.service.ingest_state_path = ingest_request
+        self.service.publish_state_path = publish_request
+        finished = publish_request.with_name(self.service.PUBLISH_FINISHED)
+        finished.touch(); os.utime(finished, (self.clock_value - 50, self.clock_value - 50))
+        state = self.root / "state/workflow-failure-seen.json"
+        missing_marker = self.root / "input/source-ingest-failed"
+        messages = new_workflow_failure_messages(self.service, missing_marker, state, self.clock_value)
+        self.assertEqual(len(messages), 2)
+        self.assertTrue(any("数据更新失败" in value for value in messages))
+        self.assertTrue(any("发布失败" in value for value in messages))
+        self.assertEqual(new_workflow_failure_messages(self.service, missing_marker, state, self.clock_value), [])
+
+    def test_success_and_pending_go_to_all_but_failures_only_go_to_designated_reviewer(self):
+        key = self.root / "decision-key"
+        key.write_bytes(b"queue-key-0123456789abcdef")
+        sent = []
+
+        class Client:
+            def send_work_notification(self, ids, message):
+                sent.append((ids, message))
+
+        args = []
+        for name in (
+            "bundle", "clones", "queue", "pending-state", "stuck-state",
+            "publish-success-state", "workflow-failure-state", "ingest-request",
+            "ingest-summary", "publish-request", "source-failure-marker",
+        ):
+            args.extend((f"--{name}", str(self.root / name)))
+        environment = {
+            "DEK_REVIEWER_IDS": "peng,other",
+            "DEK_FAILURE_REVIEWER_IDS": "peng",
+            "DEK_REVIEW_DECISION_KEY_FILE": str(key),
+            "DEK_REVIEW_AUDIT_KEY": "audit-key-0123456789abcdef",
+        }
+        with (unittest.mock.patch.dict(os.environ, environment, clear=True),
+              unittest.mock.patch("deploy.notify_entrypoint.IsolatedReviewClone", return_value=object()),
+              unittest.mock.patch("deploy.notify_entrypoint.ReviewService", return_value=object()),
+              unittest.mock.patch("deploy.notify_entrypoint.new_pending_titles", return_value=["待审核问题"]),
+              unittest.mock.patch("deploy.notify_entrypoint.newly_stuck_approved_titles", return_value=[]),
+              unittest.mock.patch("deploy.notify_entrypoint.new_publish_success_messages", return_value=["发布成功"]),
+              unittest.mock.patch("deploy.notify_entrypoint.new_workflow_failure_messages", return_value=["发布失败"]),
+              unittest.mock.patch("deploy.notify_entrypoint.dingtalk_client", return_value=Client())):
+            self.assertEqual(main(args), 0)
+
+        self.assertEqual(sent[0][0], ["peng"])
+        self.assertIn("发布失败", sent[0][1])
+        self.assertEqual(sent[1][0], ["peng", "other"])
+        self.assertIn("待审核问题", sent[1][1])
+        self.assertIn("发布成功", sent[1][1])
 
 
 if __name__ == "__main__":

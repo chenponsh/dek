@@ -87,9 +87,8 @@ class GitSubprocessProxyEnvironmentTests(unittest.TestCase):
 
 class ReviewCredentialGateFieldsTests(unittest.TestCase):
     """The review environment gate's required-field set must match what
-    web/review_app.py actually reads at startup (DEK_REVIEW_AUDIT_KEY,
-    DEK_WEB_CLAIM_SECRET, DEK_REVIEWER_IDS) — not a stale field set from a
-    since-removed dedicated review DingTalk OAuth client."""
+    review and notification services actually read at startup — not a stale
+    field set from a since-removed dedicated review DingTalk OAuth client."""
 
     def _write(self, tmp: Path, raw: bytes) -> Path:
         path = tmp / "environment"
@@ -107,6 +106,7 @@ class ReviewCredentialGateFieldsTests(unittest.TestCase):
                 b"DEK_REVIEW_AUDIT_KEY=" + self.AUDIT_KEY + b"\n"
                 b"DEK_WEB_CLAIM_SECRET=" + self.CLAIM_SECRET + b"\n"
                 b"DEK_REVIEWER_IDS=016523605824315385,12283255131204392\n"
+                b"DEK_FAILURE_REVIEWER_IDS=016523605824315385\n"
                 b"DEK_REVIEW_DINGTALK_CLIENT_ID=ding-review-client\n"
                 b"DEK_REVIEW_DINGTALK_CLIENT_SECRET=" + self.DINGTALK_SECRET + b"\n"
                 b"DEK_REVIEW_DINGTALK_AGENT_ID=123456\n"
@@ -114,6 +114,7 @@ class ReviewCredentialGateFieldsTests(unittest.TestCase):
             values = _environment(path, "review")
         self.assertEqual(set(values), {
             "DEK_REVIEW_AUDIT_KEY", "DEK_WEB_CLAIM_SECRET", "DEK_REVIEWER_IDS",
+            "DEK_FAILURE_REVIEWER_IDS",
             "DEK_REVIEW_DINGTALK_CLIENT_ID", "DEK_REVIEW_DINGTALK_CLIENT_SECRET",
             "DEK_REVIEW_DINGTALK_AGENT_ID",
         })
