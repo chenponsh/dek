@@ -807,12 +807,11 @@
     if (!event.target.closest(".search-wrap")) results?.classList.remove("open");
   });
 
-  // The review list exposes this marker only while a manual publication is
-  // running. Reloading that list keeps its server-owned stage and elapsed
-  // time current without polling a new privileged API or disturbing an open
-  // decision form on a detail page.
-  if (document.querySelector("[data-publish-progress]")) {
-    window.setTimeout(() => window.location.reload(), 5000);
+  // The review list exposes these markers only while a background job is
+  // running. Reloading the list keeps server-owned progress current and
+  // automatically shows the result, without disturbing an open detail form.
+  if (document.querySelector("[data-ingest-progress], [data-publish-progress]")) {
+    window.setTimeout(() => window.location.reload(), 3000);
   }
 
   function escapeHtml(value) {

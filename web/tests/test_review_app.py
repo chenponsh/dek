@@ -639,6 +639,7 @@ class ReviewAppTests(unittest.TestCase):
         self.assertIn("正在拉取最新数据", page)
         self.assertIn("完成前暂不可审核", page)
         self.assertIn("当前显示", page)
+        self.assertIn("data-ingest-progress=true", page)
 
     def test_pull_with_missing_snapshot_write_permission_is_rejected_immediately(self):
         self.snapshot_app(snapshot_age_seconds=300)
@@ -697,6 +698,7 @@ class ReviewAppTests(unittest.TestCase):
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected")
         page = self.call("/", query="notice=ingest_triggered", cookie=session)[2].decode("utf-8")
         self.assertNotIn("抓取进行中", page)
+        self.assertNotIn("data-ingest-progress", page)
         self.assertIn("数据已更新：", page)
         self.assertIn("本次拉取", page)
         self.assertIn("开始，用时 1 分 0 秒", page)
@@ -714,6 +716,7 @@ class ReviewAppTests(unittest.TestCase):
         self.assertIn("服务权限不足或网络异常", page)
         self.assertIn("重新拉取", page)
         self.assertNotIn("抓取进行中", page)
+        self.assertNotIn("data-ingest-progress", page)
         status, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected")
 

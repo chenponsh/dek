@@ -1528,7 +1528,7 @@ class ReviewService:
         body = (
             self._header() + self._sidebar()
             + '<div class="content">'
-            + f'<main class="review-shell review-list"{" data-publish-progress=true" if publishing else ""}>'
+            + f'<main class="review-shell review-list"{" data-ingest-progress=true" if pulling else ""}{" data-publish-progress=true" if publishing else ""}>'
             + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions">{ingest_button}{publish_button}</div></div>'
             + self._snapshot_banner()
             + (f'<div class="notice">{html.escape(notice)}</div>' if notice else "")

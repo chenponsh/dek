@@ -88,6 +88,10 @@ class ResizerWiringTests(unittest.TestCase):
         self.assertIn('<link rel="stylesheet" href="/assets/style.css">', review)
         self.assertIn('<script src="/assets/app.js" defer></script>', review)
 
+    def test_a_running_review_job_automatically_refreshes_the_list(self):
+        self.assertIn('document.querySelector("[data-ingest-progress], [data-publish-progress]")', self.script)
+        self.assertIn("window.setTimeout(() => window.location.reload(), 3000);", self.script)
+
 
 if __name__ == "__main__":
     unittest.main()
