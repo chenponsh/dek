@@ -9,6 +9,7 @@ import tempfile
 import subprocess
 import threading
 import unittest
+from unittest import mock
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
@@ -658,7 +659,12 @@ class ReviewAppTests(unittest.TestCase):
         target = parent / "input"
         target.mkdir(parents=True)
         bundle = target / "repository.bundle"
-        self.assertTrue(ingest_snapshot_write_ready(bundle, account))
+        # The review service intentionally sees this directory through a
+        # read-only systemd mount.  That says nothing about the separate
+        # ingestion service's mount, so the preflight must use target-account
+        # Unix modes and must not inspect its own statvfs flags.
+        with mock.patch("web.review_app.os.statvfs", side_effect=AssertionError("must not inspect caller mount")):
+            self.assertTrue(ingest_snapshot_write_ready(bundle, account))
         parent.chmod(0o600)
         self.assertFalse(ingest_snapshot_write_ready(bundle, account))
         parent.chmod(0o700)

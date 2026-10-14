@@ -155,9 +155,7 @@ def ingest_snapshot_write_ready(bundle: Path, user_name: str = "dek-source-inges
             details = os.stat(candidate, follow_symlinks=False)
             if not stat.S_ISDIR(details.st_mode) or not _mode_allows(details, account.pw_uid, gids, 0o1):
                 return False
-        if not _mode_allows(os.stat(directory, follow_symlinks=False), account.pw_uid, gids, 0o3):
-            return False
-        return not bool(os.statvfs(directory).f_flag & getattr(os, "ST_RDONLY", 1))
+        return _mode_allows(os.stat(directory, follow_symlinks=False), account.pw_uid, gids, 0o3)
     except (KeyError, OSError):
         return False
 
