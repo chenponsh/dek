@@ -447,9 +447,11 @@ class ReviewApp:
 
     def _notice_text(self, code: str) -> str:
         """The text for a ?notice= code. "Request submitted" is left out while the page's own
-        in-progress line says the same thing, so one situation is one message."""
-        if code in {"ingest_triggered", "publish_triggered"} and (
-                self.service.ingest_status()["in_progress"] or self.service.publish_status()["in_progress"]):
+        progress or completion line says the same thing, so one situation is one message."""
+        ingest, publish = self.service.ingest_status(), self.service.publish_status()
+        if code == "ingest_triggered" and (ingest["in_progress"] or ingest["completed"]):
+            return ""
+        if code == "publish_triggered" and (publish["in_progress"] or publish["completed"]):
             return ""
         return NOTICES.get(code, "")
 

@@ -1424,12 +1424,12 @@ class ReviewService:
             minutes = max(0, int((self.clock() - status["snapshot"]) // 60))
             ago = "刚刚" if minutes < 1 else f"{minutes} 分钟前" if minutes < 120 else f"{minutes // 60} 小时前"
             snapshot = f'数据快照：{clock(status["snapshot"])}（{ago}）。列表和内容都来自这一时刻。'
-        completed = ""
         if status["completed"]:
             elapsed = status["duration_seconds"]
             elapsed_text = f"{elapsed // 60} 分 {elapsed % 60} 秒" if elapsed >= 60 else f"{elapsed} 秒"
-            completed = (f'最近一次拉取：{clock_seconds(status["requested"])} 开始，'
-                         f'{clock_seconds(status["completed_at"])} 结束，用时 {elapsed_text}。')
+            started = datetime.fromtimestamp(status["requested"], BEIJING).strftime("%H:%M:%S")
+            snapshot = (f'数据已更新：{clock_seconds(status["completed_at"])}。本次拉取 {started} 开始，'
+                        f'用时 {elapsed_text}；列表和内容均为最新。')
         running = []
         if status["in_progress"]:
             running.append(f'抓取进行中（{clock(status["requested"])} 开始，约需 1～2 分钟）。'
@@ -1443,8 +1443,7 @@ class ReviewService:
         if running:
             return f'<div class="notice snapshot-wait">{"<br>".join(running)}<br><span class="meta">{snapshot}</span></div>' if snapshot \
                 else f'<div class="notice snapshot-wait">{"<br>".join(running)}</div>'
-        summary = "<br>".join(value for value in (snapshot, completed) if value)
-        parts = [f'<div class="meta snapshot-line">{summary}</div>'] if summary else []
+        parts = [f'<div class="meta snapshot-line">{snapshot}</div>'] if snapshot else []
         if status["overdue"]:
             parts.append(f'<div class="notice">{clock(status["requested"])} 的拉取未在预计时间内完成，数据没有更新。'
                          '可能是服务权限不足或网络异常。请点击“重新拉取”；仍然失败请联系管理员。</div>')

@@ -694,11 +694,13 @@ class ReviewAppTests(unittest.TestCase):
         self.snapshot_time = self.clock_value                     # the pull finished and wrote a new snapshot
         status, headers, _ = self.call("/decision", method="POST", cookie=session, origin=REVIEW_ORIGIN, form=form)
         self.assertEqual(dict(headers)["Location"], REVIEW_PREFIX + "/item/" + identity + "?notice=rejected")
-        page = self.call("/", cookie=session)[2].decode("utf-8")
+        page = self.call("/", query="notice=ingest_triggered", cookie=session)[2].decode("utf-8")
         self.assertNotIn("抓取进行中", page)
-        self.assertIn("最近一次拉取：", page)
-        self.assertIn("开始", page)
-        self.assertIn("结束，用时 1 分 0 秒", page)
+        self.assertIn("数据已更新：", page)
+        self.assertIn("本次拉取", page)
+        self.assertIn("开始，用时 1 分 0 秒", page)
+        self.assertIn("列表和内容均为最新", page)
+        self.assertNotIn("已提交拉取请求", page)
 
     def test_a_pull_that_never_refreshed_the_data_stops_blocking_and_says_so(self):
         self.snapshot_app()
