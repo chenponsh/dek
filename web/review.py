@@ -1432,8 +1432,9 @@ class ReviewService:
                         f'用时 {elapsed_text}；列表和内容均为最新。')
         running = []
         if status["in_progress"]:
-            running.append(f'抓取进行中（{clock(status["requested"])} 开始，约需 1～2 分钟）。'
-                           '完成后请刷新页面；进行期间不能批准或拒绝，避免处理到旧列表里已经不存在的内容。')
+            current = f'当前显示 {clock(status["snapshot"])} 的数据；' if status["snapshot"] else ""
+            running.append(f'正在拉取最新数据（{clock(status["requested"])} 开始，预计 1～2 分钟）。'
+                           f'{current}完成前暂不可审核，请稍后刷新。')
         if publishing["in_progress"]:
             elapsed=publishing["age_seconds"]
             elapsed_text=f'{elapsed//60} 分 {elapsed%60} 秒' if elapsed>=60 else f'{elapsed} 秒'
@@ -1441,7 +1442,8 @@ class ReviewService:
                            f'{clock(publishing["requested"])} 开始，约需 1～2 分钟）。'
                            '完成后请刷新页面；进行期间发布按钮暂不能再点。')
         if running:
-            return f'<div class="notice snapshot-wait">{"<br>".join(running)}<br><span class="meta">{snapshot}</span></div>' if snapshot \
+            snapshot_is_merged = status["in_progress"] and status["snapshot"]
+            return f'<div class="notice snapshot-wait">{"<br>".join(running)}<br><span class="meta">{snapshot}</span></div>' if snapshot and not snapshot_is_merged \
                 else f'<div class="notice snapshot-wait">{"<br>".join(running)}</div>'
         parts = [f'<div class="meta snapshot-line">{snapshot}</div>'] if snapshot else []
         if status["overdue"]:

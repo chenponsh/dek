@@ -636,8 +636,9 @@ class ReviewAppTests(unittest.TestCase):
         self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         self.assertEqual(state.read_text().strip(), str(self.clock_value))
         page = self.call("/", cookie=session)[2].decode("utf-8")
-        self.assertIn("抓取进行中", page)
-        self.assertIn("不能批准或拒绝", page)
+        self.assertIn("正在拉取最新数据", page)
+        self.assertIn("完成前暂不可审核", page)
+        self.assertIn("当前显示", page)
 
     def test_pull_with_missing_snapshot_write_permission_is_rejected_immediately(self):
         self.snapshot_app(snapshot_age_seconds=300)
@@ -793,11 +794,13 @@ class ReviewAppTests(unittest.TestCase):
         self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
         page = self.call("/", query="notice=ingest_triggered", cookie=session)[2].decode("utf-8")
         body = page.split("</style>", 1)[1]
-        self.assertEqual(body.count("抓取进行中（"), 1)
+        self.assertEqual(body.count("正在拉取最新数据（"), 1)
         self.assertEqual(body.count('class="notice'), 1)                  # a single block ...
         self.assertNotIn("已提交拉取请求", body)                            # ... without the separate "submitted" notice
-        self.assertNotIn('class="meta snapshot-line"', body)               # ... and the snapshot age is inside it
-        self.assertIn("数据快照：", body)
+        self.assertNotIn('class="meta snapshot-line"', body)               # ... and the current snapshot time is inside it
+        self.assertNotIn("数据快照：", body)
+        self.assertIn("当前显示", body)
+        self.assertIn("的数据；完成前暂不可审核，请稍后刷新。", body)
 
     def test_the_submitted_notice_still_shows_when_nothing_is_running(self):
         session = self.busy_app()
