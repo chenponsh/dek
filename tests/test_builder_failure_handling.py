@@ -155,6 +155,10 @@ class PublisherPermanentFailureTests(unittest.TestCase):
         self.assertNotIn("Traceback", second)
         self.assertIn("cannot be retried", second)
 
+    def test_a_changed_approved_draft_is_permanent(self):
+        self.run_once(release_bundle.BundleError("rough binding changed"))
+        self.assertIs(self.states["dead-decision-01"]["retryable"], False)
+
     def test_a_transient_failure_stays_retryable_and_is_tried_again(self):
         self.run_once(release_bundle.BundleError("fixed command failed"))
         self.assertIs(self.states["dead-decision-01"]["retryable"], True)

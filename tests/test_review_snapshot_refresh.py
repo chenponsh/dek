@@ -112,6 +112,7 @@ class UnitFileTests(unittest.TestCase):
         self.assertIn("BindReadOnlyPaths=/var/lib/dek-activate/control:/run/dek-active-control",refresh)
         self.assertIn("ReadWritePaths=/var/lib/dek-review/input",refresh)
         self.assertIn("IPAddressDeny=any",refresh)
+        self.assertNotIn("ExecCondition=",refresh)
         self.assertNotIn("git-credentials",refresh)
         self.assertNotIn("HTTP_PROXY",refresh)
 

@@ -244,6 +244,7 @@ def published_result(approved_root: Path, builds_root: Path, decision_id: str) -
 # wiki path that now holds different content. Anything else (network, a busy build) stays retryable.
 PERMANENT_FAILURES = (
     "rough source is unreadable",
+    "rough binding changed",
     "wiki_path already published with different content",
     "move source is unreadable",
     "move source changed",

@@ -3,7 +3,6 @@ Description=DEK review snapshot refresh from the proved active release
 
 [Service]
 Type=oneshot
-ExecCondition=+/usr/bin/python3 -I /opt/dek-source-ingest/app/deploy/readiness.py --config /etc/dek-readiness.json
 User=dek-source-ingest
 Group=dek-source-ingest
 SupplementaryGroups=dek-release-read

@@ -414,12 +414,14 @@ class DeploymentContractTests(unittest.TestCase):
             self.assertNotIn("ConditionPathExists",unit)
             self.assertIn("ExecCondition=+",unit)
             self.assertIn("--validate-marker --marker /var/lib/dek-readiness/automation-ready",unit)
-        for name in ("dek-source-ingest.service", "dek-source-refresh.service"):
-            ingest=Path("deploy/systemd",name).read_text()
-            self.assertNotIn("ConditionPathExists",ingest)
-            self.assertIn("ExecCondition=+",ingest)
-            self.assertIn("readiness.py --config /etc/dek-readiness.json",ingest)
-            self.assertNotIn("--validate-marker",ingest)
+        ingest=Path("deploy/systemd/dek-source-ingest.service").read_text()
+        self.assertNotIn("ConditionPathExists",ingest)
+        self.assertIn("ExecCondition=+",ingest)
+        self.assertIn("readiness.py --config /etc/dek-readiness.json",ingest)
+        self.assertNotIn("--validate-marker",ingest)
+        refresh=Path("deploy/systemd/dek-source-refresh.service").read_text()
+        self.assertNotIn("ExecCondition=",refresh)
+        self.assertIn("IPAddressDeny=any",refresh)
 
     def test_manual_runbook_has_exact_install_backup_and_rollback_inventory(self):
         text = Path("deploy/PRODUCTION_ROLLOUT.md").read_text(encoding="utf-8")

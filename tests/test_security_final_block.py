@@ -369,13 +369,15 @@ class StrictReadinessMarkerTests(unittest.TestCase):
             self.assertNotIn("ConditionPathExists", unit)
             self.assertIn("ExecCondition=+", unit)
             self.assertIn("--validate-marker", unit)
-        for name in ("dek-source-ingest.service", "dek-source-refresh.service"):
-            ingest = (Path("deploy/systemd") / name).read_text(encoding="utf-8")
-            self.assertNotIn("ConditionPathExists", ingest)
-            self.assertIn("ExecCondition=+", ingest)
-            self.assertIn("readiness.py --config /etc/dek-readiness.json", ingest)
-            self.assertNotIn("--validate-marker", ingest)
-            self.assertNotIn("--confirm-authorized-login", ingest)
+        ingest = (Path("deploy/systemd") / "dek-source-ingest.service").read_text(encoding="utf-8")
+        self.assertNotIn("ConditionPathExists", ingest)
+        self.assertIn("ExecCondition=+", ingest)
+        self.assertIn("readiness.py --config /etc/dek-readiness.json", ingest)
+        self.assertNotIn("--validate-marker", ingest)
+        self.assertNotIn("--confirm-authorized-login", ingest)
+        refresh = (Path("deploy/systemd") / "dek-source-refresh.service").read_text(encoding="utf-8")
+        self.assertNotIn("ExecCondition=", refresh)
+        self.assertIn("IPAddressDeny=any", refresh)
 
 
 class FirstActivationFailureTests(unittest.TestCase):

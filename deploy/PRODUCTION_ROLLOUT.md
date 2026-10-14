@@ -472,6 +472,8 @@ The written automation marker is an authenticated, configuration-bound attestati
 
 The scheduled source-ingest unit is deliberately different: it can only create source notes and pending review drafts, and cannot publish them. Its `ExecCondition` therefore performs the machine-verifiable DNS, TLS, OAuth callback and readiness-endpoint check on every run, without claiming that a human repeated the two login exercises. This lets daily ingestion run unattended while preserving the human approval boundary before publication.
 
+The post-publish `dek-source-refresh.service` is deliberately offline and has no readiness `ExecCondition`: it only verifies and copies the already-proved active release into the review snapshot. Its sandbox denies IP networking, so attaching the scheduled-ingest network check would make every refresh impossible.
+
 Reissue the attestation whenever its bound readiness configuration changes. Reissue means repeating the readiness check, both real login exercises, and the marker write/validate steps below; never edit the signed marker. Publisher, builder and activator fail closed when the marker no longer matches configuration. Scheduled source ingestion independently performs the live machine checks on every run.
 
 ```bash
