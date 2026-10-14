@@ -14,7 +14,7 @@ import yaml
 
 class QaAliasClosureTests(unittest.TestCase):
     def test_every_hermes_platform_alias_is_disabled_and_nested_tools_are_removed(self):
-        from deploy.qa_profile import migrate_profile
+        from deploy.qa_profile import QA_BOUNDARY_OVERLAY, migrate_profile
 
         source = {
             "group_sessions_per_user": True,
@@ -36,6 +36,7 @@ class QaAliasClosureTests(unittest.TestCase):
         }
 
         migrated = migrate_profile(source, "/var/lib/dek-qa/venvs/digest/bin/python")
+        self.assertEqual(migrated["agent"]["system_prompt"], QA_BOUNDARY_OVERLAY)
 
         self.assertFalse(migrated["telegram"]["enabled"])
         self.assertFalse(migrated["discord"]["enabled"])

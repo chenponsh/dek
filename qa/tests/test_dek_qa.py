@@ -784,6 +784,8 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("allowed_chats: []", config)
         self.assertIn("dingtalk: []", config)
         self.assertIn("tool_search:\n    enabled: off", config)
+        self.assertIn("强制回答边界（每轮均适用）", config)
+        self.assertIn("只回复：请询问与已审核知识库内容相关的问题。", config)
         for forbidden in ("terminal", "browser", "session_search", "cronjob"):
             self.assertNotIn(f"- {forbidden}", config)
 
