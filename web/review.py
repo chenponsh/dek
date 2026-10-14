@@ -1389,7 +1389,12 @@ class ReviewService:
                 requested = None
         pending = requested is not None and (snapshot is None or requested > snapshot)
         age = self.clock() - requested if requested is not None else 0
+        completed = (requested is not None and snapshot is not None and snapshot >= requested
+                     and snapshot - requested <= wait)
         return {"snapshot": snapshot, "requested": requested, "age_seconds":max(0,int(age)),
+                "completed": completed,
+                "completed_at": snapshot if completed else None,
+                "duration_seconds": max(0, int(round(snapshot - requested))) if completed else None,
                 "in_progress": bool(pending and 0 <= age < wait),
                 "overdue": bool(pending and age >= wait)}
 
@@ -1413,11 +1418,18 @@ class ReviewService:
         """One message for the data's state: how old it is, and what is running that will replace it."""
         status, publishing = self.ingest_status(), self.publish_status()
         clock = lambda value: datetime.fromtimestamp(value, BEIJING).strftime("%m-%d %H:%M")
+        clock_seconds = lambda value: datetime.fromtimestamp(value, BEIJING).strftime("%m-%d %H:%M:%S")
         snapshot = ""
         if status["snapshot"]:
             minutes = max(0, int((self.clock() - status["snapshot"]) // 60))
             ago = "刚刚" if minutes < 1 else f"{minutes} 分钟前" if minutes < 120 else f"{minutes // 60} 小时前"
             snapshot = f'数据快照：{clock(status["snapshot"])}（{ago}）。列表和内容都来自这一时刻。'
+        completed = ""
+        if status["completed"]:
+            elapsed = status["duration_seconds"]
+            elapsed_text = f"{elapsed // 60} 分 {elapsed % 60} 秒" if elapsed >= 60 else f"{elapsed} 秒"
+            completed = (f'最近一次拉取：{clock_seconds(status["requested"])} 开始，'
+                         f'{clock_seconds(status["completed_at"])} 结束，用时 {elapsed_text}。')
         running = []
         if status["in_progress"]:
             running.append(f'抓取进行中（{clock(status["requested"])} 开始，约需 1～2 分钟）。'
@@ -1431,7 +1443,8 @@ class ReviewService:
         if running:
             return f'<div class="notice snapshot-wait">{"<br>".join(running)}<br><span class="meta">{snapshot}</span></div>' if snapshot \
                 else f'<div class="notice snapshot-wait">{"<br>".join(running)}</div>'
-        parts = [f'<div class="meta snapshot-line">{snapshot}</div>'] if snapshot else []
+        summary = "<br>".join(value for value in (snapshot, completed) if value)
+        parts = [f'<div class="meta snapshot-line">{summary}</div>'] if summary else []
         if status["overdue"]:
             parts.append(f'<div class="notice">{clock(status["requested"])} 的拉取未在预计时间内完成，数据没有更新。'
                          '可能是服务权限不足或网络异常。请点击“重新拉取”；仍然失败请联系管理员。</div>')
