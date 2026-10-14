@@ -232,11 +232,11 @@
     }).join("");
     const filters = '<section class="recent-filters"><h2>信息速览</h2>'
       + '<div class="recent-tabs" role="group" aria-label="按天数快速筛选">'
+      + '<button type="button" class="recent-tab active" data-days="0">全部</button>'
       + '<button type="button" class="recent-tab" data-days="7">7天</button>'
       + '<button type="button" class="recent-tab" data-days="30">30天</button>'
       + '<button type="button" class="recent-tab" data-days="90">90天</button>'
       + '<button type="button" class="recent-tab" data-days="undated">无日期</button>'
-      + '<button type="button" class="recent-tab active" data-days="0">全部</button>'
       + '<button type="button" class="recent-tab" id="recent-custom" aria-controls="recent-range" aria-expanded="false">自定义</button>'
       + '</div>'
       + '<div class="recent-range" id="recent-range" hidden>'

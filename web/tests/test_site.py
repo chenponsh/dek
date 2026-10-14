@@ -496,7 +496,7 @@ class SiteBuildTests(unittest.TestCase):
         homepage = self.home_markup()
         self.assertRegex(homepage, r'<div class="recent-range" id="recent-range" hidden>')
         self.assertIn('id="recent-custom"', homepage)
-        self.assertEqual(re.findall(r'data-days="(\w+)"', homepage), ["7", "30", "90", "undated", "0"])   # 无日期 sits with the periods
+        self.assertEqual(re.findall(r'data-days="(\w+)"', homepage), ["0", "7", "30", "90", "undated"])
 
     def test_the_home_page_lands_on_all_with_every_card_showing_its_total(self):
         build_site(self.vault, self.out)
