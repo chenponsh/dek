@@ -62,6 +62,10 @@ def base_report(now: datetime, mode: str) -> dict[str, Any]:
         "generated_at": now.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
         "baseline": repo_fingerprint(ROOT, CONFIG_PATH),
         "report": {}, "rough_created": [], "planned_writes": [],
+        # These are applied item changes, not remote revisions that were only
+        # detected. Existing-item revisions are fail-closed today, so the
+        # second count remains zero until an explicit update workflow exists.
+        "new_count": 0, "updated_count": 0,
         "blocking": False, "alerts": [], "auto_write_paths": [], "rough_sources": {}, "rough_also_sources": {},
     }
     run_nonce = os.environ.get("DEK_INGEST_RUN_NONCE")
@@ -369,6 +373,7 @@ def inspect(config: dict[str, Any], now: datetime) -> tuple[dict[str, Any], dict
             result["alerts"].append(f"CDE source failure: {exc}")
 
     result["planned_writes"] = sorted(str(p.relative_to(ROOT)) for p, text in writes.items() if not p.exists() or text != p.read_text(encoding="utf-8"))
+    result["new_count"] = len(set(result["rough_created"]))
     validate_report_invariants(result)
     add_pipeline_health(result)
     return result, writes

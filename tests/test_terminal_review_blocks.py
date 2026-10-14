@@ -52,6 +52,28 @@ class QaAliasClosureTests(unittest.TestCase):
 
 
 class IngestionInvocationBindingTests(unittest.TestCase):
+    def test_reviewer_summary_contains_only_applied_change_counts(self):
+        from deploy.source_ingest_entrypoint import write_ingest_summary
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            report = root / "latest-report.json"
+            output_root = root / "review-input"
+            output_root.mkdir()
+            report.write_text(json.dumps({
+                "generated_at": "2026-10-14T03:47:29Z",
+                "rough_created": ["ingestion/rough/one.md", "ingestion/rough/two.md"],
+                "updated_count": 1,
+                "report": {"source/example.md": {"revision_count": 9}},
+            }), encoding="utf-8")
+
+            output = write_ingest_summary(report, output_root)
+            self.assertEqual({
+                "schema": 1, "generated_at": "2026-10-14T03:47:29Z",
+                "new_count": 2, "updated_count": 1,
+            }, json.loads(output.read_text()))
+            self.assertEqual(0o640, output.stat().st_mode & 0o777)
+
     def test_report_requires_exact_nonce_and_strict_fresh_utc_generated_at(self):
         from deploy.source_ingest_entrypoint import persist_current_report, report_snapshot
 

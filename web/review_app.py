@@ -603,6 +603,7 @@ def main() -> None:
         path_prefix=REVIEW_PREFIX,
         suggestions_path=args.suggestions,
         ingest_state_path=args.ingest_trigger.with_name("ingest-requested-at") if args.ingest_trigger else None,
+        ingest_summary_path=args.bundle.with_name("source-ingest-summary.json") if args.bundle else None,
         publish_state_path=args.publish_trigger.with_name("publish-requested-at") if args.publish_trigger else None,
     )
     serve_unix(

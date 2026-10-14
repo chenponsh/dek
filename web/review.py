@@ -939,6 +939,7 @@ class ReviewService:
         path_prefix: str = "",
         suggestions_path: Path | None = None,
         ingest_state_path: Path | None = None,
+        ingest_summary_path: Path | None = None,
         publish_state_path: Path | None = None,
     ):
         if len(audit_key) < 16 or len(queue_key) < 16:
@@ -947,6 +948,7 @@ class ReviewService:
             raise ValueError("review path prefix must be an absolute, non-trailing-slash path")
         self.repository_source = repo_root
         self.ingest_state_path = Path(ingest_state_path) if ingest_state_path else None
+        self.ingest_summary_path = Path(ingest_summary_path) if ingest_summary_path else None
         self.publish_state_path = Path(publish_state_path) if publish_state_path else None
         self.root = Path(repo_root).resolve() if isinstance(repo_root,Path) else None
         self.queue_path = Path(os.path.abspath(queue_path))
@@ -1402,6 +1404,55 @@ class ReviewService:
         """A pull is `in_progress` until the review data is rewritten (the snapshot moves past the request)."""
         return self._request_status(self.ingest_state_path, self.INGEST_WAIT_SECONDS)
 
+    def _ingest_change_counts(self, status: dict) -> tuple[int, int] | None:
+        """Return applied item counts from the report belonging to this pull.
+
+        A detected remote revision is deliberately not an update: ingestion
+        blocks those instead of overwriting reviewed content.  The report's
+        ``updated_count`` therefore describes only changes that were actually
+        applied.
+        """
+        try:
+            requested = float(status["requested"])
+            completed = float(status["completed_at"])
+            path = self.ingest_summary_path
+            if path is None:
+                return None
+            descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except (OSError, TypeError, ValueError):
+            return None
+        try:
+            details = os.fstat(descriptor)
+            if (not stat.S_ISREG(details.st_mode) or details.st_nlink != 1
+                    or stat.S_IMODE(details.st_mode) != 0o640 or details.st_size > 4096):
+                return None
+            raw = os.read(descriptor, 4097)
+        except OSError:
+            return None
+        finally:
+            os.close(descriptor)
+        if len(raw) > 4096:
+            return None
+        try:
+            payload = json.loads(raw)
+            generated = payload["generated_at"]
+            if not isinstance(generated, str) or not generated.endswith("Z"):
+                return None
+            generated_at = datetime.fromisoformat(generated[:-1] + "+00:00").timestamp()
+            new, updated = payload["new_count"], payload["updated_count"]
+        except (AttributeError, KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError, ValueError, OverflowError):
+            return None
+        # Do not attach an older summary (or a future-dated one) to a newly
+        # completed request merely because it remains beside the bundle.
+        if generated_at + 5 < requested or generated_at > completed + 300:
+            return None
+        if (payload.get("schema") != 1
+                or not isinstance(new, int) or isinstance(new, bool)
+                or not isinstance(updated, int) or isinstance(updated, bool)
+                or not 0 <= new <= 10_000 or not 0 <= updated <= 10_000):
+            return None
+        return new, updated
+
     def publish_status(self) -> dict:
         """A publish is `in_progress` until its last step refreshes the review data."""
         result=self._request_status(self.publish_state_path,self.PUBLISH_WAIT_SECONDS)
@@ -1427,9 +1478,15 @@ class ReviewService:
         if status["completed"]:
             elapsed = status["duration_seconds"]
             elapsed_text = f"{elapsed // 60} 分 {elapsed % 60} 秒" if elapsed >= 60 else f"{elapsed} 秒"
-            started = datetime.fromtimestamp(status["requested"], BEIJING).strftime("%H:%M:%S")
-            snapshot = (f'数据已更新：{clock_seconds(status["completed_at"])}。本次拉取 {started} 开始，'
-                        f'用时 {elapsed_text}；列表和内容均为最新。')
+            counts = self._ingest_change_counts(status)
+            if counts == (0, 0):
+                changes = "未发现新增或变更。"
+            elif counts is not None:
+                changes = f"新增 {counts[0]} 条、更新 {counts[1]} 条。"
+            else:
+                changes = "列表和内容均为最新。"
+            snapshot = (f'数据已更新：{clock_seconds(status["completed_at"])}。'
+                        f'本次拉取用时 {elapsed_text}，{changes}')
         running = []
         if status["in_progress"]:
             current = f'当前显示 {clock(status["snapshot"])} 的数据；' if status["snapshot"] else ""

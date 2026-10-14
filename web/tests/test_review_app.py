@@ -605,6 +605,8 @@ class ReviewAppTests(unittest.TestCase):
         state = self.root / "state" / "ingest-requested-at"
         trigger = self.root / "state" / "ingest-trigger-requested"
         self.service.ingest_state_path = state
+        self.service.ingest_summary_path = self.root / "state" / "source-ingest-summary.json"
+        self.service.ingest_summary_path.parent.mkdir(parents=True, exist_ok=True)
         self.snapshot_time = self.clock_value - snapshot_age_seconds
         self.service.snapshot_time = lambda: self.snapshot_time
         self.app = ReviewApp(self.service, CLAIM_SECRET, ("reviewer-1",), expected_origin=REVIEW_ORIGIN,
@@ -689,6 +691,13 @@ class ReviewAppTests(unittest.TestCase):
 
     def test_once_the_data_is_refreshed_decisions_work_again(self):
         self.snapshot_app()
+        self.service.ingest_summary_path.write_text(json.dumps({
+            "schema": 1,
+            "generated_at": "2030-03-17T17:47:40Z",
+            "new_count": 2,
+            "updated_count": 1,
+        }), encoding="utf-8")
+        self.service.ingest_summary_path.chmod(0o640)
         session = self.authenticate()
         identity, form = self.decision_form(session)
         self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
@@ -700,10 +709,25 @@ class ReviewAppTests(unittest.TestCase):
         self.assertNotIn("抓取进行中", page)
         self.assertNotIn("data-ingest-progress", page)
         self.assertIn("数据已更新：", page)
-        self.assertIn("本次拉取", page)
-        self.assertIn("开始，用时 1 分 0 秒", page)
-        self.assertIn("列表和内容均为最新", page)
+        self.assertIn("本次拉取用时 1 分 0 秒", page)
+        self.assertIn("新增 2 条、更新 1 条", page)
+        self.assertNotIn("开始，用时", page)
         self.assertNotIn("已提交拉取请求", page)
+
+    def test_completed_pull_says_when_nothing_changed(self):
+        self.snapshot_app()
+        self.service.ingest_summary_path.write_text(json.dumps({
+            "schema": 1, "generated_at": "2030-03-17T17:47:40Z",
+            "new_count": 0, "updated_count": 0,
+        }), encoding="utf-8")
+        self.service.ingest_summary_path.chmod(0o640)
+        session = self.authenticate()
+        self.call("/trigger-ingest", method="POST", cookie=session, origin=REVIEW_ORIGIN)
+        self.clock_value += 60
+        self.snapshot_time = self.clock_value
+        page = self.call("/", cookie=session)[2].decode("utf-8")
+        self.assertIn("未发现新增或变更", page)
+        self.assertNotIn("新增 0 条", page)
 
     def test_a_pull_that_never_refreshed_the_data_stops_blocking_and_says_so(self):
         self.snapshot_app()

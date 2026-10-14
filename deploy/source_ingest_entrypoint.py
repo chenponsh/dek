@@ -152,10 +152,36 @@ def persist_current_report(repo: Path, before: dict[Path, str], output: Path, *,
 
 
 REVIEW_INPUT = Path("/var/lib/dek-review/input")
+INGEST_SUMMARY_NAME = "source-ingest-summary.json"
 ACTIVE_CONTROL = Path("/run/dek-active-control/active.json")
 ACTIVE_RELEASES = Path("/run/dek-active-releases")
 MAX_ACTIVE_METADATA_BYTES = 1024 * 1024
 MAX_REPOSITORY_BUNDLE_BYTES = 1024 * 1024 * 1024
+
+
+def write_ingest_summary(report_path: Path, review_input: Path = REVIEW_INPUT) -> Path:
+    """Publish only reviewer-facing counts from an already validated report."""
+    try:
+        report = json.loads(_report_bytes(report_path))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("validated ingestion report can no longer be read") from exc
+    rough = report.get("rough_created") if isinstance(report, dict) else None
+    updated = report.get("updated_count", 0) if isinstance(report, dict) else None
+    generated = report.get("generated_at") if isinstance(report, dict) else None
+    if (not isinstance(generated, str)
+            or not isinstance(rough, list) or len(rough) > 10_000
+            or any(not isinstance(item, str) for item in rough)
+            or not isinstance(updated, int) or isinstance(updated, bool)
+            or updated < 0 or updated > 10_000):
+        raise RuntimeError("ingestion report has invalid change counts")
+    output = review_input / INGEST_SUMMARY_NAME
+    atomic_write_json(output, {
+        "schema": 1,
+        "generated_at": generated,
+        "new_count": len(set(rough)),
+        "updated_count": updated,
+    }, mode=0o640, prefix=".ingest-summary-")
+    return output
 
 
 def refresh_review_bundle_from_active(active_path: Path = ACTIVE_CONTROL,
@@ -344,6 +370,10 @@ def main(argv=None):
     if args.pre_cutover_proof:
         shutil.rmtree(temporary)
         return 0
+    # Publish the summary before the bundle.  The review page treats the
+    # bundle replacement as completion, so once it observes completion the
+    # matching counts are already durable and readable.
+    write_ingest_summary(args.proof_output)
     run(*git,"add","--","source","ingestion/logs","ingestion/rough")
     changed=subprocess.run((*git,"diff","--cached","--quiet"),cwd=repo,env=environment,stdin=subprocess.DEVNULL).returncode
     plan = publication_plan(pre_cutover=args.pre_cutover_proof, changed=bool(changed))
