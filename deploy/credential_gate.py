@@ -147,7 +147,7 @@ def _environment(path: Path, kind: str) -> dict[str, bytes]:
             raise CredentialError("qa DingTalk application visibility delegation is invalid")
     if kind == "web":
         qiniu = {"QINIU_ACCESS_KEY", "QINIU_SECRET_KEY", "QINIU_BUCKET", "QINIU_UPLOAD_URL",
-                 "QINIU_DOWNLOAD_BASE_URL", "QINIU_PRIVATE_BUCKET"}
+                 "QINIU_DOWNLOAD_BASE_URL", "QINIU_PRIVATE_BUCKET", "DEK_DOCUMENT_UPLOADER_IDS"}
         present = qiniu & set(values)
         if present and present != qiniu:
             raise CredentialError("web Qiniu configuration is incomplete")
@@ -156,6 +156,8 @@ def _environment(path: Path, kind: str) -> dict[str, bytes]:
                 raise CredentialError("web Qiniu bucket must be declared private")
             if not re.fullmatch(rb"[A-Za-z0-9_-]{1,63}", values["QINIU_BUCKET"]):
                 raise CredentialError("web Qiniu bucket name is invalid")
+            if not re.fullmatch(rb"[0-9]{3,32}(?:,[0-9]{3,32})*", values["DEK_DOCUMENT_UPLOADER_IDS"]):
+                raise CredentialError("web document uploader identifiers are invalid")
             for name in ("QINIU_UPLOAD_URL", "QINIU_DOWNLOAD_BASE_URL"):
                 try: parsed = urlsplit(values[name].decode("ascii"))
                 except UnicodeDecodeError as exc: raise CredentialError("web Qiniu URL is invalid") from exc

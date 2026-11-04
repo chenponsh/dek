@@ -21,11 +21,12 @@ class FakeChat:
 
 class FakeDocuments:
     def __init__(self): self.added=[]; self.removed=[]
-    def list(self,user_id): return [{"id":"a"*24,"name":"资料.txt","size":12,"created_at":123}]
+    def list(self): return [{"id":"a"*24,"name":"资料.txt","size":12,"created_at":123}]
     def add(self,user_id,filename,data):
         self.added.append((user_id,filename,data)); return {"id":"b"*24,"name":filename,"size":len(data),"created_at":124}
-    def remove(self,user_id,document_id): self.removed.append((user_id,document_id))
-    def context(self,user_id,document_ids,query): return "我的资料：资料.txt\n场地变更"
+    def remove(self,document_id): self.removed.append(document_id)
+    def context(self,query): return "共享资料：资料.txt\n场地变更"
+    def download(self,document_id): return {"name":"资料.txt","mime":"text/plain"},b"document body"
 
 
 class FakeGateway:
@@ -251,28 +252,28 @@ class AppTests(unittest.TestCase):
         large = json.dumps({"message": "问" * 2001}, ensure_ascii=False).encode()
         self.assertEqual(self.call("/api/chat", cookie=cookie, method="POST", body=large, content_type="application/json", origin="https://regkb.example")[0], "400 Bad Request")
 
-    def test_personal_document_context_is_private_and_explicitly_injected(self):
+    def test_shared_document_context_is_automatically_injected(self):
         chat=FakeChat(); self.app.chat_client=chat; self.app.document_store=FakeDocuments()
-        payload=json.dumps({"message":"总结资料","document_ids":["a"*24]},ensure_ascii=False).encode()
+        payload=json.dumps({"message":"总结资料"},ensure_ascii=False).encode()
         status,_,_=self.call("/api/chat",cookie="dek_session="+self.token,method="POST",body=payload,
             content_type="application/json",origin="https://regkb.example")
         self.assertEqual(status,"200 OK")
         self.assertEqual(chat.calls[0][0],"u1")
-        self.assertIn("<DEK_PRIVATE_DOCUMENT_CONTEXT>",chat.calls[0][1])
-        self.assertIn("我的资料：资料.txt",chat.calls[0][1])
+        self.assertIn("<DEK_SHARED_DOCUMENT_CONTEXT>",chat.calls[0][1])
+        self.assertIn("共享资料：资料.txt",chat.calls[0][1])
 
     def test_document_listing_reports_feature_state_without_leaking_other_users(self):
         cookie="dek_session="+self.token
         status,_,body=self.call("/api/documents",cookie=cookie)
         self.assertEqual(status,"200 OK")
-        self.assertEqual(json.loads(body),{"enabled":False,"documents":[]})
+        self.assertEqual(json.loads(body),{"enabled":False,"can_upload":False,"documents":[]})
         self.app.document_store=FakeDocuments()
         status,_,body=self.call("/api/documents",cookie=cookie)
         self.assertEqual(status,"200 OK")
         self.assertTrue(json.loads(body)["enabled"])
 
     def test_document_upload_and_delete_require_same_origin_and_user_session(self):
-        documents=FakeDocuments(); self.app.document_store=documents; cookie="dek_session="+self.token
+        documents=FakeDocuments(); self.app.document_store=documents; self.app.document_uploaders=frozenset({"u1"}); cookie="dek_session="+self.token
         self.assertEqual(self.call("/api/documents",cookie=cookie,method="POST",body=b"text",origin="https://evil.example",
             extra={"HTTP_X_DEK_FILENAME":"a.txt"})[0],"403 Forbidden")
         status,_,body=self.call("/api/documents",cookie=cookie,method="POST",body=b"text",origin="https://regkb.example",
@@ -282,7 +283,20 @@ class AppTests(unittest.TestCase):
         document_id=json.loads(body)["id"]
         status,_,_=self.call("/api/documents/"+document_id,cookie=cookie,method="DELETE",origin="https://regkb.example")
         self.assertEqual(status,"204 No Content")
-        self.assertEqual(documents.removed,[("u1",document_id)])
+        self.assertEqual(documents.removed,[document_id])
+
+    def test_all_users_can_list_and_download_shared_documents_but_only_reviewers_upload(self):
+        documents=FakeDocuments(); self.app.document_store=documents; cookie="dek_session="+self.token
+        status,_,body=self.call("/api/documents",cookie=cookie)
+        self.assertEqual(status,"200 OK")
+        self.assertEqual(json.loads(body)["documents"][0]["name"],"资料.txt")
+        self.assertFalse(json.loads(body)["can_upload"])
+        self.assertEqual(self.call("/api/documents",cookie=cookie,method="POST",body=b"text",origin="https://regkb.example",
+            extra={"HTTP_X_DEK_FILENAME":"a.txt"})[0],"403 Forbidden")
+        status,headers,body=self.call("/api/documents/"+"a"*24+"/download",cookie=cookie)
+        self.assertEqual((status,body),("200 OK",b"document body"))
+        self.assertEqual(headers["Content-Type"],"text/plain")
+        self.assertIn("inline",headers["Content-Disposition"])
 
     def test_logout_clears_session_and_returns_to_homepage(self):
         status, headers, _ = self.call("/auth/logout", cookie="dek_session=" + self.token)

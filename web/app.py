@@ -112,7 +112,7 @@ FRONTEND_ASSETS=frozenset({"/assets/style.css","/assets/app.js","/assets/search.
 
 
 class KnowledgeApp:
-    def __init__(self, site_root: Path, gateway: DingTalkGateway, claim_secret: bytes, clock=time.time, generation_proof_secret: str = "", boot_nonce: str = "", release_sha256: str = "", chat_client=None, chat_limiter=None, document_store=None):
+    def __init__(self, site_root: Path, gateway: DingTalkGateway, claim_secret: bytes, clock=time.time, generation_proof_secret: str = "", boot_nonce: str = "", release_sha256: str = "", chat_client=None, chat_limiter=None, document_store=None, document_uploaders=frozenset()):
         self.active_site = site_root if isinstance(site_root, ActiveSite) else None
         self.root = None if self.active_site else Path(site_root).resolve(strict=True)
         self.gateway=gateway; self.secret=claim_secret; self.clock=clock
@@ -122,6 +122,7 @@ class KnowledgeApp:
         self.chat_client = chat_client
         self.chat_limiter = chat_limiter or ChatRateLimiter()
         self.document_store = document_store
+        self.document_uploaders = frozenset(document_uploaders)
     def _same_origin(self,environ):
         expected = urlsplit(self.gateway.redirect_uri)
         return environ.get("HTTP_ORIGIN") == f"{expected.scheme}://{expected.netloc}"
@@ -205,12 +206,14 @@ class KnowledgeApp:
             return self._response(start,"200 OK",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
         if path=="/api/documents":
             method=(environ.get("REQUEST_METHOD") or "GET").upper()
+            can_upload=(decision.user_id or "") in self.document_uploaders
             if method=="GET":
-                values=self.document_store.list(decision.user_id or "") if self.document_store else []
-                body=json.dumps({"enabled":self.document_store is not None,"documents":values},ensure_ascii=False).encode()
+                values=self.document_store.list() if self.document_store else []
+                body=json.dumps({"enabled":self.document_store is not None,"can_upload":can_upload,"documents":values},ensure_ascii=False).encode()
                 return self._response(start,"200 OK",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
             if method!="POST": return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","GET, POST"),("Cache-Control","no-store")])
             if not self._same_origin(environ): return self._response(start,"403 Forbidden",b"Forbidden",[("Cache-Control","no-store")])
+            if not can_upload: return self._response(start,"403 Forbidden",b"Forbidden",[("Cache-Control","no-store")])
             if self.document_store is None: return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
             try: length=int(environ.get("CONTENT_LENGTH") or "0")
             except ValueError: length=-1
@@ -226,11 +229,23 @@ class KnowledgeApp:
             body=json.dumps(item,ensure_ascii=False).encode()
             return self._response(start,"201 Created",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
         if path.startswith("/api/documents/"):
+            if path.endswith("/download"):
+                if (environ.get("REQUEST_METHOD") or "GET").upper()!="GET":
+                    return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","GET"),("Cache-Control","no-store")])
+                if self.document_store is None: return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
+                document_id=path.removesuffix("/download").rsplit("/",1)[1]
+                try: item,content=self.document_store.download(document_id)
+                except DocumentError as error:
+                    return self._response(start,"404 Not Found",str(error).encode("utf-8"),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
+                fallback="document"+Path(item["name"]).suffix.lower()
+                disposition=f"inline; filename=\"{fallback}\"; filename*=UTF-8''{quote(item['name'],safe='')}"
+                return self._response(start,"200 OK",content,[("Content-Type",item["mime"]),("Content-Disposition",disposition),("Cache-Control","private, no-store"),("X-Content-Type-Options","nosniff")])
             if (environ.get("REQUEST_METHOD") or "GET").upper()!="DELETE":
                 return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","DELETE"),("Cache-Control","no-store")])
             if not self._same_origin(environ): return self._response(start,"403 Forbidden",b"Forbidden",[("Cache-Control","no-store")])
+            if (decision.user_id or "") not in self.document_uploaders: return self._response(start,"403 Forbidden",b"Forbidden",[("Cache-Control","no-store")])
             if self.document_store is None: return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
-            try: self.document_store.remove(decision.user_id or "",path.rsplit("/",1)[1])
+            try: self.document_store.remove(path.rsplit("/",1)[1])
             except DocumentError as error:
                 return self._response(start,"400 Bad Request",str(error).encode("utf-8"),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
             return self._response(start,"204 No Content",headers=[("Cache-Control","no-store")])
@@ -248,19 +263,16 @@ class KnowledgeApp:
             try:
                 value = json.loads(environ["wsgi.input"].read(length))
                 message = value.get("message") if isinstance(value, dict) else None
-                document_ids = value.get("document_ids", []) if isinstance(value, dict) else []
-            except (ValueError, UnicodeDecodeError): message,document_ids = None,[]
+            except (ValueError, UnicodeDecodeError): message = None
             if not isinstance(message, str) or not message.strip() or len(message.strip()) > 2000:
                 return self._response(start,"400 Bad Request","请输入 1—2000 个字符的问题。".encode(),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
             if self.chat_client is None:
                 return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
             if not self.chat_limiter.allow(decision.user_id or ""):
                 return self._response(start,"429 Too Many Requests",b"Too Many Requests",[("Cache-Control","no-store"),("Retry-After","60")])
-            if not isinstance(document_ids,list) or len(document_ids)>5 or any(not isinstance(value,str) for value in document_ids):
-                return self._response(start,"400 Bad Request","资料选择不正确。".encode(),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
             try:
-                context=self.document_store.context(decision.user_id or "",document_ids,message.strip()) if self.document_store and document_ids else ""
-                prompt=message.strip() if not context else message.strip()+"\n\n<DEK_PRIVATE_DOCUMENT_CONTEXT>\n"+context+"\n</DEK_PRIVATE_DOCUMENT_CONTEXT>"
+                context=self.document_store.context(message.strip()) if self.document_store else ""
+                prompt=message.strip() if not context else message.strip()+"\n\n<DEK_SHARED_DOCUMENT_CONTEXT>\n"+context+"\n</DEK_SHARED_DOCUMENT_CONTEXT>"
                 answer = self.chat_client.ask(decision.user_id or "", prompt)
             except DocumentError as error:
                 return self._response(start,"400 Bad Request",str(error).encode("utf-8"),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
@@ -303,7 +315,9 @@ def main():
     chat=HermesChatClient(os.environ['API_SERVER_KEY'],secret)
     try: documents=store_from_environment(os.environ)
     except DocumentError as error: raise SystemExit(str(error)) from error
-    app=KnowledgeApp(site,gateway,secret,generation_proof_secret=generation_proof_secret(os.environ),chat_client=chat,document_store=documents)
+    uploaders=frozenset(value.strip() for value in os.environ.get("DEK_DOCUMENT_UPLOADER_IDS","").split(",") if value.strip())
+    if documents is not None and not uploaders: raise SystemExit("Qiniu documents require DEK_DOCUMENT_UPLOADER_IDS")
+    app=KnowledgeApp(site,gateway,secret,generation_proof_secret=generation_proof_secret(os.environ),chat_client=chat,document_store=documents,document_uploaders=uploaders)
     with make_server(a.host,a.port,app,server_class=ThreadingWSGIServer) as server: server.serve_forever()
 
 if __name__=='__main__': main()
