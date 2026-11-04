@@ -442,7 +442,7 @@ class QaStagingContractTests(unittest.TestCase):
         self.assertEqual(["chat-a"], migrated["platforms"]["dingtalk"]["extra"]["allowed_chats"])
         self.assertTrue(migrated["platforms"]["dingtalk"]["extra"]["require_mention"])
         self.assertEqual(old["session_reset"], migrated["session_reset"])
-        self.assertEqual({"dingtalk": []}, migrated["platform_toolsets"])
+        self.assertEqual({"dingtalk": [], "api_server": []}, migrated["platform_toolsets"])
         self.assertEqual({"tool_search": {"enabled": "off"}}, migrated["tools"])
         self.assertEqual({"keep": 7}, migrated["unrelated"])
         self.assertEqual("/var/lib/dek-qa/venvs/digest/bin/python", migrated["mcp_servers"]["dek_kb"]["command"])
@@ -495,7 +495,7 @@ class QaStagingContractTests(unittest.TestCase):
 
         migrated = migrate_profile(old, "/var/lib/dek-qa/venvs/digest/bin/python")
 
-        self.assertEqual(migrated["platform_toolsets"], {"dingtalk": []})
+        self.assertEqual(migrated["platform_toolsets"], {"dingtalk": [], "api_server": []})
         self.assertEqual(migrated["tools"], {"tool_search": {"enabled": "off"}})
         self.assertEqual(set(migrated["mcp_servers"]), {"dek_kb"})
         self.assertEqual(

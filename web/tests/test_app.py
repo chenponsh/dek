@@ -12,6 +12,13 @@ from web.auth import sign_claim
 from web.dingtalk_gateway import LoginError, LoginResult
 
 
+class FakeChat:
+    def __init__(self): self.calls = []
+    def ask(self, user_id, message):
+        self.calls.append((user_id, message))
+        return "依据已审核知识库：测试回答"
+
+
 class FakeGateway:
     def __init__(self): self.login_browser_id = None; self.callback_browser_id = None; self.redirect_uri = "https://regkb.example/auth/callback"
     def login_url(self, return_path="/", *, browser_id):
@@ -49,9 +56,9 @@ class AppTests(unittest.TestCase):
         self.token=sign_claim({"user_id":"u1","display_name":"张三","kbot_allowed":True,"exp":2000000000},self.secret)
         self.app=KnowledgeApp(root,FakeGateway(),self.secret,clock=lambda:1900000000)
     def tearDown(self): self.tmp.cleanup()
-    def call(self,path,query="",cookie="",method="GET",body=b"",content_type="application/x-www-form-urlencoded"):
+    def call(self,path,query="",cookie="",method="GET",body=b"",content_type="application/x-www-form-urlencoded",origin=""):
         status=[];headers=[]
-        env={"REQUEST_METHOD":method,"PATH_INFO":path,"QUERY_STRING":query,"HTTP_COOKIE":cookie,"wsgi.input":io.BytesIO(body),"CONTENT_LENGTH":str(len(body)),"CONTENT_TYPE":content_type}
+        env={"REQUEST_METHOD":method,"PATH_INFO":path,"QUERY_STRING":query,"HTTP_COOKIE":cookie,"HTTP_ORIGIN":origin,"wsgi.input":io.BytesIO(body),"CONTENT_LENGTH":str(len(body)),"CONTENT_TYPE":content_type}
         body=b"".join(self.app(env,lambda s,h:(status.append(s),headers.extend(h))))
         self.last_headers = headers
         return status[0],dict(headers),body
@@ -213,6 +220,26 @@ class AppTests(unittest.TestCase):
         self.assertEqual(status, "200 OK")
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertEqual(json.loads(body), {"display_name": "张三"})
+
+    def test_authenticated_same_origin_chat_is_proxied_without_exposing_user_details(self):
+        chat = FakeChat(); self.app.chat_client = chat
+        payload = json.dumps({"message": "生产场地变更需要什么资料？"}, ensure_ascii=False).encode()
+        status, headers, body = self.call("/api/chat", cookie="dek_session=" + self.token, method="POST",
+            body=payload, content_type="application/json", origin="https://regkb.example")
+        self.assertEqual(status, "200 OK")
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(json.loads(body), {"answer": "依据已审核知识库：测试回答"})
+        self.assertEqual(chat.calls, [("u1", "生产场地变更需要什么资料？")])
+
+    def test_chat_requires_login_same_origin_json_and_bounded_message(self):
+        self.app.chat_client = FakeChat()
+        good = json.dumps({"message": "问题"}).encode()
+        self.assertEqual(self.call("/api/chat", method="POST", body=good, content_type="application/json", origin="https://regkb.example")[0], "302 Found")
+        cookie = "dek_session=" + self.token
+        self.assertEqual(self.call("/api/chat", cookie=cookie, method="POST", body=good, content_type="application/json", origin="https://evil.example")[0], "403 Forbidden")
+        self.assertEqual(self.call("/api/chat", cookie=cookie, method="POST", body=good, origin="https://regkb.example")[0], "400 Bad Request")
+        large = json.dumps({"message": "问" * 2001}, ensure_ascii=False).encode()
+        self.assertEqual(self.call("/api/chat", cookie=cookie, method="POST", body=large, content_type="application/json", origin="https://regkb.example")[0], "400 Bad Request")
 
     def test_logout_clears_session_and_returns_to_homepage(self):
         status, headers, _ = self.call("/auth/logout", cookie="dek_session=" + self.token)

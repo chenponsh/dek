@@ -336,7 +336,7 @@ class CredentialContentGateTests(unittest.TestCase):
             private.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
             public.write_bytes(key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
             git.write_text("https://robot:token-7M4q9Vz2Lc8Np6Rx@github.com/chenponsh/dek.git\n")
-            qa.write_text("DINGTALK_CLIENT_ID=ding-client-918273\nDINGTALK_CLIENT_SECRET=Q7vN2xL9pR4mT8kW6sH3\nDINGTALK_AGENT_ID=123456\nDINGTALK_ALLOWED_USERS=*\nDINGTALK_ALLOW_ALL_USERS=true\n")
+            qa.write_text("DINGTALK_CLIENT_ID=ding-client-918273\nDINGTALK_CLIENT_SECRET=Q7vN2xL9pR4mT8kW6sH3\nDINGTALK_AGENT_ID=123456\nDINGTALK_ALLOWED_USERS=*\nDINGTALK_ALLOW_ALL_USERS=true\nAPI_SERVER_KEY=ApiServerKey-7M4q9Vz2Lc8Np6Rx\n")
             secret = bytes(range(33, 65)); left.write_bytes(secret); right.write_bytes(secret); random.write_bytes(bytes(range(96, 64, -1)))
             validate_credential_set(
                 git_credential=git, fixed_origin="https://github.com/chenponsh/dek.git",
@@ -361,6 +361,7 @@ class CredentialContentGateTests(unittest.TestCase):
                 "DINGTALK_CLIENT_SECRET=Q7vN2xL9pR4mT8kW6sH3\n"
                 "DINGTALK_ALLOWED_USERS=*\n"
                 "DINGTALK_ALLOW_ALL_USERS=true\n"
+                "API_SERVER_KEY=ApiServerKey-7M4q9Vz2Lc8Np6Rx\n"
                 "DINGTALK_ALLOWED_CHATS=chat-a,chat-b\n"
                 "DINGTALK_REQUIRE_MENTION=true\n"
                 "HTTP_PROXY=http://127.0.0.1:7890\n"

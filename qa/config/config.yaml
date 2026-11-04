@@ -24,6 +24,7 @@ display:
 
 platform_toolsets:
   dingtalk: []
+  api_server: []
 
 tools:
   # With only three MCP tools, progressive disclosure would replace them with
@@ -40,6 +41,11 @@ platforms:
       allowed_users:
         - "*"
       allowed_chats: []
+  api_server:
+    enabled: true
+    extra:
+      host: 127.0.0.1
+      port: 8642
 
 mcp_servers:
   dek_kb:

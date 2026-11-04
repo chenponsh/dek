@@ -49,6 +49,7 @@ _QA_ENVIRONMENT_FIELDS = frozenset({
     "DINGTALK_ALLOW_ALL_USERS",
     "DINGTALK_ALLOWED_CHATS",
     "DINGTALK_REQUIRE_MENTION",
+    "API_SERVER_KEY",
     # Network routing only; Hermes does not use these to select providers,
     # adapters, platforms, MCP servers, or model-visible tools.
     "HTTP_PROXY",
@@ -115,7 +116,7 @@ def _environment(path: Path, kind: str) -> dict[str, bytes]:
         values[name] = value
 
     required = {
-        "web": {"DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET", "DINGTALK_AGENT_ID", "DEK_WEB_REDIRECT_URI", "DEK_WEB_CLAIM_SECRET"},
+        "web": {"DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET", "DINGTALK_AGENT_ID", "DEK_WEB_REDIRECT_URI", "DEK_WEB_CLAIM_SECRET", "API_SERVER_KEY"},
         "review": {
             "DEK_REVIEW_AUDIT_KEY", "DEK_WEB_CLAIM_SECRET", "DEK_REVIEWER_IDS", "DEK_FAILURE_REVIEWER_IDS",
             # Used by deploy/notify_entrypoint.py (dek-notify.service, same
@@ -132,6 +133,7 @@ def _environment(path: Path, kind: str) -> dict[str, bytes]:
         "qa": {
             "DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET",
             "DINGTALK_ALLOWED_USERS", "DINGTALK_ALLOW_ALL_USERS",
+            "API_SERVER_KEY",
         },
     }.get(kind)
     if required is None or not required <= set(values):

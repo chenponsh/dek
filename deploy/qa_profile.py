@@ -119,12 +119,13 @@ def migrate_profile(source: dict, python_executable: str) -> dict:
             platforms.setdefault(name, {})
             configured_platforms.add(name)
 
+    approved_platforms = {"dingtalk", "api_server"}
     for name, platform in platforms.items():
         if not isinstance(platform, dict):
             raise RuntimeError(f"production platform {name} is invalid")
-        _sanitize_platform_block(platform, enabled=name == "dingtalk")
+        _sanitize_platform_block(platform, enabled=name in approved_platforms)
     for name in configured_platforms:
-        enabled = name == "dingtalk"
+        enabled = name in approved_platforms
         if name in PLATFORM_NAMES and isinstance(result.get(name), dict):
             _sanitize_platform_block(result[name], enabled=enabled)
         if name in PLATFORM_NAMES and isinstance(gateway.get(name), dict):
@@ -133,7 +134,10 @@ def migrate_profile(source: dict, python_executable: str) -> dict:
             _sanitize_platform_block(gateway_platforms[name], enabled=enabled)
     dingtalk["enabled"] = True
     extra["allowed_users"] = ["*"]
-    result["platform_toolsets"] = {"dingtalk": []}
+    api_server = platforms["api_server"]
+    api_server["enabled"] = True
+    api_server["extra"] = {"host": "127.0.0.1", "port": 8642}
+    result["platform_toolsets"] = {"dingtalk": [], "api_server": []}
     result["tools"] = {"tool_search": {"enabled": "off"}}
     agent = result.setdefault("agent", {})
     if not isinstance(agent, dict):
@@ -225,27 +229,28 @@ def validate_with_hermes(profile_dir: Path, expected: dict, state_root: Path | N
             platform.value for platform, platform_config in loaded.platforms.items()
             if platform_config.enabled
         }
-        if enabled_platforms != {"dingtalk"}:
+        if enabled_platforms != {"dingtalk", "api_server"}:
             raise RuntimeError(f"Hermes enabled unapproved QA platforms: {sorted(enabled_platforms)!r}")
         parsed = load_config()
-        if parsed.get("platform_toolsets", {}).get("dingtalk") != []:
-            raise RuntimeError("Hermes parser did not retain the empty DingTalk toolset")
+        if parsed.get("platform_toolsets", {}) != {"dingtalk": [], "api_server": []}:
+            raise RuntimeError("Hermes parser did not retain the exact empty platform toolsets")
+        api_config = loaded.platforms[Platform.API_SERVER]
+        if api_config.extra.get("host") != "127.0.0.1" or api_config.extra.get("port") != 8642:
+            raise RuntimeError("Hermes API server is not pinned to the approved loopback endpoint")
         if str(parsed.get("tools", {}).get("tool_search", {}).get("enabled", "")).lower() != "off":
             raise RuntimeError("Hermes parser did not disable tool search")
         if set(parsed.get("mcp_servers", {})) != {"dek_kb"}:
             raise RuntimeError("Hermes parser found an unapproved MCP server")
         try:
             discovered = set(discover_mcp_tools())
-            enabled = sorted(_get_platform_tools(parsed, "dingtalk"))
-            final = {
-                item.get("function", {}).get("name")
-                for item in get_tool_definitions(enabled_toolsets=enabled, quiet_mode=True)
-            }
-            if discovered != QA_READ_ONLY_TOOLS or final != QA_READ_ONLY_TOOLS:
-                raise RuntimeError(
-                    f"Hermes final QA tool surface is not exact: discovered={sorted(discovered)!r}, "
-                    f"final={sorted(name for name in final if name)!r}"
-                )
+            for platform_name in ("dingtalk", "api_server"):
+                enabled = sorted(_get_platform_tools(parsed, platform_name))
+                final = {item.get("function", {}).get("name") for item in get_tool_definitions(enabled_toolsets=enabled, quiet_mode=True)}
+                if discovered != QA_READ_ONLY_TOOLS or final != QA_READ_ONLY_TOOLS:
+                    raise RuntimeError(
+                        f"Hermes final QA tool surface is not exact for {platform_name}: "
+                        f"discovered={sorted(discovered)!r}, final={sorted(name for name in final if name)!r}"
+                    )
         finally:
             shutdown_mcp_servers()
     finally:

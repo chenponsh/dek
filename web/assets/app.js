@@ -289,6 +289,62 @@
       .catch(() => { document.querySelector("#user-name").textContent = "登录信息不可用"; });
   }
 
+  const chatLauncher = document.querySelector("#chat-launcher");
+  const chatPanel = document.querySelector("#chat-panel");
+  const chatForm = document.querySelector("#chat-form");
+  const chatInput = document.querySelector("#chat-input");
+  const chatMessages = document.querySelector("#chat-messages");
+  const chatSend = document.querySelector("#chat-send");
+  const setChatOpen = open => {
+    if (!chatPanel || !chatLauncher) return;
+    chatPanel.hidden = !open;
+    chatLauncher.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) chatInput?.focus();
+  };
+  chatLauncher?.addEventListener("click", () => setChatOpen(chatPanel?.hidden !== false));
+  document.querySelector("#chat-close")?.addEventListener("click", () => setChatOpen(false));
+  const appendChatMessage = (role, text) => {
+    const node = document.createElement("div");
+    node.className = "chat-message " + role;
+    node.textContent = text;
+    chatMessages.appendChild(node);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return node;
+  };
+  const submitChat = async () => {
+    const message = chatInput?.value.trim();
+    if (!message || chatForm?.dataset.busy === "1") return;
+    appendChatMessage("user", message);
+    chatInput.value = "";
+    chatForm.dataset.busy = "1";
+    chatInput.disabled = true;
+    chatSend.disabled = true;
+    const waiting = appendChatMessage("assistant pending", "正在查询已审核知识库…");
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      waiting.textContent = data.answer || "机器人暂时没有返回内容。";
+      waiting.classList.remove("pending");
+    } catch (error) {
+      waiting.textContent = error.message || "机器人暂时无法回答，请稍后重试。";
+      waiting.classList.remove("pending");
+      waiting.classList.add("error");
+    } finally {
+      chatForm.dataset.busy = "0";
+      chatInput.disabled = false;
+      chatSend.disabled = false;
+      chatInput.focus();
+    }
+  };
+  chatForm?.addEventListener("submit", event => { event.preventDefault(); submitChat(); });
+  chatInput?.addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submitChat(); }
+  });
+
   const sharedIndexCache = new Map();
   function loadSharedIndex(url) {
     const key = url.href;

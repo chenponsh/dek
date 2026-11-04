@@ -17,6 +17,7 @@ class SystemdEnvironmentByteEquivalenceTests(unittest.TestCase):
         b"DINGTALK_AGENT_ID=123456\n"
         b"DINGTALK_ALLOWED_USERS=*\n"
         b"DINGTALK_ALLOW_ALL_USERS=true\n"
+        b"API_SERVER_KEY=ApiServerKey-7M4q9Vz2Lc8Np6Rx\n"
     )
 
     def _parse(self, raw: bytes):

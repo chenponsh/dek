@@ -303,6 +303,13 @@ class PageScriptTests(unittest.TestCase):
         self.assertIn('<section class="backlinks"><h2>反向链接</h2>', linked)
         self.assertIn('<a href="ref.html">引用页</a>', linked)
 
+    def test_every_page_includes_the_authenticated_knowledge_chat_widget(self):
+        html = self.render(self.BASE)
+        self.assertIn('id="chat-launcher"', html)
+        self.assertIn('id="chat-panel"', html)
+        self.assertIn('id="chat-form"', html)
+        self.assertIn("仅回答已审核知识库内容", html)
+
     def test_there_is_no_right_hand_panel_whatever_the_data_holds(self):
         full = {**self.BASE, "props": self.PROPS, "toc": [{"level": "2", "anchor": "s", "text": "小节"}],
                 "sourceNotes": [{"title": "n", "href": "n.html"}], "sourceWiki": [{"title": "w", "href": "w.html"}],
@@ -310,7 +317,7 @@ class PageScriptTests(unittest.TestCase):
         html = self.render(full)
         for gone in ('class="toc"', "<aside class=\"toc", "本页目录", "来源笔记", "引用此来源的 Wiki"):
             self.assertNotIn(gone, html)
-        self.assertTrue(html.rstrip().endswith("</main>"))               # the page ends with the article
+        self.assertNotIn('<aside class="toc', html)
 
     def test_the_source_link_is_a_row_of_the_note_information_before_the_path(self):
         html = self.render({**self.BASE, "props": self.PROPS, "externalLinks": ["https://example.com/a", "https://example.com/b"]})
