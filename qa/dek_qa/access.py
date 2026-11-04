@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from .index import KnowledgeBase
 
-INSUFFICIENT_EVIDENCE = "未在已审核知识库中找到足够依据。"
+INSUFFICIENT_EVIDENCE = "暂未在已审核、已发布的知识库中检索到与该问题直接相关的资料。"
 
 
 @dataclass(frozen=True)

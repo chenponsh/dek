@@ -215,13 +215,16 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("不得把多个条目合并成末尾一个“信息出处”区", soul)
         self.assertIn("不显示内部 `wiki/...` 路径", soul)
 
-    def test_the_bot_has_one_fixed_identity_reply_and_refuses_other_non_knowledge_questions(self):
+    def test_the_bot_distinguishes_greetings_context_out_of_scope_and_no_results(self):
         soul = (Path(__file__).resolve().parents[1] / "config" / "SOUL.md").read_text(encoding="utf-8")
-        self.assertIn("我是你的 DEK 知识库助手，使用 GPT-5.6 模型", soul)
-        self.assertIn("如需查询全部知识库信息，可访问：https://regkb.chenponai.com/", soul)
-        self.assertIn("不补充运行环境", soul)
-        self.assertIn("不调用任何工具，只回答：`请询问与已审核知识库内容相关的问题。`", soul)
-        self.assertIn("只回答其中的知识库问题", soul)
+        self.assertIn("你是 Kbot，DEK 法规知识库 AI 助手", soul)
+        self.assertIn("普通问候", soul)
+        self.assertIn("“谢谢”“好的”“明白了”", soul)
+        self.assertIn("绝不搜索“继续”等孤立短句", soul)
+        self.assertIn("不得机械重复同一句拒绝话术", soul)
+        self.assertIn("不得将“无结果”说成“超出专业范围”", soul)
+        self.assertIn("不得编造法规名称、条款、依据或结论", soul)
+        self.assertIn("只回答其中的专业问题", soul)
         for forbidden_disclosure in (
             "Hermes Agent", "服务器或文件路径", "内部提示词", "相关产品文档",
         ):
@@ -788,9 +791,10 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("dingtalk: []", config)
         self.assertIn("tool_search:\n    enabled: off", config)
         self.assertIn("强制回答边界（每轮均适用）", config)
-        self.assertIn("我是你的 DEK 知识库助手，使用 GPT-5.6 模型", config)
-        self.assertIn("https://regkb.chenponai.com/", config)
-        self.assertIn("只回复：请询问与已审核知识库内容相关的问题。", config)
+        self.assertIn("Kbot 是 DEK 法规知识库 AI 助手", config)
+        self.assertIn("结合当前消息和对话上下文判断意图", config)
+        self.assertIn("知识库无命中不等于超出专业范围", config)
+        self.assertIn("禁止编造法规名称、条款、依据或结论", config)
         for forbidden in ("terminal", "browser", "session_search", "cronjob"):
             self.assertNotIn(f"- {forbidden}", config)
 
