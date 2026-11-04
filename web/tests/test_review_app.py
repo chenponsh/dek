@@ -953,6 +953,11 @@ class ReviewProxyConfigTests(unittest.TestCase):
             main_site.index("include /etc/nginx/snippets/dek-review-location.conf;"),
             main_site.index("location / {\n        limit_except GET"),
         )
+        self.assertIn("location = /api/chat {", main_site)
+        self.assertIn("if ($request_method != POST) { return 405; }", main_site)
+        self.assertIn("client_max_body_size 8k;", main_site)
+        self.assertIn("proxy_pass http://127.0.0.1:9120;", main_site)
+        self.assertLess(main_site.index("location = /api/chat {"), main_site.index("location / {\n        limit_except GET"))
 
         legacy = Path("deploy/nginx/dek-review.conf").read_text(encoding="utf-8")
         self.assertIn("upstream dek_review", legacy)

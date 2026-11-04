@@ -325,7 +325,11 @@
         method: "POST", credentials: "same-origin", cache: "no-store",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }),
       });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) {
+        const plainText = (response.headers.get("Content-Type") || "").startsWith("text/plain");
+        const detail = plainText ? (await response.text()).trim() : "";
+        throw new Error(detail || "Kbot 暂时无法回答，请稍后重试。");
+      }
       const data = await response.json();
       waiting.textContent = data.answer || "机器人暂时没有返回内容。";
       waiting.classList.remove("pending");

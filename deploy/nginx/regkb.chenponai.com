@@ -111,6 +111,25 @@ server {
         return 301 /$1/$2;
     }
 
+    # The public site remains GET-only except for this authenticated,
+    # same-origin Kbot endpoint. The application enforces the session,
+    # Origin, JSON shape, body length and per-user rate limit again.
+    location = /api/chat {
+        if ($request_method != POST) { return 405; }
+        client_max_body_size 8k;
+        proxy_pass http://127.0.0.1:9120;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 130s;
+        proxy_send_timeout 10s;
+        proxy_buffering on;
+        proxy_hide_header Server;
+    }
+
     location / {
         limit_except GET { deny all; }
         proxy_pass http://127.0.0.1:9120;
