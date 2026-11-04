@@ -130,6 +130,39 @@ server {
         proxy_hide_header Server;
     }
 
+    # Authenticated personal-document API. Files are bounded by nginx and the
+    # application, then stored in a private object-storage bucket.
+    location = /api/documents {
+        limit_except GET POST { deny all; }
+        client_max_body_size 10m;
+        proxy_pass http://127.0.0.1:9120;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 45s;
+        proxy_send_timeout 45s;
+        proxy_request_buffering on;
+        proxy_hide_header Server;
+    }
+
+    location ~ ^/api/documents/[A-Za-z0-9_-]{20,40}$ {
+        limit_except DELETE { deny all; }
+        client_max_body_size 1k;
+        proxy_pass http://127.0.0.1:9120;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 10s;
+        proxy_hide_header Server;
+    }
+
     location / {
         limit_except GET { deny all; }
         proxy_pass http://127.0.0.1:9120;

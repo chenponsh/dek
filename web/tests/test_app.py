@@ -19,6 +19,15 @@ class FakeChat:
         return "依据已审核知识库：测试回答"
 
 
+class FakeDocuments:
+    def __init__(self): self.added=[]; self.removed=[]
+    def list(self,user_id): return [{"id":"a"*24,"name":"资料.txt","size":12,"created_at":123}]
+    def add(self,user_id,filename,data):
+        self.added.append((user_id,filename,data)); return {"id":"b"*24,"name":filename,"size":len(data),"created_at":124}
+    def remove(self,user_id,document_id): self.removed.append((user_id,document_id))
+    def context(self,user_id,document_ids,query): return "我的资料：资料.txt\n场地变更"
+
+
 class FakeGateway:
     def __init__(self): self.login_browser_id = None; self.callback_browser_id = None; self.redirect_uri = "https://regkb.example/auth/callback"
     def login_url(self, return_path="/", *, browser_id):
@@ -56,9 +65,10 @@ class AppTests(unittest.TestCase):
         self.token=sign_claim({"user_id":"u1","display_name":"张三","kbot_allowed":True,"exp":2000000000},self.secret)
         self.app=KnowledgeApp(root,FakeGateway(),self.secret,clock=lambda:1900000000)
     def tearDown(self): self.tmp.cleanup()
-    def call(self,path,query="",cookie="",method="GET",body=b"",content_type="application/x-www-form-urlencoded",origin=""):
+    def call(self,path,query="",cookie="",method="GET",body=b"",content_type="application/x-www-form-urlencoded",origin="",extra=None):
         status=[];headers=[]
         env={"REQUEST_METHOD":method,"PATH_INFO":path,"QUERY_STRING":query,"HTTP_COOKIE":cookie,"HTTP_ORIGIN":origin,"wsgi.input":io.BytesIO(body),"CONTENT_LENGTH":str(len(body)),"CONTENT_TYPE":content_type}
+        env.update(extra or {})
         body=b"".join(self.app(env,lambda s,h:(status.append(s),headers.extend(h))))
         self.last_headers = headers
         return status[0],dict(headers),body
@@ -240,6 +250,39 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.call("/api/chat", cookie=cookie, method="POST", body=good, origin="https://regkb.example")[0], "400 Bad Request")
         large = json.dumps({"message": "问" * 2001}, ensure_ascii=False).encode()
         self.assertEqual(self.call("/api/chat", cookie=cookie, method="POST", body=large, content_type="application/json", origin="https://regkb.example")[0], "400 Bad Request")
+
+    def test_personal_document_context_is_private_and_explicitly_injected(self):
+        chat=FakeChat(); self.app.chat_client=chat; self.app.document_store=FakeDocuments()
+        payload=json.dumps({"message":"总结资料","document_ids":["a"*24]},ensure_ascii=False).encode()
+        status,_,_=self.call("/api/chat",cookie="dek_session="+self.token,method="POST",body=payload,
+            content_type="application/json",origin="https://regkb.example")
+        self.assertEqual(status,"200 OK")
+        self.assertEqual(chat.calls[0][0],"u1")
+        self.assertIn("<DEK_PRIVATE_DOCUMENT_CONTEXT>",chat.calls[0][1])
+        self.assertIn("我的资料：资料.txt",chat.calls[0][1])
+
+    def test_document_listing_reports_feature_state_without_leaking_other_users(self):
+        cookie="dek_session="+self.token
+        status,_,body=self.call("/api/documents",cookie=cookie)
+        self.assertEqual(status,"200 OK")
+        self.assertEqual(json.loads(body),{"enabled":False,"documents":[]})
+        self.app.document_store=FakeDocuments()
+        status,_,body=self.call("/api/documents",cookie=cookie)
+        self.assertEqual(status,"200 OK")
+        self.assertTrue(json.loads(body)["enabled"])
+
+    def test_document_upload_and_delete_require_same_origin_and_user_session(self):
+        documents=FakeDocuments(); self.app.document_store=documents; cookie="dek_session="+self.token
+        self.assertEqual(self.call("/api/documents",cookie=cookie,method="POST",body=b"text",origin="https://evil.example",
+            extra={"HTTP_X_DEK_FILENAME":"a.txt"})[0],"403 Forbidden")
+        status,_,body=self.call("/api/documents",cookie=cookie,method="POST",body=b"text",origin="https://regkb.example",
+            content_type="text/plain",extra={"HTTP_X_DEK_FILENAME":"%E8%B5%84%E6%96%99.txt"})
+        self.assertEqual(status,"201 Created")
+        self.assertEqual(documents.added,[("u1","资料.txt",b"text")])
+        document_id=json.loads(body)["id"]
+        status,_,_=self.call("/api/documents/"+document_id,cookie=cookie,method="DELETE",origin="https://regkb.example")
+        self.assertEqual(status,"204 No Content")
+        self.assertEqual(documents.removed,[("u1",document_id)])
 
     def test_logout_clears_session_and_returns_to_homepage(self):
         status, headers, _ = self.call("/auth/logout", cookie="dek_session=" + self.token)

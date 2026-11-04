@@ -21,6 +21,7 @@ from wsgiref.simple_server import WSGIServer, make_server
 from .auth import authorize_claim
 from .dingtalk_gateway import DingTalkClient, DingTalkGateway, LoginError, MemoryStateStore
 from .chat import ChatRateLimiter, ChatUnavailable, HermesChatClient
+from .personal_documents import DocumentError, MAX_FILE_BYTES, store_from_environment
 
 
 auth_logger = logging.getLogger("web.auth")
@@ -111,7 +112,7 @@ FRONTEND_ASSETS=frozenset({"/assets/style.css","/assets/app.js","/assets/search.
 
 
 class KnowledgeApp:
-    def __init__(self, site_root: Path, gateway: DingTalkGateway, claim_secret: bytes, clock=time.time, generation_proof_secret: str = "", boot_nonce: str = "", release_sha256: str = "", chat_client=None, chat_limiter=None):
+    def __init__(self, site_root: Path, gateway: DingTalkGateway, claim_secret: bytes, clock=time.time, generation_proof_secret: str = "", boot_nonce: str = "", release_sha256: str = "", chat_client=None, chat_limiter=None, document_store=None):
         self.active_site = site_root if isinstance(site_root, ActiveSite) else None
         self.root = None if self.active_site else Path(site_root).resolve(strict=True)
         self.gateway=gateway; self.secret=claim_secret; self.clock=clock
@@ -120,6 +121,10 @@ class KnowledgeApp:
         self.release_sha256 = release_sha256
         self.chat_client = chat_client
         self.chat_limiter = chat_limiter or ChatRateLimiter()
+        self.document_store = document_store
+    def _same_origin(self,environ):
+        expected = urlsplit(self.gateway.redirect_uri)
+        return environ.get("HTTP_ORIGIN") == f"{expected.scheme}://{expected.netloc}"
     def _response(self,start,status,body=b"",headers=(),pin=None):
         if status in USER_ERROR_BODIES and body in {
             b"Unauthorized", b"Forbidden", b"Not found", b"Not Found", b"Method Not Allowed", b"Unavailable", b"Too Many Requests", b"Bad Gateway",
@@ -198,12 +203,41 @@ class KnowledgeApp:
         if path=="/auth/me":
             body=json.dumps({"display_name":decision.display_name or "同事"},ensure_ascii=False).encode()
             return self._response(start,"200 OK",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
+        if path=="/api/documents":
+            method=(environ.get("REQUEST_METHOD") or "GET").upper()
+            if method=="GET":
+                values=self.document_store.list(decision.user_id or "") if self.document_store else []
+                body=json.dumps({"enabled":self.document_store is not None,"documents":values},ensure_ascii=False).encode()
+                return self._response(start,"200 OK",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
+            if method!="POST": return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","GET, POST"),("Cache-Control","no-store")])
+            if not self._same_origin(environ): return self._response(start,"403 Forbidden",b"Forbidden",[("Cache-Control","no-store")])
+            if self.document_store is None: return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
+            try: length=int(environ.get("CONTENT_LENGTH") or "0")
+            except ValueError: length=-1
+            if length<1 or length>MAX_FILE_BYTES:
+                return self._response(start,"400 Bad Request","文件为空或超过 10 MB。".encode(),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
+            filename=unquote(environ.get("HTTP_X_DEK_FILENAME", ""))
+            content=environ["wsgi.input"].read(length)
+            if len(content)!=length:
+                return self._response(start,"400 Bad Request","文件上传不完整。".encode(),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
+            try: item=self.document_store.add(decision.user_id or "",filename,content)
+            except DocumentError as error:
+                return self._response(start,"400 Bad Request",str(error).encode("utf-8"),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
+            body=json.dumps(item,ensure_ascii=False).encode()
+            return self._response(start,"201 Created",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
+        if path.startswith("/api/documents/"):
+            if (environ.get("REQUEST_METHOD") or "GET").upper()!="DELETE":
+                return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","DELETE"),("Cache-Control","no-store")])
+            if not self._same_origin(environ): return self._response(start,"403 Forbidden",b"Forbidden",[("Cache-Control","no-store")])
+            if self.document_store is None: return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
+            try: self.document_store.remove(decision.user_id or "",path.rsplit("/",1)[1])
+            except DocumentError as error:
+                return self._response(start,"400 Bad Request",str(error).encode("utf-8"),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
+            return self._response(start,"204 No Content",headers=[("Cache-Control","no-store")])
         if path=="/api/chat":
             if (environ.get("REQUEST_METHOD") or "GET") != "POST":
                 return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","POST"),("Cache-Control","no-store")])
-            expected_origin = urlsplit(self.gateway.redirect_uri)
-            allowed_origin = f"{expected_origin.scheme}://{expected_origin.netloc}"
-            if environ.get("HTTP_ORIGIN") != allowed_origin:
+            if not self._same_origin(environ):
                 return self._response(start,"403 Forbidden",b"Forbidden",[("Cache-Control","no-store")])
             if environ.get("CONTENT_TYPE", "").split(";", 1)[0].strip().lower() != "application/json":
                 return self._response(start,"400 Bad Request","请求格式不正确。".encode(),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
@@ -214,14 +248,22 @@ class KnowledgeApp:
             try:
                 value = json.loads(environ["wsgi.input"].read(length))
                 message = value.get("message") if isinstance(value, dict) else None
-            except (ValueError, UnicodeDecodeError): message = None
+                document_ids = value.get("document_ids", []) if isinstance(value, dict) else []
+            except (ValueError, UnicodeDecodeError): message,document_ids = None,[]
             if not isinstance(message, str) or not message.strip() or len(message.strip()) > 2000:
                 return self._response(start,"400 Bad Request","请输入 1—2000 个字符的问题。".encode(),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
             if self.chat_client is None:
                 return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
             if not self.chat_limiter.allow(decision.user_id or ""):
                 return self._response(start,"429 Too Many Requests",b"Too Many Requests",[("Cache-Control","no-store"),("Retry-After","60")])
-            try: answer = self.chat_client.ask(decision.user_id or "", message.strip())
+            if not isinstance(document_ids,list) or len(document_ids)>5 or any(not isinstance(value,str) for value in document_ids):
+                return self._response(start,"400 Bad Request","资料选择不正确。".encode(),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
+            try:
+                context=self.document_store.context(decision.user_id or "",document_ids,message.strip()) if self.document_store and document_ids else ""
+                prompt=message.strip() if not context else message.strip()+"\n\n<DEK_PRIVATE_DOCUMENT_CONTEXT>\n"+context+"\n</DEK_PRIVATE_DOCUMENT_CONTEXT>"
+                answer = self.chat_client.ask(decision.user_id or "", prompt)
+            except DocumentError as error:
+                return self._response(start,"400 Bad Request",str(error).encode("utf-8"),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
             except ChatUnavailable:
                 return self._response(start,"502 Bad Gateway",b"Bad Gateway",[("Cache-Control","no-store")])
             body=json.dumps({"answer":answer},ensure_ascii=False).encode()
@@ -259,7 +301,9 @@ def main():
         site = a.site_root; generation = {}
     else: raise SystemExit("--active and --releases are required")
     chat=HermesChatClient(os.environ['API_SERVER_KEY'],secret)
-    app=KnowledgeApp(site,gateway,secret,generation_proof_secret=generation_proof_secret(os.environ),chat_client=chat)
+    try: documents=store_from_environment(os.environ)
+    except DocumentError as error: raise SystemExit(str(error)) from error
+    app=KnowledgeApp(site,gateway,secret,generation_proof_secret=generation_proof_secret(os.environ),chat_client=chat,document_store=documents)
     with make_server(a.host,a.port,app,server_class=ThreadingWSGIServer) as server: server.serve_forever()
 
 if __name__=='__main__': main()

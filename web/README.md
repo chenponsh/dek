@@ -42,6 +42,12 @@ python3 -m http.server 9120 --bind 127.0.0.1 --directory /tmp/dek-web-candidate
 
 运行认证服务至少需要独立配置 `DINGTALK_CLIENT_ID`、`DINGTALK_CLIENT_SECRET`、`DINGTALK_AGENT_ID`、`DEK_WEB_REDIRECT_URI` 和 `DEK_WEB_CLAIM_SECRET`。静态站点本身不保存钉钉凭据，不应绕过认证服务直接发布。
 
+## “我的资料”私有文件
+
+该功能不进入正式知识审核/发布链路。每个登录用户只能看到自己的资料；原文件和提取文本存入专用七牛私有 Bucket，本机只在 `/var/lib/dek-web/user-documents` 保存小型索引。单文件上限 10 MB、每人最多 20 个文件且合计不超过 50 MB，支持 PDF、DOCX、UTF-8 TXT 和 Markdown。
+
+功能默认关闭。启用时，web 服务环境需同时配置 `QINIU_ACCESS_KEY`、`QINIU_SECRET_KEY`、`QINIU_BUCKET`、`QINIU_UPLOAD_URL`、`QINIU_DOWNLOAD_BASE_URL` 和 `QINIU_PRIVATE_BUCKET=true`；缺少任一项时服务拒绝以半配置状态启动。七牛密钥只保留在服务端，Bucket 必须是私有空间。PDF 提取依赖 `web/requirements.txt` 中固定版本的 `pypdf`。
+
 ## 测试
 
 ```bash

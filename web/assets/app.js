@@ -295,6 +295,13 @@
   const chatInput = document.querySelector("#chat-input");
   const chatMessages = document.querySelector("#chat-messages");
   const chatSend = document.querySelector("#chat-send");
+  const chatUpload = document.querySelector("#chat-upload");
+  const chatFile = document.querySelector("#chat-file");
+  const chatDocuments = document.querySelector("#chat-documents");
+  const chatDocumentList = document.querySelector("#chat-document-list");
+  const chatHint = document.querySelector("#chat-input-hint");
+  const selectedDocuments = new Set();
+  let personalDocuments = [];
   const setChatOpen = open => {
     if (!chatPanel || !chatLauncher) return;
     chatPanel.hidden = !open;
@@ -304,6 +311,49 @@
   };
   chatLauncher?.addEventListener("click", () => setChatOpen(chatPanel?.hidden !== false));
   document.querySelector("#chat-close")?.addEventListener("click", () => setChatOpen(false));
+  const formatDocumentSize = bytes => bytes < 1024 * 1024 ? Math.max(1, Math.round(bytes / 1024)) + " KB" : (bytes / 1024 / 1024).toFixed(1) + " MB";
+  const renderDocuments = () => {
+    if (!chatDocumentList || !chatDocuments) return;
+    chatDocumentList.replaceChildren();
+    chatDocuments.hidden = personalDocuments.length === 0;
+    personalDocuments.forEach(documentValue => {
+      const row = document.createElement("div"); row.className = "chat-document";
+      const label = document.createElement("label");
+      const checkbox = document.createElement("input"); checkbox.type = "checkbox";
+      checkbox.checked = selectedDocuments.has(documentValue.id);
+      checkbox.addEventListener("change", () => checkbox.checked ? selectedDocuments.add(documentValue.id) : selectedDocuments.delete(documentValue.id));
+      const name = document.createElement("span"); name.textContent = documentValue.name;
+      const size = document.createElement("small"); size.textContent = formatDocumentSize(documentValue.size);
+      label.append(checkbox, name, size);
+      const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "移除"; remove.setAttribute("aria-label", "移除 " + documentValue.name);
+      remove.addEventListener("click", async () => {
+        remove.disabled = true;
+        try {
+          const response = await fetch("/api/documents/" + encodeURIComponent(documentValue.id), { method: "DELETE", credentials: "same-origin", headers: { "X-Requested-With": "DEK" } });
+          if (!response.ok) throw new Error((await response.text()).trim() || "移除失败");
+          selectedDocuments.delete(documentValue.id); personalDocuments = personalDocuments.filter(item => item.id !== documentValue.id); renderDocuments();
+        } catch (error) { chatHint.textContent = error.message || "移除失败，请稍后重试。"; remove.disabled = false; }
+      });
+      row.append(label, remove); chatDocumentList.append(row);
+    });
+  };
+  fetch("/api/documents", { credentials: "same-origin", cache: "no-store" })
+    .then(response => response.ok ? response.json() : Promise.reject())
+    .then(data => { if (data.enabled) { chatUpload.hidden = false; personalDocuments = data.documents || []; renderDocuments(); } })
+    .catch(() => {});
+  chatUpload?.addEventListener("click", () => chatFile?.click());
+  chatFile?.addEventListener("change", async () => {
+    const file = chatFile.files?.[0]; if (!file) return;
+    chatUpload.disabled = true; chatHint.textContent = "正在上传并解析…";
+    try {
+      const response = await fetch("/api/documents", { method: "POST", credentials: "same-origin", body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream", "X-DEK-Filename": encodeURIComponent(file.name) } });
+      if (!response.ok) throw new Error((await response.text()).trim() || "上传失败");
+      const item = await response.json(); personalDocuments.push(item); selectedDocuments.add(item.id); renderDocuments();
+      chatHint.textContent = "已选择“" + item.name + "” · 提问时将作为我的资料使用";
+    } catch (error) { chatHint.textContent = error.message || "上传失败，请稍后重试。"; }
+    finally { chatUpload.disabled = false; chatFile.value = ""; }
+  });
   const appendChatInline = (parent, text) => {
     const pattern = /(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s）)。，；]+)/g;
     let offset = 0;
@@ -388,11 +438,11 @@
     chatForm.dataset.busy = "1";
     chatInput.disabled = true;
     chatSend.disabled = true;
-    const waiting = appendChatMessage("assistant pending", "正在查询已审核知识库…");
+    const waiting = appendChatMessage("assistant pending", selectedDocuments.size ? "正在查询已审核知识库和我的资料…" : "正在查询已审核知识库…");
     try {
       const response = await fetch("/api/chat", {
         method: "POST", credentials: "same-origin", cache: "no-store",
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }),
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, document_ids: [...selectedDocuments] }),
       });
       if (!response.ok) {
         const plainText = (response.headers.get("Content-Type") || "").startsWith("text/plain");
