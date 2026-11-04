@@ -238,9 +238,21 @@ class SiteBuildTests(unittest.TestCase):
         self.assertLess(head.index("assets/search.js"), head.index("assets/page.js"))   # page.js draws the frame ...
         self.assertLess(head.index("assets/page.js"), head.index("assets/app.js"))      # ... before app.js wires it up
         seen = rendered_page(self.out / "wiki" / "01_注册" / "条目.html")
-        for drawn in ("<header>", 'class="sidebar"', 'class="breadcrumbs"', 'class="backlinks"', 'id="theme-toggle"'):
+        for drawn in ("<header>", 'class="sidebar"', 'class="breadcrumbs"', 'id="theme-toggle"'):
             self.assertIn(drawn, seen)
+        source = rendered_page(self.out / "source" / "CDE" / "来源.html")
+        self.assertIn('class="backlinks"', source)
         self.assertTrue((self.out / "assets" / "page.js").is_file())
+
+    def test_a_page_without_backlinks_has_no_backlinks_section(self):
+        (self.vault / "wiki" / "01_注册" / "独立条目.md").write_text(
+            "---\nno: 2\nquestion: 独立条目\n---\n\n没有其他页面引用本条目。\n",
+            encoding="utf-8",
+        )
+        build_site(self.vault, self.out)
+        page = rendered_page(self.out / "wiki" / "01_注册" / "独立条目.html")
+        self.assertNotIn('class="backlinks"', page)
+        self.assertNotIn("暂无反向链接", page)
 
     def test_numbered_wiki_entry_links_directly_to_its_category_adjustment_page(self):
         relative = "wiki/01_注册/01-0001.md"
