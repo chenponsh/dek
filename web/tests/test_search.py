@@ -315,6 +315,8 @@ class PageScriptTests(unittest.TestCase):
         self.assertIn("基于已审核知识内容回答", html)
         self.assertIn('id="chat-send" aria-label="发送问题" disabled', html)
         self.assertIn("基于已审核知识内容回答", html)
+        self.assertIn("您好，我是 Kbot，DEK 法规知识库 AI 助手。", html)
+        self.assertIn("请直接告诉我您想了解的事项。", html)
 
     def test_there_is_no_right_hand_panel_whatever_the_data_holds(self):
         full = {**self.BASE, "props": self.PROPS, "toc": [{"level": "2", "anchor": "s", "text": "小节"}],

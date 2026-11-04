@@ -217,7 +217,8 @@ class DekQaTests(unittest.TestCase):
 
     def test_the_bot_distinguishes_greetings_context_out_of_scope_and_no_results(self):
         soul = (Path(__file__).resolve().parents[1] / "config" / "SOUL.md").read_text(encoding="utf-8")
-        self.assertIn("你是 Kbot，DEK 法规知识库 AI 助手", soul)
+        self.assertIn("网页端和钉钉端统一逐字回复", soul)
+        self.assertIn("您好，我是 Kbot，DEK 法规知识库 AI 助手。", soul)
         self.assertIn("普通问候", soul)
         self.assertIn("“谢谢”“好的”“明白了”", soul)
         self.assertIn("绝不搜索“继续”等孤立短句", soul)
@@ -791,7 +792,7 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("dingtalk: []", config)
         self.assertIn("tool_search:\n    enabled: off", config)
         self.assertIn("强制回答边界（每轮均适用）", config)
-        self.assertIn("Kbot 是 DEK 法规知识库 AI 助手", config)
+        self.assertIn("您好，我是 Kbot，DEK 法规知识库 AI 助手", config)
         self.assertIn("结合当前消息和对话上下文判断意图", config)
         self.assertIn("知识库无命中不等于超出专业范围", config)
         self.assertIn("禁止编造法规名称、条款、依据或结论", config)
