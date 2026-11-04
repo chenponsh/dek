@@ -298,24 +298,93 @@
   const setChatOpen = open => {
     if (!chatPanel || !chatLauncher) return;
     chatPanel.hidden = !open;
+    chatLauncher.hidden = open;
     chatLauncher.setAttribute("aria-expanded", open ? "true" : "false");
     if (open) chatInput?.focus();
   };
   chatLauncher?.addEventListener("click", () => setChatOpen(chatPanel?.hidden !== false));
   document.querySelector("#chat-close")?.addEventListener("click", () => setChatOpen(false));
+  const appendChatInline = (parent, text) => {
+    const pattern = /(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s）)。，；]+)/g;
+    let offset = 0;
+    for (const match of text.matchAll(pattern)) {
+      if (match.index > offset) parent.append(document.createTextNode(text.slice(offset, match.index)));
+      const token = match[0];
+      if (token.startsWith("**")) {
+        const strong = document.createElement("strong");
+        strong.textContent = token.slice(2, -2);
+        parent.append(strong);
+      } else {
+        const markdown = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(token);
+        const anchor = document.createElement("a");
+        anchor.href = markdown ? markdown[2] : token;
+        anchor.textContent = markdown ? markdown[1] : token;
+        anchor.target = "_blank";
+        anchor.rel = "noreferrer";
+        parent.append(anchor);
+      }
+      offset = match.index + token.length;
+    }
+    if (offset < text.length) parent.append(document.createTextNode(text.slice(offset)));
+  };
+  const renderAssistantContent = (node, text) => {
+    node.replaceChildren();
+    String(text || "").replace(/\r\n/g, "\n").split("\n").forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const source = /^来源[：:]\s*(https?:\/\/[^\s）)。，；]+)(.*)$/.exec(trimmed);
+      if (source) {
+        const item = document.createElement("div");
+        item.className = "chat-source";
+        const anchor = document.createElement("a");
+        anchor.href = source[1]; anchor.target = "_blank"; anchor.rel = "noreferrer";
+        const sourceName = source[2].trim().replace(/^[（(]\s*/, "").replace(/\s*[）)]$/, "");
+        try { anchor.textContent = "来源：" + (sourceName || new URL(source[1]).hostname) + " ↗"; }
+        catch (error) { anchor.textContent = "查看来源 ↗"; }
+        item.append(anchor); node.append(item); return;
+      }
+      const heading = /^(#{2,4})\s+(.+)$/.exec(trimmed);
+      if (heading) {
+        const title = document.createElement(heading[1].length === 2 ? "h3" : "h4");
+        appendChatInline(title, heading[2]); node.append(title); return;
+      }
+      const list = /^(\d+[.、]|[（(]\d+[）)]|[-*])\s*(.+)$/.exec(trimmed);
+      if (list) {
+        const item = document.createElement("div"); item.className = "chat-list-item";
+        const marker = document.createElement("span"); marker.className = "chat-list-marker";
+        marker.textContent = list[1].startsWith("-") || list[1] === "*" ? "•" : list[1];
+        const content = document.createElement("div"); appendChatInline(content, list[2]);
+        item.append(marker, content); node.append(item); return;
+      }
+      if (trimmed.startsWith(">")) {
+        const quote = document.createElement("blockquote"); appendChatInline(quote, trimmed.slice(1).trim()); node.append(quote); return;
+      }
+      const paragraph = document.createElement("p"); appendChatInline(paragraph, trimmed); node.append(paragraph);
+    });
+  };
   const appendChatMessage = (role, text) => {
     const node = document.createElement("div");
     node.className = "chat-message " + role;
-    node.textContent = text;
+    if (role.includes("assistant") && !role.includes("pending") && !role.includes("error")) renderAssistantContent(node, text);
+    else node.textContent = text;
     chatMessages.appendChild(node);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return node;
   };
+  const syncChatSend = () => { if (chatSend) chatSend.disabled = chatForm?.dataset.busy === "1" || !chatInput?.value.trim(); };
+  const resizeChatInput = () => {
+    if (!chatInput) return;
+    chatInput.style.height = "auto";
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
+  };
+  chatInput?.addEventListener("input", () => { syncChatSend(); resizeChatInput(); });
+  syncChatSend();
   const submitChat = async () => {
     const message = chatInput?.value.trim();
     if (!message || chatForm?.dataset.busy === "1") return;
     appendChatMessage("user", message);
     chatInput.value = "";
+    resizeChatInput();
     chatForm.dataset.busy = "1";
     chatInput.disabled = true;
     chatSend.disabled = true;
@@ -331,7 +400,7 @@
         throw new Error(detail || "Kbot 暂时无法回答，请稍后重试。");
       }
       const data = await response.json();
-      waiting.textContent = data.answer || "机器人暂时没有返回内容。";
+      renderAssistantContent(waiting, data.answer || "Kbot 暂时没有返回内容。");
       waiting.classList.remove("pending");
     } catch (error) {
       waiting.textContent = error.message || "机器人暂时无法回答，请稍后重试。";
@@ -340,7 +409,7 @@
     } finally {
       chatForm.dataset.busy = "0";
       chatInput.disabled = false;
-      chatSend.disabled = false;
+      syncChatSend();
       chatInput.focus();
     }
   };

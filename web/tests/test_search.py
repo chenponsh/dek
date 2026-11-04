@@ -308,11 +308,13 @@ class PageScriptTests(unittest.TestCase):
         self.assertIn('id="chat-launcher"', html)
         self.assertIn('id="chat-panel"', html)
         self.assertIn('id="chat-form"', html)
-        self.assertIn('<strong>Kbot</strong>', html)
         self.assertIn('class="chat-launcher-icon"', html)
         self.assertIn('<span class="chat-launcher-label">AI 助手</span>', html)
         self.assertIn('aria-label="打开 Kbot AI 助手"', html)
-        self.assertIn("仅回答已审核知识库内容", html)
+        self.assertIn('id="chat-title">DEK AI 助手</strong>', html)
+        self.assertIn("基于已审核知识内容回答", html)
+        self.assertIn('id="chat-send" aria-label="发送问题" disabled', html)
+        self.assertIn("基于已审核知识内容回答", html)
 
     def test_there_is_no_right_hand_panel_whatever_the_data_holds(self):
         full = {**self.BASE, "props": self.PROPS, "toc": [{"level": "2", "anchor": "s", "text": "小节"}],

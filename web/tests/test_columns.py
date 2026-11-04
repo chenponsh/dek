@@ -83,6 +83,18 @@ class ResizerWiringTests(unittest.TestCase):
         self.assertIn("button.is-busy::after{content:\"\";", self.style)
         self.assertIn("@keyframes dek-spin", self.style)
 
+    def test_chat_markdown_is_rendered_with_dom_nodes_not_injected_html(self):
+        self.assertIn("const renderAssistantContent = (node, text) =>", self.script)
+        self.assertIn("node.replaceChildren();", self.script)
+        self.assertIn('anchor.rel = "noreferrer"', self.script)
+        self.assertIn("renderAssistantContent(waiting, data.answer", self.script)
+        self.assertNotIn("waiting.innerHTML", self.script)
+
+    def test_chat_launcher_hides_while_the_copilot_panel_is_open(self):
+        self.assertIn("chatLauncher.hidden = open;", self.script)
+        self.assertIn(".chat-launcher[hidden]{display:none}", self.style)
+        self.assertIn("width:min(440px,calc(100vw - 48px))", self.style)
+
     def test_the_review_pages_load_the_shared_script_and_styles(self):
         review = (Path(__file__).parents[1] / "review.py").read_text(encoding="utf-8")
         self.assertIn('<link rel="stylesheet" href="/assets/style.css">', review)

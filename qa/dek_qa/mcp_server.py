@@ -20,7 +20,7 @@ from .index import KnowledgeBase
 TOOLS = [
     {
         "name": "dek_kb_search",
-        "description": "Search only the reviewed dek wiki index and return citation metadata.",
+        "description": "Search only the reviewed dek wiki index and return citation metadata. For a short or broad topic question, use limit 10 so distinct core subtopics are not missed.",
         "inputSchema": {
             "type": "object",
             "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 10}},
