@@ -91,8 +91,8 @@
       + `<button id="theme-toggle" aria-label="切换主题">◐</button></header>`
       + `<aside class="sidebar"><nav id="nav-tree" data-manifest="${e(root)}manifest.json" data-current="${e(data.path)}"></nav></aside>`
       + `<main class="document${home}">${breadcrumbBlock}${kind}<h1>${e(data.title)}</h1><div class="badges">${badges}</div>${propertiesHtml(data)}<article>${bodyHtml || ""}</article>${backlinksSection}</main>`
-      + `<button type="button" class="chat-launcher" id="chat-launcher" aria-controls="chat-panel" aria-expanded="false">问机器人</button>`
-      + `<section class="chat-panel" id="chat-panel" aria-label="DEK 知识库机器人" hidden><header class="chat-head"><div><strong>DEK 知识库机器人</strong><small>仅回答已审核知识库内容</small></div><button type="button" id="chat-close" aria-label="关闭机器人">×</button></header><div class="chat-messages" id="chat-messages" aria-live="polite"><div class="chat-message assistant">您好，请输入药品注册、审评审批或上市后变更等相关问题。</div></div><form class="chat-form" id="chat-form"><label class="sr-only" for="chat-input">向机器人提问</label><textarea id="chat-input" maxlength="2000" rows="2" placeholder="输入问题，按 Enter 发送"></textarea><button type="submit" id="chat-send">发送</button></form></section>`;
+      + `<button type="button" class="chat-launcher" id="chat-launcher" aria-controls="chat-panel" aria-expanded="false">Kbot</button>`
+      + `<section class="chat-panel" id="chat-panel" aria-label="Kbot" hidden><header class="chat-head"><div><strong>Kbot</strong><small>仅回答已审核知识库内容</small></div><button type="button" id="chat-close" aria-label="关闭 Kbot">×</button></header><div class="chat-messages" id="chat-messages" aria-live="polite"><div class="chat-message assistant">您好，我是 Kbot。请输入药品注册、审评审批或上市后变更等相关问题。</div></div><form class="chat-form" id="chat-form"><label class="sr-only" for="chat-input">向 Kbot 提问</label><textarea id="chat-input" maxlength="2000" rows="2" placeholder="输入问题，按 Enter 发送"></textarea><button type="submit" id="chat-send">发送</button></form></section>`;
   }
 
   // A folder's overview table lists its entries as 项目 | 问题 | ...; 项目 should be the entry's

@@ -308,6 +308,8 @@ class PageScriptTests(unittest.TestCase):
         self.assertIn('id="chat-launcher"', html)
         self.assertIn('id="chat-panel"', html)
         self.assertIn('id="chat-form"', html)
+        self.assertIn('<strong>Kbot</strong>', html)
+        self.assertIn('>Kbot</button>', html)
         self.assertIn("仅回答已审核知识库内容", html)
 
     def test_there_is_no_right_hand_panel_whatever_the_data_holds(self):
