@@ -1326,7 +1326,7 @@ class ReviewService:
 <label>知识库分类<div class="combo"><input name="wiki_path" class="wiki-path-input" autocomplete="off" value="{html.escape(wiki_path)}" placeholder="搜索知识库分类…" data-options="{html.escape(options_json)}" data-existing-categories="{html.escape(categories_json)}"><div class="combo-list" role="listbox"></div></div></label>{chips}<div class="notice category-create-preview" hidden></div><label>待发布内容<textarea name="candidate_markdown" rows="18">{html.escape(candidate)}</textarea></label><p class="meta decision-hint">批准后内容会进入“待发布”。可以继续审核，完成后统一发布。</p><div class="decision-actions">{decision_buttons}</div></form></article>"""
 
     def _page(self, title: str, body: str) -> bytes:
-        return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()
+        return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/page.js" defer></script><script src="/assets/app.js" defer></script></body></html>""".encode()
 
     def _header(self, query: str = "", status: str = "", size: int = PAGE_SIZE) -> str:
         hidden = "".join(

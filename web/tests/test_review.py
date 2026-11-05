@@ -455,7 +455,9 @@ class ReviewWorkflowTests(unittest.TestCase):
             self.assertIn('<div class="user-menu review-header-menu" data-auth-me="/auth/me"><span id="user-name">正在读取…</span><a href="/auth/logout">退出</a></div></header>', page)
             self.assertIn('class="review-global-search"', page)
             self.assertIn('id="review-search"', page)
+            self.assertIn('<script src="/assets/page.js" defer></script>', page)
             self.assertIn('<script src="/assets/app.js" defer></script>', page)      # the script that fills in the name
+            self.assertLess(page.index('/assets/page.js'), page.index('/assets/app.js'))
 
     def test_list_reuses_the_knowledge_base_chrome_with_a_resizable_sidebar(self):
         page = self.service.render_list("opaque-session", status="pending").decode("utf-8")

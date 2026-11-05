@@ -95,6 +95,14 @@
       + `<section class="chat-panel" id="chat-panel" aria-labelledby="chat-title" hidden><header class="chat-head"><div class="chat-identity"><span class="chat-head-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 2l1.15 3.1a5.8 5.8 0 0 0 3.45 3.45L19.7 9.7l-3.1 1.15a5.8 5.8 0 0 0-3.45 3.45L12 17.4l-1.15-3.1a5.8 5.8 0 0 0-3.45-3.45L4.3 9.7l3.1-1.15a5.8 5.8 0 0 0 3.45-3.45L12 2Z"/></svg></span><div><strong id="chat-title">DEK AI 助手</strong><small>基于已审核知识内容回答 · 共享资料自动参与</small></div></div><button type="button" id="chat-close" aria-label="关闭 DEK AI 助手"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div class="chat-messages" id="chat-messages" aria-live="polite"><div class="chat-message assistant"><p>您好，我是 Kbot，DEK 法规知识库 AI 助手。我可以基于已审核、已发布的知识内容，协助您查询药品注册、审评审批、注册检验与核查、药学、临床、非临床及上市后变更等问题。请直接告诉我您想了解的事项。</p></div></div><form class="chat-form" id="chat-form"><div class="chat-documents" id="chat-documents" hidden><div class="chat-documents-head"><strong>共享资料</strong><small>团队可见 · 自动参与 AI 问答 · 同等权重</small></div><div class="chat-document-list" id="chat-document-list"></div></div><label class="sr-only" for="chat-input">向 Kbot 提问</label><div class="chat-composer"><button type="button" class="chat-upload" id="chat-upload" aria-label="上传共享资料" title="上传共享资料" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4"/></svg></button><input type="file" id="chat-file" accept=".pdf,.docx,.txt,.md" hidden><textarea id="chat-input" maxlength="2000" rows="1" placeholder="询问已审核知识库或共享资料…"></textarea><button type="submit" id="chat-send" aria-label="发送问题" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div><div class="chat-input-hint" id="chat-input-hint">Enter 发送 · Shift+Enter 换行</div></form></section>`;
   }
 
+  // Review pages use their own server-rendered chrome. Reuse the exact same
+  // assistant markup from pageHtml instead of maintaining a second Kbot UI.
+  function assistantHtml() {
+    const rendered = pageHtml({ root: "", kind: "home", crumbs: [], tags: [], title: "", path: "" }, "");
+    const start = rendered.indexOf('<button type="button" class="chat-launcher"');
+    return start < 0 ? "" : rendered.slice(start);
+  }
+
   // A folder's overview table lists its entries as 项目 | 问题 | ...; 项目 should be the entry's
   // file name (0101-0001), not its question again. Pages built before the generator did this get
   // it here; for pages that already say it, this changes nothing.
@@ -118,7 +126,11 @@
   function mount(document) {
     const dataElement = document && document.getElementById("page-data");
     const body = document && document.getElementById("page-body");
-    if (!dataElement || !body) return;
+    if (!document) return;
+    if (!dataElement || !body) {
+      if (!document.getElementById("chat-launcher")) document.body.insertAdjacentHTML("beforeend", assistantHtml());
+      return;
+    }
     let data;
     try { data = JSON.parse(dataElement.textContent); } catch (error) { return; }
     document.body.insertAdjacentHTML("afterbegin", pageHtml(data, body.innerHTML));
@@ -126,5 +138,5 @@
     document.getElementById("page-loading")?.remove();
   }
 
-  return { pageHtml, mount, escapeText, overviewProject };
+  return { pageHtml, assistantHtml, mount, escapeText, overviewProject };
 });

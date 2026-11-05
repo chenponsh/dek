@@ -272,6 +272,10 @@ class PageScriptTests(unittest.TestCase):
         script = f"const p=require({json.dumps(str(PAGE_JS))}); process.stdout.write(p.pageHtml({json.dumps(data, ensure_ascii=False)}, {json.dumps(body, ensure_ascii=False)}));"
         return subprocess.run(["node", "-e", script], check=True, text=True, capture_output=True).stdout
 
+    def render_assistant(self):
+        script = f"const p=require({json.dumps(str(PAGE_JS))}); process.stdout.write(p.assistantHtml());"
+        return subprocess.run(["node", "-e", script], check=True, text=True, capture_output=True).stdout
+
     BASE = {"kind": "wiki", "title": "标题", "path": "wiki/a.md", "root": "../", "tags": [], "crumbs": [], "props": [], "backlinks": [], "toc": [], "sourceNotes": [], "externalLinks": [], "sourceWiki": []}
 
     PROPS = [{"label": "编号", "value": {"parts": [{"t": "1"}]}}, {"label": "内容路径", "code": "wiki/a.md"}]
@@ -317,6 +321,13 @@ class PageScriptTests(unittest.TestCase):
         self.assertIn("基于已审核知识内容回答", html)
         self.assertIn("您好，我是 Kbot，DEK 法规知识库 AI 助手。", html)
         self.assertIn("请直接告诉我您想了解的事项。", html)
+
+    def test_review_pages_can_mount_the_same_assistant_markup(self):
+        html = self.render_assistant()
+        self.assertTrue(html.startswith('<button type="button" class="chat-launcher"'))
+        self.assertIn('id="chat-panel"', html)
+        self.assertIn('id="chat-form"', html)
+        self.assertEqual(html.count('id="chat-launcher"'), 1)
 
     def test_there_is_no_right_hand_panel_whatever_the_data_holds(self):
         full = {**self.BASE, "props": self.PROPS, "toc": [{"level": "2", "anchor": "s", "text": "小节"}],
