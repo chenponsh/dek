@@ -163,9 +163,19 @@ class DekQaTests(unittest.TestCase):
         for line in (got["source_line"], column["source_line"]):
             self.assertNotIn("regkb", line)
 
-    def test_an_entry_with_no_known_link_says_so_instead_of_inventing_one(self):
+    def test_an_entry_with_no_source_uses_a_neutral_placeholder(self):
         doc = self._add_entry("0101-0021.md", "date: 2026-09-12\nquestion: 没有任何来源链接的问题吗")
-        self.assertEqual(self.kb.dek_kb_get(doc["id"])["source_line"], "未提供来源链接")
+        self.assertEqual(self.kb.dek_kb_get(doc["id"])["source_line"], "来源：/")
+
+    def test_an_entry_with_a_source_name_but_no_url_displays_the_name(self):
+        doc = self._add_entry(
+            "0101-0023.md",
+            "date: 2026-09-14\nquestion: 只有来源名称的问题吗\nsource: CDE培训问答整理",
+        )
+        got = self.kb.dek_kb_get(doc["id"])
+        self.assertEqual(got["source_status"], "unknown")
+        self.assertEqual(got["source_names"], ["CDE培训问答整理"])
+        self.assertEqual(got["source_line"], "来源：CDE培训问答整理")
 
     def test_the_recent_answer_text_is_finished_numbered_sourced_and_counted(self):
         own = self._add_entry("0101-0022.md", "date: 2026-09-13\nquestion: 第二条有官网页面吗\nsource_url: https://official.example/a/10.html")
@@ -208,10 +218,10 @@ class DekQaTests(unittest.TestCase):
         for phrase in ("`since`/`until`", "`publication_count`", "`short_title`", "`source_line`", "`publications_text`", "仅统计已审核发布的内容", "序号. 编号 · 分类 · 标题"):
             self.assertIn(phrase, soul)
 
-    def test_the_bot_rules_ask_for_one_link_per_question_not_a_summary_block(self):
+    def test_the_bot_rules_ask_for_one_source_line_per_question_not_a_summary_block(self):
         soul = (Path(__file__).resolve().parents[1] / "config" / "SOUL.md").read_text(encoding="utf-8")
         self.assertIn("article_url", soul)
-        self.assertIn("紧跟它自己的来源链接", soul)
+        self.assertIn("紧跟它自己的来源行", soul)
         self.assertIn("不得把多个条目合并成末尾一个“信息出处”区", soul)
         self.assertIn("不显示内部 `wiki/...` 路径", soul)
 
@@ -846,12 +856,13 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("不得自行改写、润色、补充或再删减", prompt)
         self.assertIn("才逐字使用完整的 `title`", prompt)
         self.assertIn("每个列出的条目都必须按该条目自己的来源证据处理", prompt)
-        self.assertIn("并在有 `source_names` 时展示来源名称", prompt)
+        self.assertIn("没有网址但有 `source_names` 时显示", prompt)
         self.assertIn("`source_urls` 非空且 `source_status=verified` 时", prompt)
         self.assertIn("不得把多个条目合并成末尾一个“信息出处”区", prompt)
         self.assertIn("article_url", prompt)
-        self.assertIn("来源链接尚未确认", prompt)
-        self.assertIn("未提供来源链接", prompt)
+        self.assertIn("来源：/", prompt)
+        self.assertNotIn("来源链接尚未确认", prompt)
+        self.assertNotIn("未提供来源链接", prompt)
         self.assertIn("不得补造链接", prompt)
         self.assertIn("即使只报告数量和标题，也必须给出每条自己的来源证据", prompt)
         self.assertIn("数量为 0 必须明确回答 0", prompt)

@@ -207,6 +207,18 @@ def _source_evidence(
                 names.add(metadata["name"])
             if metadata["type"]:
                 types.add(metadata["type"])
+    # Preserve the source label recorded on the approved entry even when no
+    # public URL can be verified. Prefer curated source-note metadata when it
+    # exists; otherwise expose a readable label, never an internal path.
+    if not names and fields.get("source"):
+        raw_source = fields["source"].strip()
+        if field_targets:
+            for target in field_targets:
+                label = Path(target.removeprefix("source/").removesuffix(".md")).name
+                if label:
+                    names.add(label)
+        elif raw_source:
+            names.add(raw_source)
     if urls:
         status = "verified"
     elif fields.get("source") or body_targets:
@@ -310,7 +322,7 @@ def _source_line(doc: dict[str, Any]) -> str:
     elif urls and doc.get("source_status") == "verified":
         note, url = "；".join(part for part in (names, "栏目页，非具体文章") if part), urls[0]
     else:
-        return "未提供来源链接" if doc.get("source_status") == "none" else "来源链接尚未确认"
+        return f"来源：{names}" if names else "来源：/"
     return f"来源：{url}" + (f"（{note}）" if note else "")
 
 
