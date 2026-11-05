@@ -617,7 +617,7 @@ class DekQaTests(unittest.TestCase):
         class FakeShared:
             def search(self,query):
                 self.query=query
-                return {"context":"共享资料：资料.txt\n场地变更","matched":True}
+                return {"context":"共享资源：资料.txt\n场地变更","matched":True}
         shared=FakeShared()
         response=_reply({"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"dek_shared_search","arguments":{"query":"场地变更"}}},self.kb,shared)
         self.assertFalse(response["result"]["isError"])
@@ -831,8 +831,8 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("wiki/...", prompt)
         self.assertIn(INSUFFICIENT_EVIDENCE, prompt)
         self.assertIn("其他知识问答必须先且最多调用一轮正式知识库搜索工具", prompt)
-        self.assertIn("同一轮还必须调用一次共享资料搜索工具", prompt)
-        self.assertIn("不得再调用共享资料搜索工具", prompt)
+        self.assertIn("同一轮还必须调用一次共享资源搜索工具", prompt)
+        self.assertIn("不得再调用共享资源搜索工具", prompt)
         self.assertIn("并行读取其中覆盖不同核心维度的 5–10 篇笔记", prompt)
         self.assertIn("搜索必须使用 `limit: 10`", prompt)
         self.assertIn("覆盖不同核心维度", prompt)

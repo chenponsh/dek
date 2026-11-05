@@ -36,7 +36,7 @@ class PersonalDocumentTests(unittest.TestCase):
             self.assertEqual(store.list()[0]["name"], "方案.txt")
             context = store.context("场地变更")
             self.assertIn("权重相同", context)
-            self.assertIn("共享资料：方案.txt", context)
+            self.assertIn("共享资源：方案.txt", context)
             self.assertIn("生产场地变更研究方案", context)
             item, raw = store.download(first["id"])
             self.assertEqual((item["name"], raw),("方案.txt","生产场地变更研究方案".encode()))

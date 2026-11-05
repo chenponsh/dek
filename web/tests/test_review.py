@@ -693,6 +693,8 @@ class ReviewWorkflowTests(unittest.TestCase):
     def test_the_source_list_lives_in_the_directory_after_home_not_among_the_list_buttons(self):
         script = (Path(__file__).parents[1] / "assets" / "app.js").read_text(encoding="utf-8")
         self.assertLess(script.index("nav.innerHTML = homeLink + sourcesLink"), script.index('role="tree" aria-label="知识库目录"'))
+        self.assertIn('<span class="tree-label">共享资源</span>', script)
+        self.assertIn('href="/shared-resources"', script)
         self.assertIn('href="/review/sources"', script)
         self.assertIn('current === "review:sources"', script)
         self.assertIn('data-current="review:sources"', self.service.render_sources("opaque-session").decode("utf-8"))

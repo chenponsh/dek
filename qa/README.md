@@ -7,7 +7,7 @@
 - 正式语料仅为 `wiki/**/*.md`。
 - `source/` 只在构建索引时解析显式 `source_url` 或兼容字段 `url`；正式笔记必须通过可唯一解析的 wikilink 指向该 source 文件，URL 才进入 `source_urls`。来源链接客观记录信息实际取自哪里，可以是监管机构网站、公众号、培训材料或第三方整理页；不得把第三方材料描述成监管机构原文。任意正文 URL 不会自动提升为来源链接；未唯一解析的来源标为 `unknown`。
 - wiki 或 source 的任一路径段只要含“排除”即跳过；`ingestion/`、`_/`、`_raw/`、`.git/`、浏览器 profile 和审计文件也不进入索引。
-- 运行时读取单个 `0600` 正式索引，不读取 vault。MCP 仅公开 `dek_kb_search`、`dek_kb_get`、`dek_kb_recent` 与 `dek_shared_search` 四个只读工具；`dek_kb_get` 只接受检索返回的不透明 ID，`dek_shared_search` 只通过本机鉴权接口读取团队共享资料。
+- 运行时读取单个 `0600` 正式索引，不读取 vault。MCP 仅公开 `dek_kb_search`、`dek_kb_get`、`dek_kb_recent` 与 `dek_shared_search` 四个只读工具；`dek_kb_get` 只接受检索返回的不透明 ID，`dek_shared_search` 只通过本机鉴权接口读取团队共享资源。
 - Hermes 看到的完整工具名为 `mcp__dek_kb__dek_kb_search`、`mcp__dek_kb__dek_kb_get`、`mcp__dek_kb__dek_kb_recent`、`mcp__dek_kb__dek_shared_search`。
 - 用户及群均采用非空白名单、默认拒绝。会话键为 `chat_type + chat_id + user_id`，不公开历史搜索工具。
 - 系统提示必须要求回答仅使用工具证据；只有 `source_status=verified` 时才可附 `source_urls`，并可按 `source_names`、`source_types` 客观说明来源名称和类型；否则来源链接明确视为未知。无证据时回答“未在已审核知识库中找到足够依据。”

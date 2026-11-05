@@ -26,7 +26,7 @@ class FakeDocuments:
     def add(self,user_id,filename,data):
         self.added.append((user_id,filename,data)); return {"id":"b"*24,"name":filename,"size":len(data),"created_at":124}
     def remove(self,document_id): self.removed.append(document_id)
-    def context(self,query): return "共享资料：资料.txt\n场地变更"
+    def context(self,query): return "共享资源：资料.txt\n场地变更"
     def download(self,document_id): return {"name":"资料.txt","mime":"text/plain"},b"document body"
 
 
@@ -234,6 +234,22 @@ class AppTests(unittest.TestCase):
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertEqual(json.loads(body), {"display_name": "张三"})
 
+    def test_shared_resources_page_is_authenticated_get_only_and_uses_the_common_shell(self):
+        self.assertEqual(self.call("/shared-resources")[0], "302 Found")
+        cookie = "dek_session=" + self.token
+        status, headers, body = self.call("/shared-resources", cookie=cookie)
+        markup = body.decode("utf-8")
+        self.assertEqual(status, "200 OK")
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertIn('<title>共享资源 · DEK</title>', markup)
+        self.assertIn('"path":"shared-resources"', markup)
+        self.assertIn('id="shared-resource-app"', markup)
+        self.assertIn("自动参与 Kbot AI 问答", markup)
+        self.assertIn('/assets/page.js', markup)
+        status, headers, _ = self.call("/shared-resources", cookie=cookie, method="POST")
+        self.assertEqual(status, "405 Method Not Allowed")
+        self.assertEqual(headers["Allow"], "GET")
+
     def test_authenticated_same_origin_chat_is_proxied_without_exposing_user_details(self):
         chat = FakeChat(); self.app.chat_client = chat
         payload = json.dumps({"message": "生产场地变更需要什么资料？"}, ensure_ascii=False).encode()
@@ -290,7 +306,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(status,"200 OK")
         self.assertEqual(chat.calls[0][0],"u1")
         self.assertIn("<DEK_SHARED_DOCUMENT_CONTEXT>",chat.calls[0][1])
-        self.assertIn("共享资料：资料.txt",chat.calls[0][1])
+        self.assertIn("共享资源：资料.txt",chat.calls[0][1])
 
     def test_internal_shared_context_is_loopback_bearer_authenticated(self):
         self.app.document_store=FakeDocuments(); self.app.internal_api_key="internal-secret"
@@ -301,7 +317,7 @@ class AppTests(unittest.TestCase):
         status,headers,body=self.call("/internal/shared-context",extra={"REMOTE_ADDR":"127.0.0.1","HTTP_AUTHORIZATION":"Bearer internal-secret"},**common)
         self.assertEqual(status,"200 OK")
         self.assertEqual(headers["Cache-Control"],"no-store")
-        self.assertIn("共享资料：资料.txt",json.loads(body)["context"])
+        self.assertIn("共享资源：资料.txt",json.loads(body)["context"])
 
     def test_internal_shared_context_rejects_invalid_requests(self):
         self.app.document_store=FakeDocuments(); self.app.internal_api_key="internal-secret"

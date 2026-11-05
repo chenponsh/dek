@@ -38,6 +38,37 @@ USER_ERROR_BODIES = {
 }
 
 
+def shared_resources_page() -> bytes:
+    data = json.dumps({
+        "v": 1, "kind": "resources", "title": "共享资源", "path": "shared-resources",
+        "root": "/", "tags": [], "crumbs": [{"text": "共享资源"}], "props": [],
+        "backlinks": [], "toc": [], "sourceNotes": [], "externalLinks": [], "sourceWiki": [],
+    }, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    body = (
+        '<section class="shared-resource-intro"><p>团队上传的参考资源，所有用户均可查看和下载，'
+        '并自动参与 Kbot AI 问答。</p><p class="muted">共享资源不经过正式知识审核发布流程；'
+        'Kbot 回答时会将其明确标注为共享资源。</p></section>'
+        '<section id="shared-resource-app" class="shared-resource-app">'
+        '<div class="shared-resource-toolbar"><div class="shared-resource-search">'
+        '<label class="sr-only" for="shared-resource-query">搜索共享资源</label>'
+        '<input type="search" id="shared-resource-query" placeholder="搜索文件名称…" autocomplete="off">'
+        '</div><button type="button" id="shared-resource-upload" hidden>上传资源</button>'
+        '<input type="file" id="shared-resource-file" accept=".pdf,.docx,.txt,.md" hidden></div>'
+        '<div id="shared-resource-status" class="shared-resource-status" aria-live="polite">正在加载共享资源…</div>'
+        '<div id="shared-resource-list" class="shared-resource-list"></div></section>'
+    )
+    return (
+        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">'
+        '<title>共享资源 · DEK</title><link rel="stylesheet" href="/assets/style.css">'
+        '<script src="/assets/search.js" defer></script><script src="/assets/page.js" defer></script>'
+        '<script src="/assets/app.js" defer></script></head><body><div id="page-loading" class="muted">正在加载页面…</div>'
+        '<noscript>此页面需要启用 JavaScript。</noscript>'
+        f'<script type="application/json" id="page-data">{data}</script>'
+        f'<template id="page-body">{body}</template></body></html>'
+    ).encode("utf-8")
+
+
 def decode_request_path(raw_path: str) -> str:
     path = unquote(raw_path)
     try:
@@ -321,6 +352,10 @@ class KnowledgeApp:
                 return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
             body=json.dumps({"answer":answer},ensure_ascii=False).encode()
             return self._response(start,"200 OK",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
+        if path in {"/shared-resources","/shared-resources/"}:
+            if (environ.get("REQUEST_METHOD") or "GET").upper()!="GET":
+                return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","GET"),("Cache-Control","no-store")])
+            return self._response(start,"200 OK",shared_resources_page(),[("Content-Type","text/html; charset=utf-8"),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Content-Security-Policy","default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'self'")])
         relative="index.html" if path=="/" else path.lstrip("/")
         root=root.resolve()
         target=(root/relative).resolve()

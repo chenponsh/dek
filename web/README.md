@@ -42,9 +42,9 @@ python3 -m http.server 9120 --bind 127.0.0.1 --directory /tmp/dek-web-candidate
 
 运行认证服务至少需要独立配置 `DINGTALK_CLIENT_ID`、`DINGTALK_CLIENT_SECRET`、`DINGTALK_AGENT_ID`、`DEK_WEB_REDIRECT_URI` 和 `DEK_WEB_CLAIM_SECRET`。静态站点本身不保存钉钉凭据，不应绕过认证服务直接发布。
 
-## 团队共享资料
+## 团队共享资源
 
-该功能不进入正式知识审核/发布链路。只有现有审核/发布人员可以上传和删除资料；所有已登录用户都可以查看、下载、选择共享资料参与 AI 问答。共享资料与正式知识在回答时权重相同，但答案必须明确标注知识来源。原文件和提取文本存入专用七牛私有 Bucket，本机只在 `/var/lib/dek-web/user-documents` 保存小型索引。共享区最多 20 个文件且合计不超过 50 MB，单文件上限 10 MB，支持 PDF、DOCX、UTF-8 TXT 和 Markdown。
+该功能不进入正式知识审核/发布链路。只有现有审核/发布人员可以上传和删除资源；所有已登录用户都可以查看和下载。上传成功的资源自动参与 AI 问答，无需用户勾选。共享资源与正式知识在回答时权重相同，但答案必须明确标注知识来源。原文件和提取文本存入专用七牛私有 Bucket，本机只在 `/var/lib/dek-web/user-documents` 保存小型索引。共享区最多 20 个文件且合计不超过 50 MB，单文件上限 10 MB，支持 PDF、DOCX、UTF-8 TXT 和 Markdown。
 
 功能默认关闭，且只向现有审核/发布人员开放。启用时，web 服务环境需同时配置 `QINIU_ACCESS_KEY`、`QINIU_SECRET_KEY`、`QINIU_BUCKET`、`QINIU_UPLOAD_URL`、`QINIU_DOWNLOAD_BASE_URL`、`QINIU_PRIVATE_BUCKET=true` 和与审核人名单一致的 `DEK_DOCUMENT_UPLOADER_IDS`；缺少任一项时服务拒绝以半配置状态启动。七牛密钥只保留在服务端，Bucket 必须是私有空间。PDF 提取依赖 `web/requirements.txt` 中固定版本的 `pypdf`。
 

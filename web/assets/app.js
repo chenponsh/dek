@@ -353,6 +353,94 @@
     } catch (error) { chatHint.textContent = error.message || "上传失败，请稍后重试。"; }
     finally { chatUpload.disabled = false; chatFile.value = ""; }
   });
+
+  const resourceApp = document.querySelector("#shared-resource-app");
+  const resourceQuery = document.querySelector("#shared-resource-query");
+  const resourceUpload = document.querySelector("#shared-resource-upload");
+  const resourceFile = document.querySelector("#shared-resource-file");
+  const resourceStatus = document.querySelector("#shared-resource-status");
+  const resourceList = document.querySelector("#shared-resource-list");
+  let sharedResources = [];
+  let canUploadResources = false;
+  const resourceDate = value => {
+    if (!Number.isFinite(Number(value))) return "—";
+    return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(Number(value) * 1000));
+  };
+  const resourceType = name => {
+    const match = /\.([^.]+)$/.exec(String(name || ""));
+    return match ? match[1].toUpperCase() : "文件";
+  };
+  const renderSharedResources = () => {
+    if (!resourceApp || !resourceList || !resourceStatus) return;
+    const query = (resourceQuery?.value || "").trim().toLocaleLowerCase();
+    const visible = sharedResources.filter(item => !query || String(item.name || "").toLocaleLowerCase().includes(query));
+    resourceList.replaceChildren();
+    if (!visible.length) {
+      const empty = document.createElement("div"); empty.className = "shared-resource-empty";
+      empty.textContent = sharedResources.length ? "没有匹配的共享资源。" : "暂时还没有共享资源。";
+      resourceList.append(empty);
+    }
+    visible.forEach(item => {
+      const row = document.createElement("div"); row.className = "shared-resource-row";
+      const file = document.createElement("div"); file.className = "shared-resource-file";
+      const icon = document.createElement("span"); icon.className = "shared-resource-file-icon"; icon.textContent = resourceType(item.name);
+      const details = document.createElement("div");
+      const name = document.createElement("strong"); name.textContent = item.name;
+      const meta = document.createElement("small"); meta.textContent = resourceType(item.name) + " · " + formatDocumentSize(item.size);
+      details.append(name, meta); file.append(icon, details);
+      const date = document.createElement("div"); date.className = "shared-resource-date"; date.textContent = resourceDate(item.created_at);
+      const ai = document.createElement("div"); ai.className = "shared-resource-ai"; ai.textContent = "可用于 AI 问答";
+      const actions = document.createElement("div"); actions.className = "shared-resource-actions";
+      const href = "/api/documents/" + encodeURIComponent(item.id) + "/download";
+      const view = document.createElement("a"); view.href = href; view.target = "_blank"; view.rel = "noreferrer"; view.textContent = "查看";
+      const download = document.createElement("a"); download.href = href; download.download = item.name; download.textContent = "下载";
+      actions.append(view, download);
+      if (canUploadResources) {
+        const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "删除";
+        remove.addEventListener("click", async () => {
+          if (!confirm("确定删除“" + item.name + "”吗？删除后将不再参与 AI 问答。")) return;
+          remove.disabled = true;
+          try {
+            const response = await fetch("/api/documents/" + encodeURIComponent(item.id), { method: "DELETE", credentials: "same-origin", headers: { "X-Requested-With": "DEK" } });
+            if (!response.ok) throw new Error((await response.text()).trim() || "删除失败");
+            sharedResources = sharedResources.filter(value => value.id !== item.id);
+            personalDocuments = personalDocuments.filter(value => value.id !== item.id);
+            renderSharedResources(); renderDocuments();
+          } catch (error) { resourceStatus.textContent = error.message || "删除失败，请稍后重试。"; remove.disabled = false; }
+        });
+        actions.append(remove);
+      }
+      row.append(file, date, ai, actions); resourceList.append(row);
+    });
+    resourceStatus.textContent = query ? `共 ${sharedResources.length} 个资源，当前显示 ${visible.length} 个` : `共 ${sharedResources.length} 个资源`;
+  };
+  const loadSharedResources = async () => {
+    if (!resourceApp) return;
+    try {
+      const response = await fetch("/api/documents", { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error("共享资源暂时无法加载");
+      const data = await response.json();
+      sharedResources = Array.isArray(data.documents) ? data.documents : [];
+      canUploadResources = Boolean(data.can_upload);
+      if (resourceUpload) resourceUpload.hidden = !canUploadResources;
+      renderSharedResources();
+    } catch (error) { resourceStatus.textContent = error.message || "共享资源暂时无法加载。"; }
+  };
+  resourceQuery?.addEventListener("input", renderSharedResources);
+  resourceUpload?.addEventListener("click", () => resourceFile?.click());
+  resourceFile?.addEventListener("change", async () => {
+    const file = resourceFile.files?.[0]; if (!file) return;
+    resourceUpload.disabled = true; resourceStatus.textContent = "正在上传并解析“" + file.name + "”…";
+    try {
+      const response = await fetch("/api/documents", { method: "POST", credentials: "same-origin", body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream", "X-DEK-Filename": encodeURIComponent(file.name) } });
+      if (!response.ok) throw new Error((await response.text()).trim() || "上传失败");
+      const item = await response.json(); sharedResources.push(item); personalDocuments.push(item);
+      renderSharedResources(); renderDocuments(); resourceStatus.textContent = "已上传“" + item.name + "”，将自动参与 AI 问答。";
+    } catch (error) { resourceStatus.textContent = error.message || "上传失败，请稍后重试。"; }
+    finally { resourceUpload.disabled = false; resourceFile.value = ""; }
+  });
+  loadSharedResources();
   const appendChatInline = (parent, text) => {
     const pattern = /(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s（）()。，；]+)/g;
     let offset = 0;
@@ -463,7 +551,7 @@
     chatForm.dataset.busy = "1";
     chatInput.disabled = true;
     chatSend.disabled = true;
-    const waiting = appendChatMessage("assistant pending", personalDocuments.length ? "正在查询已审核知识库和共享资料…" : "正在查询已审核知识库…");
+    const waiting = appendChatMessage("assistant pending", personalDocuments.length ? "正在查询已审核知识库和共享资源…" : "正在查询已审核知识库…");
     try {
       const response = await fetch("/api/chat", {
         method: "POST", credentials: "same-origin", cache: "no-store",
@@ -592,7 +680,8 @@
       const homeLink = `<a role="treeitem" class="tree-link home-link${homeActive}" href="${homeHref}"><span class="tree-file-icon">⌂</span><span class="tree-label">首页</span></a>`;
       // Reviewer-only entries (the server refuses anyone else) follow the home link.
       const sourcesLink = `<a role="treeitem" class="tree-link sources-link${current === "review:sources" ? " active" : ""}" href="/review/sources"><span class="tree-file-icon">▦</span><span class="tree-label">来源列表</span></a>`;
-      nav.innerHTML = homeLink + sourcesLink + `<div role="tree" aria-label="知识库目录">${tree.map(node => renderNode(node)).join("")}</div>`;
+      const resourcesLink = `<a role="treeitem" class="tree-link resources-link${current === "shared-resources" ? " active" : ""}" href="/shared-resources"><span class="tree-file-icon">▤</span><span class="tree-label">共享资源</span></a>`;
+      nav.innerHTML = homeLink + sourcesLink + `<div role="tree" aria-label="知识库目录">${tree.map(node => renderNode(node)).join("")}</div>` + resourcesLink;
       nav.querySelectorAll("details[data-path]").forEach(folder => {
         folder.addEventListener("toggle", () => {
           const path = folder.dataset.path;
