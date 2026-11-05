@@ -420,6 +420,31 @@
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return node;
   };
+  const loadChatHistory = async () => {
+    if (!chatMessages || !chatInput) return;
+    chatInput.disabled = true;
+    if (chatHint) chatHint.textContent = "正在恢复聊天记录…";
+    try {
+      const response = await fetch("/api/chat/history", { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error("history unavailable");
+      const data = await response.json();
+      const messages = Array.isArray(data.messages) ? data.messages : [];
+      if (messages.length) {
+        chatMessages.replaceChildren();
+        messages.forEach(item => {
+          if ((item.role === "user" || item.role === "assistant") && typeof item.content === "string") {
+            appendChatMessage(item.role, item.content);
+          }
+        });
+      }
+      if (chatHint) chatHint.textContent = "Enter 发送 · Shift+Enter 换行";
+    } catch (error) {
+      if (chatHint) chatHint.textContent = "历史记录暂时无法加载，仍可继续提问";
+    } finally {
+      chatInput.disabled = false;
+      syncChatSend();
+    }
+  };
   const syncChatSend = () => { if (chatSend) chatSend.disabled = chatForm?.dataset.busy === "1" || !chatInput?.value.trim(); };
   const resizeChatInput = () => {
     if (!chatInput) return;
@@ -428,6 +453,7 @@
   };
   chatInput?.addEventListener("input", () => { syncChatSend(); resizeChatInput(); });
   syncChatSend();
+  loadChatHistory();
   const submitChat = async () => {
     const message = chatInput?.value.trim();
     if (!message || chatForm?.dataset.busy === "1") return;

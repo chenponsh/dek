@@ -20,7 +20,7 @@ from wsgiref.simple_server import WSGIServer, make_server
 
 from .auth import authorize_claim
 from .dingtalk_gateway import DingTalkClient, DingTalkGateway, LoginError, MemoryStateStore
-from .chat import ChatRateLimiter, ChatUnavailable, HermesChatClient
+from .chat import ChatHistoryError, ChatHistoryStore, ChatRateLimiter, ChatUnavailable, HermesChatClient
 from .personal_documents import DocumentError, MAX_FILE_BYTES, store_from_environment
 
 
@@ -112,7 +112,7 @@ FRONTEND_ASSETS=frozenset({"/assets/style.css","/assets/app.js","/assets/search.
 
 
 class KnowledgeApp:
-    def __init__(self, site_root: Path, gateway: DingTalkGateway, claim_secret: bytes, clock=time.time, generation_proof_secret: str = "", boot_nonce: str = "", release_sha256: str = "", chat_client=None, chat_limiter=None, document_store=None, document_uploaders=frozenset(), internal_api_key: str = ""):
+    def __init__(self, site_root: Path, gateway: DingTalkGateway, claim_secret: bytes, clock=time.time, generation_proof_secret: str = "", boot_nonce: str = "", release_sha256: str = "", chat_client=None, chat_limiter=None, chat_history=None, document_store=None, document_uploaders=frozenset(), internal_api_key: str = ""):
         self.active_site = site_root if isinstance(site_root, ActiveSite) else None
         self.root = None if self.active_site else Path(site_root).resolve(strict=True)
         self.gateway=gateway; self.secret=claim_secret; self.clock=clock
@@ -121,6 +121,7 @@ class KnowledgeApp:
         self.release_sha256 = release_sha256
         self.chat_client = chat_client
         self.chat_limiter = chat_limiter or ChatRateLimiter()
+        self.chat_history = chat_history
         self.document_store = document_store
         self.document_uploaders = frozenset(document_uploaders)
         self.internal_api_key = internal_api_key
@@ -275,6 +276,16 @@ class KnowledgeApp:
             except DocumentError as error:
                 return self._response(start,"400 Bad Request",str(error).encode("utf-8"),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
             return self._response(start,"204 No Content",headers=[("Cache-Control","no-store")])
+        if path=="/api/chat/history":
+            if (environ.get("REQUEST_METHOD") or "GET").upper()!="GET":
+                return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","GET"),("Cache-Control","no-store")])
+            if self.chat_history is None:
+                return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
+            try: messages=self.chat_history.list(decision.user_id or "")
+            except ChatHistoryError:
+                return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
+            body=json.dumps({"messages":messages},ensure_ascii=False,separators=(",", ":")).encode()
+            return self._response(start,"200 OK",body,[("Content-Type","application/json"),("Cache-Control","private, no-store")])
         if path=="/api/chat":
             if (environ.get("REQUEST_METHOD") or "GET") != "POST":
                 return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","POST"),("Cache-Control","no-store")])
@@ -304,6 +315,10 @@ class KnowledgeApp:
                 return self._response(start,"400 Bad Request",str(error).encode("utf-8"),[("Content-Type","text/plain; charset=utf-8"),("Cache-Control","no-store")])
             except ChatUnavailable:
                 return self._response(start,"502 Bad Gateway",b"Bad Gateway",[("Cache-Control","no-store")])
+            try:
+                if self.chat_history is not None: self.chat_history.append_exchange(decision.user_id or "",message.strip(),answer)
+            except ChatHistoryError:
+                return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
             body=json.dumps({"answer":answer},ensure_ascii=False).encode()
             return self._response(start,"200 OK",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
         relative="index.html" if path=="/" else path.lstrip("/")
@@ -339,11 +354,12 @@ def main():
         site = a.site_root; generation = {}
     else: raise SystemExit("--active and --releases are required")
     chat=HermesChatClient(os.environ['API_SERVER_KEY'],secret)
+    history=ChatHistoryStore(Path(os.environ.get("DEK_CHAT_HISTORY_DB","/var/lib/dek-web/chat-history/history.sqlite3")),secret)
     try: documents=store_from_environment(os.environ)
     except DocumentError as error: raise SystemExit(str(error)) from error
     uploaders=frozenset(value.strip() for value in os.environ.get("DEK_DOCUMENT_UPLOADER_IDS","").split(",") if value.strip())
     if documents is not None and not uploaders: raise SystemExit("Qiniu documents require DEK_DOCUMENT_UPLOADER_IDS")
-    app=KnowledgeApp(site,gateway,secret,generation_proof_secret=generation_proof_secret(os.environ),chat_client=chat,document_store=documents,document_uploaders=uploaders,internal_api_key=os.environ['API_SERVER_KEY'])
+    app=KnowledgeApp(site,gateway,secret,generation_proof_secret=generation_proof_secret(os.environ),chat_client=chat,chat_history=history,document_store=documents,document_uploaders=uploaders,internal_api_key=os.environ['API_SERVER_KEY'])
     with make_server(a.host,a.port,app,server_class=ThreadingWSGIServer) as server: server.serve_forever()
 
 if __name__=='__main__': main()

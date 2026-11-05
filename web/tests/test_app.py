@@ -9,6 +9,7 @@ from urllib.parse import quote, unquote, urlencode
 
 from web.app import KnowledgeApp, make_dingtalk_client
 from web.auth import sign_claim
+from web.chat import ChatHistoryStore
 from web.dingtalk_gateway import LoginError, LoginResult
 
 
@@ -64,7 +65,8 @@ class AppTests(unittest.TestCase):
         (root/"wiki/中文页面.html").write_text("中文OK",encoding="utf-8")
         self.secret=b"0123456789abcdef0123456789abcdef"
         self.token=sign_claim({"user_id":"u1","display_name":"张三","kbot_allowed":True,"exp":2000000000},self.secret)
-        self.app=KnowledgeApp(root,FakeGateway(),self.secret,clock=lambda:1900000000)
+        self.history=ChatHistoryStore(root/"chat-history"/"history.sqlite3",self.secret,clock=lambda:1900000000)
+        self.app=KnowledgeApp(root,FakeGateway(),self.secret,clock=lambda:1900000000,chat_history=self.history)
     def tearDown(self): self.tmp.cleanup()
     def call(self,path,query="",cookie="",method="GET",body=b"",content_type="application/x-www-form-urlencoded",origin="",extra=None):
         status=[];headers=[]
@@ -241,6 +243,34 @@ class AppTests(unittest.TestCase):
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertEqual(json.loads(body), {"answer": "依据已审核知识库：测试回答"})
         self.assertEqual(chat.calls, [("u1", "生产场地变更需要什么资料？")])
+
+        status, headers, body = self.call("/api/chat/history", cookie="dek_session=" + self.token)
+        self.assertEqual(status, "200 OK")
+        self.assertEqual(headers["Cache-Control"], "private, no-store")
+        self.assertEqual(
+            [(item["role"], item["content"]) for item in json.loads(body)["messages"]],
+            [("user", "生产场地变更需要什么资料？"), ("assistant", "依据已审核知识库：测试回答")],
+        )
+
+    def test_chat_history_survives_a_new_app_instance_and_is_isolated_by_login(self):
+        self.history.append_exchange("u1", "跨电脑问题", "跨电脑回答")
+        recreated = KnowledgeApp(self.app.root, FakeGateway(), self.secret, clock=lambda: 1900000000,
+                                 chat_history=ChatHistoryStore(self.history.path, self.secret))
+        original = self.app; self.app = recreated
+        try:
+            status, _, body = self.call("/api/chat/history", cookie="dek_session=" + self.token)
+            self.assertEqual(status, "200 OK")
+            self.assertEqual(json.loads(body)["messages"][0]["content"], "跨电脑问题")
+            other = sign_claim({"user_id":"u2","display_name":"李四","kbot_allowed":True,"exp":2000000000},self.secret)
+            self.assertEqual(json.loads(self.call("/api/chat/history", cookie="dek_session=" + other)[2])["messages"], [])
+        finally:
+            self.app = original
+
+    def test_chat_history_requires_login_and_get(self):
+        self.assertEqual(self.call("/api/chat/history")[0], "302 Found")
+        status, headers, _ = self.call("/api/chat/history", cookie="dek_session=" + self.token, method="POST")
+        self.assertEqual(status, "405 Method Not Allowed")
+        self.assertEqual(headers["Allow"], "GET")
 
     def test_chat_requires_login_same_origin_json_and_bounded_message(self):
         self.app.chat_client = FakeChat()

@@ -35,6 +35,7 @@ AmbientCapabilities=
 SystemCallArchitectures=native
 ReadOnlyPaths=/opt/dek-web/app /var/lib/dek-activate/control/active.json /var/lib/dek-activate/releases /var/lib/dek-web/secrets
 ReadWritePaths=/var/lib/dek-web/user-documents
+ReadWritePaths=/var/lib/dek-web/chat-history
 InaccessiblePaths=/srv/projects/dek /var/lib/dek-source-ingest /var/lib/dek-review /var/lib/dek-qa/hermes /var/lib/dek-qa/index /root
 
 [Install]
