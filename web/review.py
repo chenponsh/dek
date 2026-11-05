@@ -872,7 +872,7 @@ STYLE = """<style>
 .status-tab:hover{background:var(--hover);color:var(--text)}
 .status-tab.active{background:var(--accent);color:var(--on-accent)}
 .filter-count{position:absolute;top:-.3rem;right:-.3rem;display:inline-block;min-width:1.3em;padding:0 .3rem;border-radius:999px;background:var(--bg);color:var(--text);font-size:.68em;line-height:1.4;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.18)}
-.review-global-search{display:flex;align-items:center;gap:.45rem;width:min(430px,38vw);margin:0 1rem 0 auto}
+.review-global-search{display:flex;align-items:center;gap:.45rem;max-width:680px;flex:1;margin:auto}
 .review-global-search input[type=search]{min-width:0;height:36px;margin:0;padding:.4rem .7rem;background:var(--panel)}
 .review-global-search button[type=submit]{height:36px;margin:0;padding:.4rem .85rem;white-space:nowrap}
 .review-global-search .clear-search{flex:0 0 auto;color:var(--muted);font-size:.85rem;text-decoration:none}

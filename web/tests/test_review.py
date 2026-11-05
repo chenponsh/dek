@@ -480,6 +480,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('class="review-global-search"', page)
         self.assertIn('id="review-search"', page)
         self.assertIn('>搜索</button>', page)
+        self.assertIn('.review-global-search{display:flex;align-items:center;gap:.45rem;max-width:680px;flex:1;margin:auto}', page)
         self.assertIn('<td class="status status-pending"><span class="status-dot" aria-hidden="true"></span>待审核</td>', page)
         # Chrome (fonts, colors, sidebar) is the literal knowledge-base stylesheet,
         # referenced via var(...) rather than a second hardcoded palette.
