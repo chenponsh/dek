@@ -9,7 +9,7 @@ User=dek-web
 Group=dek-web
 SupplementaryGroups=dek-release-read
 WorkingDirectory=/var/lib/dek-web
-Environment=PYTHONPATH=/opt/dek-web/app
+Environment=PYTHONPATH=/opt/dek-web/app:/opt/dek-web/vendor
 EnvironmentFile=/var/lib/dek-web/secrets/environment
 LoadCredential=web-generation-proof:/var/lib/dek-web/secrets/generation-proof-secret
 Environment=DEK_WEB_GENERATION_PROOF_SECRET_FILE=%d/web-generation-proof
@@ -34,6 +34,7 @@ CapabilityBoundingSet=
 AmbientCapabilities=
 SystemCallArchitectures=native
 ReadOnlyPaths=/opt/dek-web/app /var/lib/dek-activate/control/active.json /var/lib/dek-activate/releases /var/lib/dek-web/secrets
+ReadWritePaths=/var/lib/dek-web/user-documents
 InaccessiblePaths=/srv/projects/dek /var/lib/dek-source-ingest /var/lib/dek-review /var/lib/dek-qa/hermes /var/lib/dek-qa/index /root
 
 [Install]
