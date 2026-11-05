@@ -148,7 +148,7 @@ server {
         proxy_hide_header Server;
     }
 
-    location ~ ^/api/documents/[A-Za-z0-9_-]{20,40}/download$ {
+    location ~ "^/api/documents/[A-Za-z0-9_-]{20,40}/download$" {
         limit_except GET { deny all; }
         proxy_pass http://127.0.0.1:9120;
         proxy_http_version 1.1;
@@ -162,7 +162,7 @@ server {
         proxy_hide_header Server;
     }
 
-    location ~ ^/api/documents/[A-Za-z0-9_-]{20,40}$ {
+    location ~ "^/api/documents/[A-Za-z0-9_-]{20,40}$" {
         limit_except DELETE { deny all; }
         client_max_body_size 1k;
         proxy_pass http://127.0.0.1:9120;
