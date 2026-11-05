@@ -30,9 +30,15 @@ class FuzzySearchTests(unittest.TestCase):
 
     def test_shared_resources_reuse_the_global_search_box(self):
         script = (Path(__file__).parents[1] / "assets" / "app.js").read_text(encoding="utf-8")
+        style = (Path(__file__).parents[1] / "assets" / "style.css").read_text(encoding="utf-8")
         self.assertIn('input.placeholder = "搜索共享资源…"', script)
         self.assertIn('input.addEventListener("input", runResourceSearch)', script)
         self.assertNotIn('querySelector("#shared-resource-query")', script)
+        self.assertIn(".shared-resource-intro{width:100%", style)
+        self.assertIn(".shared-resource-app{width:100%", style)
+        self.assertNotIn(".shared-resource-intro{max-width", style)
+        self.assertNotIn(".shared-resource-app{max-width", style)
+        self.assertIn(".shared-resource-toolbar>button,.shared-resource-actions a,.shared-resource-actions button{display:inline-block;padding:4px 9px;border:1px solid var(--line);border-radius:6px", style)
 
     def test_highlight_of_text_without_a_hit_is_just_the_escaped_text(self):
         self.assertEqual(self.run_javascript("s.highlight('a & b', 'zzz')"), "a &amp; b")
