@@ -90,6 +90,10 @@ class ResizerWiringTests(unittest.TestCase):
         self.assertIn("renderAssistantContent(waiting, data.answer", self.script)
         self.assertNotIn("waiting.innerHTML", self.script)
 
+    def test_chat_source_url_stops_before_chinese_source_parenthesis(self):
+        self.assertIn(r"https?:\/\/[^\s（）()。，；]+", self.script)
+        self.assertNotIn(r"https?:\/\/[^\s）)。，；]+", self.script)
+
     def test_chat_launcher_hides_while_the_copilot_panel_is_open(self):
         self.assertIn("chatLauncher.hidden = open;", self.script)
         self.assertIn(".chat-launcher[hidden]{display:none}", self.style)

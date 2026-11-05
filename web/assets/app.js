@@ -354,7 +354,7 @@
     finally { chatUpload.disabled = false; chatFile.value = ""; }
   });
   const appendChatInline = (parent, text) => {
-    const pattern = /(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s）)。，；]+)/g;
+    const pattern = /(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s（）()。，；]+)/g;
     let offset = 0;
     for (const match of text.matchAll(pattern)) {
       if (match.index > offset) parent.append(document.createTextNode(text.slice(offset, match.index)));
@@ -381,7 +381,7 @@
     String(text || "").replace(/\r\n/g, "\n").split("\n").forEach(line => {
       const trimmed = line.trim();
       if (!trimmed) return;
-      const source = /^来源[：:]\s*(https?:\/\/[^\s）)。，；]+)(.*)$/.exec(trimmed);
+      const source = /^来源[：:]\s*(https?:\/\/[^\s（）()。，；]+)(.*)$/.exec(trimmed);
       if (source) {
         const item = document.createElement("div");
         item.className = "chat-source";
