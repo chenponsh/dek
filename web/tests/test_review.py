@@ -411,7 +411,9 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("待审核", page)
         self.assertIn("已拒绝", page)
         self.assertIn("/item/", page)
-        self.assertNotIn("name=\"q\"", page)
+        self.assertIn('id="review-search"', page)
+        self.assertIn('name="q"', page)
+        self.assertIn('placeholder="搜索审核内容"', page)
         self.assertIn("ingestion/rough/other.md", page)
 
         filtered = self.service.render_list("opaque-session", query="other").decode("utf-8")
@@ -432,6 +434,17 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('>已发布<sup class="filter-count">0</sup></a>', page)
         self.assertIn('>已拒绝<sup class="filter-count">0</sup></a>', page)
         self.assertNotIn('已退回', page)
+
+    def test_search_form_and_status_tabs_preserve_active_filters(self):
+        page = self.service.render_list(
+            "opaque-session", query="场地变更", status="pending", page_size=30
+        ).decode("utf-8")
+        self.assertIn('value="场地变更"', page)
+        self.assertIn('type="hidden" name="status" value="pending"', page)
+        self.assertIn('type="hidden" name="page_size" value="30"', page)
+        tabs = page.split('<nav class="status-tabs"', 1)[1].split("</nav>", 1)[0]
+        self.assertIn('status=published&amp;q=%E5%9C%BA%E5%9C%B0%E5%8F%98%E6%9B%B4&amp;page_size=30', tabs)
+        self.assertIn('class="clear-search"', page)
         self.assertNotIn('status=returned', page)
 
     def test_review_pages_show_the_signed_in_name_and_a_sign_out_link_like_the_knowledge_base(self):
@@ -440,6 +453,8 @@ class ReviewWorkflowTests(unittest.TestCase):
         item_page = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         for page in (list_page, item_page):
             self.assertIn('<div class="user-menu review-header-menu" data-auth-me="/auth/me"><span id="user-name">正在读取…</span><a href="/auth/logout">退出</a></div></header>', page)
+            self.assertIn('class="review-global-search"', page)
+            self.assertIn('id="review-search"', page)
             self.assertIn('<script src="/assets/app.js" defer></script>', page)      # the script that fills in the name
 
     def test_list_reuses_the_knowledge_base_chrome_with_a_resizable_sidebar(self):
@@ -452,7 +467,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         # The sidebar's 首页 entry already leads back to the knowledge base.
         self.assertNotIn("kb-return-link", page)
         self.assertNotIn("返回知识库", page)
-        self.assertIn('<strong role="heading" aria-level="1">知识审核</strong><div class="user-menu review-header-menu"', page)
+        self.assertIn('<strong role="heading" aria-level="1">知识审核</strong><form class="review-global-search"', page)
         self.assertNotIn('<form class="logout-form"', page)
         self.assertNotIn('>退出审核<', page)
         self.assertIn('<aside class="sidebar">', page)
@@ -462,8 +477,9 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn('<script src="/assets/app.js" defer></script>', page)
         self.assertIn('class="status-tab active" aria-current="page" href="/?status=pending"', page)
         self.assertNotIn('class="search-box"', page)
-        self.assertNotIn('id="review-search"', page)
-        self.assertNotIn('>搜索</button>', page)
+        self.assertIn('class="review-global-search"', page)
+        self.assertIn('id="review-search"', page)
+        self.assertIn('>搜索</button>', page)
         self.assertIn('<td class="status status-pending"><span class="status-dot" aria-hidden="true"></span>待审核</td>', page)
         # Chrome (fonts, colors, sidebar) is the literal knowledge-base stylesheet,
         # referenced via var(...) rather than a second hardcoded palette.
@@ -619,7 +635,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn(".home-page{max-width:1440px;margin-right:0}", style)
         self.assertIn("padding:88px 64px 100px", style)
         # narrow screens keep their compact padding
-        self.assertIn(".review-shell.review-list{padding:82px 20px 70px}}", page)
+        self.assertIn(".review-shell.review-list{padding:132px 20px 70px}", page)
         item = next(item for item in self.service.list_items() if item.path == "ingestion/rough/pending.md")
         detail = self.service.render_item("opaque-session", item.identity).decode("utf-8")
         self.assertIn('<main class="review-shell review-list">', detail)    # the same wide column as the list

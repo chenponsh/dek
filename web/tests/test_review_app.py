@@ -211,7 +211,8 @@ class ReviewAppTests(unittest.TestCase):
         page = body.decode("utf-8")
         self.assertIn("<th>内容</th>", page)
         self.assertIn("待审核", page)
-        self.assertNotIn("name=\"q\"", page)
+        self.assertIn('class="review-global-search"', page)
+        self.assertIn('name="q"', page)
         identity = re.search(r'/review/item/([0-9a-f]{16})', page).group(1)
 
         # Nginx owns the public /review/ prefix and strips it before proxying to

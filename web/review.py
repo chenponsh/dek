@@ -872,6 +872,11 @@ STYLE = """<style>
 .status-tab:hover{background:var(--hover);color:var(--text)}
 .status-tab.active{background:var(--accent);color:var(--on-accent)}
 .filter-count{position:absolute;top:-.3rem;right:-.3rem;display:inline-block;min-width:1.3em;padding:0 .3rem;border-radius:999px;background:var(--bg);color:var(--text);font-size:.68em;line-height:1.4;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.review-global-search{display:flex;align-items:center;gap:.45rem;width:min(430px,38vw);margin:0 1rem 0 auto}
+.review-global-search input[type=search]{min-width:0;height:36px;margin:0;padding:.4rem .7rem;background:var(--panel)}
+.review-global-search button[type=submit]{height:36px;margin:0;padding:.4rem .85rem;white-space:nowrap}
+.review-global-search .clear-search{flex:0 0 auto;color:var(--muted);font-size:.85rem;text-decoration:none}
+.review-global-search .clear-search:hover{color:var(--text)}
 .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
 .table-wrap table{display:table;width:100%;min-width:600px}   /* a narrow screen scrolls the table sideways instead of crushing its columns */
 .col-index{width:60px}
@@ -921,7 +926,7 @@ button[type=submit]:hover{filter:brightness(.94)}
 .combo-path{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
 /* The list is as wide as the knowledge base's home page: from the sidebar to the right edge, up to 1440px, 64px in from each side */
 .review-shell.review-list{max-width:1440px;margin:0;padding-left:64px;padding-right:64px}
-@media(max-width:760px){.content{margin-left:0}.review-shell{padding:82px 20px 70px}.review-shell.review-list{padding:82px 20px 70px}}
+@media(max-width:760px){.content{margin-left:0}.review-shell{padding:132px 20px 70px}.review-shell.review-list{padding:132px 20px 70px}.review-global-search{position:absolute;left:16px;right:16px;top:58px;width:auto;margin:0}.review-global-search input[type=search]{height:38px}}
 </style>"""
 
 
@@ -1323,11 +1328,20 @@ class ReviewService:
     def _page(self, title: str, body: str) -> bytes:
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html.escape(title)} · DEK</title><link rel="stylesheet" href="/assets/style.css">{STYLE}</head><body>{body}<script src="/assets/app.js" defer></script></body></html>""".encode()
 
-    def _header(self) -> str:
+    def _header(self, query: str = "", status: str = "", size: int = PAGE_SIZE) -> str:
+        hidden = "".join(
+            f'<input type="hidden" name="{name}" value="{html.escape(value)}">'
+            for name, value in (("status", status), ("page_size", str(size) if size != PAGE_SIZE else "")) if value
+        )
+        clear_query = list_state_query(status, 1, size=size)
+        clear = f'<a class="clear-search" href="{self.path_prefix}/{html.escape(clear_query)}">清除</a>' if query else ""
         return (
             '<header><button id="menu-toggle" aria-label="打开目录">☰</button>'
             '<img class="brand-logo" src="/assets/logo.png" alt="臣邦医药" width="150" height="28">'
             '<strong role="heading" aria-level="1">知识审核</strong>'
+            f'<form class="review-global-search" method="get" action="{self.path_prefix}/" role="search">{hidden}'
+            f'<input id="review-search" type="search" name="q" value="{html.escape(query)}" placeholder="搜索审核内容" aria-label="搜索标题、问题、来源、正文或审核人">'
+            f'<button type="submit">搜索</button>{clear}</form>'
             '<div class="user-menu review-header-menu" data-auth-me="/auth/me"><span id="user-name">正在读取…</span>'
             '<a href="/auth/logout">退出</a></div>'
             '</header>'
@@ -1559,15 +1573,21 @@ class ReviewService:
         page = min(max(1, int(page)), pages)
         first = (page - 1) * size
         shown = items[first:first + size]
-        tab_size = html.escape(f"&page_size={size}") if size != PAGE_SIZE else ""
         filter_parts = []
         for key, label in (("", "全部"), ("pending", "待审核"), ("approved", "待发布"), ("published", "已发布"), ("rejected", "已拒绝")):
             count = len(all_items) if not key else status_counts[key]
             badge = f'<sup class="filter-count">{count}</sup>'
+            if key:
+                tab_query = list_state_query(key, 1, query, size)
+            else:
+                tab_params = [("status", "")]
+                if query: tab_params.append(("q", query))
+                if size != PAGE_SIZE: tab_params.append(("page_size", str(size)))
+                tab_query = "?" + urlencode(tab_params)
             filter_parts.append(
                 f'<a class="status-tab{" active" if key == status else ""}"'
                 + (' aria-current="page"' if key == status else '')
-                + f' href="{self.path_prefix}/?status={key}{tab_size}">{html.escape(label)}{badge}</a>'
+                + f' href="{self.path_prefix}/{html.escape(tab_query)}">{html.escape(label)}{badge}</a>'
             )
         filters = "".join(filter_parts)
         position = html.escape(list_state_query(status, page, size=size))
@@ -1623,7 +1643,7 @@ class ReviewService:
                 + '</form>'
             )
         body = (
-            self._header() + self._sidebar()
+            self._header(query, status, size) + self._sidebar()
             + '<div class="content">'
             + f'<main class="review-shell review-list"{" data-ingest-progress=true" if pulling else ""}{" data-publish-progress=true" if publishing else ""}>'
             + f'<div class="summary-row"><div class="summary">共 {len(items)} 条</div><div class="summary-actions">{ingest_button}{publish_button}</div></div>'
