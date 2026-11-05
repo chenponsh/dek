@@ -28,6 +28,12 @@ class FuzzySearchTests(unittest.TestCase):
         html = self.run_javascript("s.highlight('溶出曲线 <b>f2</b> 相似性因子', '溶出 F2')")
         self.assertEqual(html, "<mark>溶出</mark>曲线 &lt;b&gt;<mark>f2</mark>&lt;/b&gt; 相似性因子")
 
+    def test_shared_resources_reuse_the_global_search_box(self):
+        script = (Path(__file__).parents[1] / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('input.placeholder = "搜索共享资源…"', script)
+        self.assertIn('input.addEventListener("input", runResourceSearch)', script)
+        self.assertNotIn('querySelector("#shared-resource-query")', script)
+
     def test_highlight_of_text_without_a_hit_is_just_the_escaped_text(self):
         self.assertEqual(self.run_javascript("s.highlight('a & b', 'zzz')"), "a &amp; b")
 

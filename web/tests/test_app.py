@@ -245,6 +245,7 @@ class AppTests(unittest.TestCase):
         self.assertIn('"path":"shared-resources"', markup)
         self.assertIn('id="shared-resource-app"', markup)
         self.assertIn("自动参与 Kbot AI 问答", markup)
+        self.assertNotIn('id="shared-resource-query"', markup)
         self.assertIn('/assets/page.js', markup)
         status, headers, _ = self.call("/shared-resources", cookie=cookie, method="POST")
         self.assertEqual(status, "405 Method Not Allowed")

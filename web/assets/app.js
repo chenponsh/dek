@@ -355,7 +355,7 @@
   });
 
   const resourceApp = document.querySelector("#shared-resource-app");
-  const resourceQuery = document.querySelector("#shared-resource-query");
+  const resourceToolbar = document.querySelector("#shared-resource-toolbar");
   const resourceUpload = document.querySelector("#shared-resource-upload");
   const resourceFile = document.querySelector("#shared-resource-file");
   const resourceStatus = document.querySelector("#shared-resource-status");
@@ -372,7 +372,7 @@
   };
   const renderSharedResources = () => {
     if (!resourceApp || !resourceList || !resourceStatus) return;
-    const query = (resourceQuery?.value || "").trim().toLocaleLowerCase();
+    const query = (document.querySelector("#global-search")?.value || "").trim().toLocaleLowerCase();
     const visible = sharedResources.filter(item => !query || String(item.name || "").toLocaleLowerCase().includes(query));
     resourceList.replaceChildren();
     if (!visible.length) {
@@ -422,11 +422,10 @@
       const data = await response.json();
       sharedResources = Array.isArray(data.documents) ? data.documents : [];
       canUploadResources = Boolean(data.can_upload);
-      if (resourceUpload) resourceUpload.hidden = !canUploadResources;
+      if (resourceToolbar) resourceToolbar.hidden = !canUploadResources;
       renderSharedResources();
     } catch (error) { resourceStatus.textContent = error.message || "共享资源暂时无法加载。"; }
   };
-  resourceQuery?.addEventListener("input", renderSharedResources);
   resourceUpload?.addEventListener("click", () => resourceFile?.click());
   resourceFile?.addEventListener("change", async () => {
     const file = resourceFile.files?.[0]; if (!file) return;
@@ -599,6 +598,23 @@
   let docs = [];
   let indexReady = false;
   if (input) {
+    if (resourceApp) {
+      input.placeholder = "搜索共享资源…";
+      searchButton.disabled = false;
+      searchButton.textContent = "搜索";
+      searchStatus.textContent = "";
+      results.classList.remove("open");
+      const runResourceSearch = () => {
+        results.classList.remove("open");
+        results.innerHTML = "";
+        renderSharedResources();
+      };
+      input.addEventListener("input", runResourceSearch);
+      searchButton?.addEventListener("click", runResourceSearch);
+      input.addEventListener("keydown", event => {
+        if (event.key === "Enter") { event.preventDefault(); runResourceSearch(); }
+      });
+    } else {
     const indexUrl = new URL(input.dataset.index, location.href);
     const loadIndex = () => {
       indexReady = false;
@@ -651,6 +667,7 @@
         runSearch();
       }
     });
+    }
   }
 
   const nav = document.querySelector("#nav-tree");
