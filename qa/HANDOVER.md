@@ -154,6 +154,7 @@
   - `mcp__dek_kb__dek_kb_search`
   - `mcp__dek_kb__dek_kb_get`
   - `mcp__dek_kb__dek_kb_recent`
+  - `mcp__dek_kb__dek_shared_search`
 - `platform_toolsets.dingtalk` 仍为空，所有内置工具继续禁用；MCP server 通过独立的全局 MCP 配置注入，没有开放其他工具。
 
 ### 指令与安全语义
@@ -254,7 +255,7 @@
 ## 2026-09-09 钉钉可见范围作为人员权限源
 
 - 用户已明确授权取消 Hermes 逐人名单，人员权限改由钉钉应用可见范围唯一管理。生产 profile 使用 `allowed_users: ["*"]`，EnvironmentFile 使用 `DINGTALK_ALLOWED_USERS=*` 与 `DINGTALK_ALLOW_ALL_USERS=true`。
-- 正式 QA EnvironmentFile 已改为 fail-closed 字段 allowlist；`XAI_API_KEY`、其他 provider key、工具控制、Hermes 运行位置、未知字段及非 DingTalk 平台字段均在 credential gate 阶段拒绝且不输出值。A6 必须通过 systemd 的 `EnvironmentFile=` 加载正式文件并执行真实 Hermes parser、DingTalk adapter、MCP discovery 与最终模型工具组装，最终工具只能是三个 dek MCP 工具。
+- 正式 QA EnvironmentFile 已改为 fail-closed 字段 allowlist；`XAI_API_KEY`、其他 provider key、工具控制、Hermes 运行位置、未知字段及非 DingTalk 平台字段均在 credential gate 阶段拒绝且不输出值。A6 必须通过 systemd 的 `EnvironmentFile=` 加载正式文件并执行真实 Hermes parser、DingTalk adapter、MCP discovery 与最终模型工具组装，最终工具只能是四个只读 dek MCP 工具。
 - 群边界没有扩大：原 2 个允许群保持不变，群消息仍必须 `@机器人`；每位群成员仍使用独立会话。钉钉平台内置工具集为空，DEK MCP 仍只有 search/get/recent。
 - 切换备份为 `/var/lib/dek-qa/backups/dingtalk-visibility-20260909_164020`。真实解析器检查、52/52 回归、systemd unit 校验和重启后 TLS 连接均通过。
 - 用户已使用未曾列入旧 Hermes 名单、但处于钉钉应用可见范围的账号完成私聊测试，并确认机器人正常响应。钉钉可见范围与本地通配配置的完整链路已人工在线验收通过；后续人员增删只在钉钉应用可见范围中维护，不再添加 Hermes 用户名单。

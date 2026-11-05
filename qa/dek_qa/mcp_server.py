@@ -11,6 +11,8 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -39,6 +41,16 @@ TOOLS = [
         },
     },
     {
+        "name": "dek_shared_search",
+        "description": "Search automatically enabled team shared documents. Use for professional questions unless DEK_SHARED_DOCUMENT_CONTEXT is already present.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "dek_kb_recent",
         "description": (
             "List recent reviewed information: recent_publications is based on source "
@@ -59,6 +71,32 @@ TOOLS = [
         },
     },
 ]
+
+
+class SharedDocumentClient:
+    def __init__(self, api_key: str, url: str = "http://127.0.0.1:9120/internal/shared-context"):
+        if not api_key: raise ValueError("shared document API key is missing")
+        self.api_key=api_key
+        self.url=url
+
+    def search(self, query: str) -> dict[str, Any]:
+        payload=json.dumps({"query":query},ensure_ascii=False,separators=(",",":")).encode()
+        request=urllib.request.Request(self.url,data=payload,method="POST",headers={
+            "Authorization":"Bearer "+self.api_key,
+            "Content-Type":"application/json",
+        })
+        try:
+            opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(request,timeout=10) as response:
+                raw=response.read(2*1024*1024+1)
+        except (OSError,urllib.error.URLError,urllib.error.HTTPError) as exc:
+            raise RuntimeError("shared document search unavailable") from exc
+        if len(raw)>2*1024*1024: raise RuntimeError("shared document response too large")
+        try: value=json.loads(raw)
+        except (json.JSONDecodeError,UnicodeDecodeError) as exc: raise RuntimeError("invalid shared document response") from exc
+        context=value.get("context") if isinstance(value,dict) else None
+        if not isinstance(context,str): raise RuntimeError("invalid shared document response")
+        return {"context":context,"matched":bool(context.strip())}
 
 
 def _read_opened_index(index_path: Path, maximum: int = 128 * 1024 * 1024) -> tuple[Path, bytes]:
@@ -189,6 +227,11 @@ def _tool_error(request_id: object, tool_name: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
+def _shared_unavailable(request_id: object) -> dict[str, Any]:
+    result={"content":[{"type":"text","text":"Shared document search unavailable"}],"isError":True}
+    return {"jsonrpc":"2.0","id":request_id,"result":result}
+
+
 def _validated_tool_call(params: object) -> tuple[str, dict[str, Any]]:
     if (
         not isinstance(params, dict)
@@ -210,6 +253,12 @@ def _validated_tool_call(params: object) -> tuple[str, dict[str, Any]]:
             raise ValueError("invalid search query")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 10:
             raise ValueError("invalid search limit")
+    elif name == "dek_shared_search":
+        if set(arguments)!={"query"}:
+            raise ValueError("invalid shared search arguments")
+        query=arguments["query"]
+        if not isinstance(query,str) or not query.strip() or len(query)>2000:
+            raise ValueError("invalid shared search query")
     elif name == "dek_kb_get":
         if set(arguments) != {"document_id"}:
             raise ValueError("invalid get arguments")
@@ -245,7 +294,7 @@ def _validated_tool_call(params: object) -> tuple[str, dict[str, Any]]:
     return name, arguments
 
 
-def _reply(request: object, kb: KnowledgeBase) -> dict[str, Any] | None:
+def _reply(request: object, kb: KnowledgeBase, shared: SharedDocumentClient | None = None) -> dict[str, Any] | None:
     if not isinstance(request, dict):
         return _error(None, -32600, "invalid request")
     request_id = request.get("id")
@@ -286,7 +335,7 @@ def _reply(request: object, kb: KnowledgeBase) -> dict[str, Any] | None:
             or (params.get("_meta") is not None and not isinstance(params.get("_meta"), dict))
         ):
             return _error(request_id, -32602, "invalid tool parameters")
-        if params["name"] not in {"dek_kb_search", "dek_kb_get", "dek_kb_recent"}:
+        if params["name"] not in {"dek_kb_search", "dek_kb_get", "dek_kb_recent", "dek_shared_search"}:
             return _error(request_id, -32601, "tool not found")
         try:
             name, arguments = _validated_tool_call(params)
@@ -294,6 +343,11 @@ def _reply(request: object, kb: KnowledgeBase) -> dict[str, Any] | None:
             return _tool_error(request_id, params["name"])
         if name == "dek_kb_search":
             value = kb.dek_kb_search(arguments.get("query", ""), arguments.get("limit", 5))
+        elif name == "dek_shared_search":
+            if shared is None:
+                return _shared_unavailable(request_id)
+            try: value=shared.search(arguments["query"])
+            except RuntimeError: return _shared_unavailable(request_id)
         elif name == "dek_kb_get":
             value = kb.dek_kb_get(arguments.get("document_id", ""))
         elif name == "dek_kb_recent":
@@ -323,6 +377,7 @@ def main() -> int:
     if live is None:
         if args.index is None: raise SystemExit("--active/--releases or --index is required")
         kb, _loaded = load_knowledge_base(args.index, args.generation_proof, boot_nonce=boot_nonce, release_sha256=generation.get("release_sha256", "") if args.boot_generation else "")
+    shared=SharedDocumentClient(os.environ["API_SERVER_KEY"]) if os.environ.get("API_SERVER_KEY") else None
     stop=threading.Event(); watcher=None
     if live is not None:
         watcher=threading.Thread(target=live.watch,args=(stop,),name="dek-index-watch",daemon=True); watcher.start()
@@ -330,7 +385,7 @@ def main() -> int:
         for line in sys.stdin:
             try:
                 if live is not None: live.refresh()
-                response = _reply(json.loads(line), live.current() if live is not None else kb)
+                response = _reply(json.loads(line), live.current() if live is not None else kb, shared)
             except json.JSONDecodeError:
                 response = _error(None, -32700, "parse error")
             except (ValueError, TypeError):

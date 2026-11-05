@@ -262,6 +262,24 @@ class AppTests(unittest.TestCase):
         self.assertIn("<DEK_SHARED_DOCUMENT_CONTEXT>",chat.calls[0][1])
         self.assertIn("共享资料：资料.txt",chat.calls[0][1])
 
+    def test_internal_shared_context_is_loopback_bearer_authenticated(self):
+        self.app.document_store=FakeDocuments(); self.app.internal_api_key="internal-secret"
+        payload=json.dumps({"query":"场地变更"},ensure_ascii=False).encode()
+        common={"method":"POST","body":payload,"content_type":"application/json"}
+        self.assertEqual(self.call("/internal/shared-context",extra={"REMOTE_ADDR":"203.0.113.8","HTTP_AUTHORIZATION":"Bearer internal-secret"},**common)[0],"404 Not Found")
+        self.assertEqual(self.call("/internal/shared-context",extra={"REMOTE_ADDR":"127.0.0.1","HTTP_AUTHORIZATION":"Bearer wrong"},**common)[0],"404 Not Found")
+        status,headers,body=self.call("/internal/shared-context",extra={"REMOTE_ADDR":"127.0.0.1","HTTP_AUTHORIZATION":"Bearer internal-secret"},**common)
+        self.assertEqual(status,"200 OK")
+        self.assertEqual(headers["Cache-Control"],"no-store")
+        self.assertIn("共享资料：资料.txt",json.loads(body)["context"])
+
+    def test_internal_shared_context_rejects_invalid_requests(self):
+        self.app.document_store=FakeDocuments(); self.app.internal_api_key="internal-secret"
+        auth={"REMOTE_ADDR":"::1","HTTP_AUTHORIZATION":"Bearer internal-secret"}
+        self.assertEqual(self.call("/internal/shared-context",extra=auth)[0],"405 Method Not Allowed")
+        payload=json.dumps({"query":"问题","extra":True},ensure_ascii=False).encode()
+        self.assertEqual(self.call("/internal/shared-context",method="POST",body=payload,content_type="application/json",extra=auth)[0],"400 Bad Request")
+
     def test_document_listing_reports_feature_state_without_leaking_other_users(self):
         cookie="dek_session="+self.token
         status,_,body=self.call("/api/documents",cookie=cookie)

@@ -443,11 +443,12 @@ python3 -I /run/dek-package-check/deploy/a6_cutover.py apply \
   --package-root /run/dek-package-check \
   --journal-dir /var/lib/dek-install-transactions
 test "$(readlink /opt/dek-source-ingest/current)" = "versions/$PACKAGE_SHA256"
-# The accepted result proves the only enabled adapter is `dingtalk` and exactly these three
+# The accepted result proves the only enabled adapter is `dingtalk` and exactly these four
 # model-visible tools (Hermes namespace included):
 # mcp__dek_kb__dek_kb_search
 # mcp__dek_kb__dek_kb_get
 # mcp__dek_kb__dek_kb_recent
+# mcp__dek_kb__dek_shared_search
 systemctl is-active --quiet dek-qa.service
 ```
 

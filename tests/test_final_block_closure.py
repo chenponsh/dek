@@ -524,7 +524,7 @@ class QaStagingContractTests(unittest.TestCase):
         self.assertEqual(migrated["unknown_non_tool"], old["unknown_non_tool"])
 
     @unittest.skipUnless(_hermes_gateway_available(), "Hermes is unavailable")
-    def test_real_hermes_parser_and_final_discovery_expose_exactly_three_tools(self):
+    def test_real_hermes_parser_and_final_discovery_expose_exactly_four_tools(self):
         import sys
         import yaml
         from deploy.qa_profile import validate_with_hermes

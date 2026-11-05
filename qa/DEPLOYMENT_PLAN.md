@@ -32,7 +32,7 @@
 2. 把仓库 `qa/` 同步到新的只读 staging app 目录；不把 `EVIDENCE.md` 中引用的运行数据或 `/tmp` 候选索引复制进 app。
 3. 核对 staging app 中 `index.py`、`mcp_server.py`、`SOUL.md` 和测试文件哈希。
 4. 运行 profile 含秘密，不用仓库模板覆盖；结构化迁移保留必要会话、秘密及未知非工具键。人员授权由钉钉应用可见范围负责：将 DingTalk 的 `allowed_users` 设为 `[*]`，并设置 `DINGTALK_ALLOWED_USERS=*`、`DINGTALK_ALLOW_ALL_USERS=true`。原有 `allowed_chats` 必须逐值保持不变，`require_mention=true`；这些 adapter 门控均位于 `platforms.dingtalk.extra`。同时强制 `platform_toolsets.dingtalk=[]`、`tools.tool_search.enabled=off`，移除额外 MCP/旧工具配置并只重建受控 `dek_kb`。
-   正式 QA EnvironmentFile 另以字段 allowlist fail-closed：仅接受部署所需 DingTalk 字段与已确认不扩展 Hermes 工具面的 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`，拒绝未知、provider key、工具控制和其他平台字段，错误不得包含字段值。A6 由 systemd 加载与生产 unit 相同的正式 EnvironmentFile 后运行真实 Hermes parser/adapter/discovery/model tool assembly，确认仅 DingTalk adapter 启用且最终仅有三个 dek MCP 工具。
+   正式 QA EnvironmentFile 另以字段 allowlist fail-closed：仅接受部署所需 DingTalk 字段、内部 API 密钥与已确认不扩展 Hermes 工具面的 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`，拒绝未知、provider key、工具控制和其他平台字段，错误不得包含字段值。A6 由 systemd 加载与生产 unit 相同的正式 EnvironmentFile 后运行真实 Hermes parser/adapter/discovery/model tool assembly，确认仅 DingTalk adapter 启用且最终仅有四个只读 dek MCP 工具。
 5. 用实际 `load_gateway_config()`、`DingTalkAdapter`、MCP discovery 与最终模型工具组装解析迁移后的受保护配置，断言 adapter 门禁不变且最终只有 `dek_kb_search`、`dek_kb_get`、`dek_kb_recent`；失败则不继续部署。
 
 ### C. 索引候选
@@ -53,7 +53,7 @@
 ## 恢复服务验收
 
 1. 按用户明确授权启动并 enable。
-2. 验证模型只看到三个只读 MCP 工具，执行 search → get，未知来源不输出来源链接，第三方材料不被描述成监管机构原文。
+2. 验证模型只看到四个只读 MCP 工具，执行正式 search → get 与共享资料 search，未知来源不输出来源链接，第三方材料不被描述成监管机构原文。
 3. 验证无模型工具扩权、无白名单变化、无跨 profile 状态写入。
 4. 在线证据仍按 `EVIDENCE.md` 的缺失项逐项标记；没有入站证据时不得以“未回复”判通过。
 

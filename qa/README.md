@@ -7,7 +7,8 @@
 - 正式语料仅为 `wiki/**/*.md`。
 - `source/` 只在构建索引时解析显式 `source_url` 或兼容字段 `url`；正式笔记必须通过可唯一解析的 wikilink 指向该 source 文件，URL 才进入 `source_urls`。来源链接客观记录信息实际取自哪里，可以是监管机构网站、公众号、培训材料或第三方整理页；不得把第三方材料描述成监管机构原文。任意正文 URL 不会自动提升为来源链接；未唯一解析的来源标为 `unknown`。
 - wiki 或 source 的任一路径段只要含“排除”即跳过；`ingestion/`、`_/`、`_raw/`、`.git/`、浏览器 profile 和审计文件也不进入索引。
-- 运行时读取单个 `0600` 索引，不读取 vault。MCP 仅公开 `dek_kb_search`、`dek_kb_get` 与 `dek_kb_recent` 三个只读工具；`dek_kb_get` 只接受检索返回的不透明 ID。
+- 运行时读取单个 `0600` 正式索引，不读取 vault。MCP 仅公开 `dek_kb_search`、`dek_kb_get`、`dek_kb_recent` 与 `dek_shared_search` 四个只读工具；`dek_kb_get` 只接受检索返回的不透明 ID，`dek_shared_search` 只通过本机鉴权接口读取团队共享资料。
+- Hermes 看到的完整工具名为 `mcp__dek_kb__dek_kb_search`、`mcp__dek_kb__dek_kb_get`、`mcp__dek_kb__dek_kb_recent`、`mcp__dek_kb__dek_shared_search`。
 - 用户及群均采用非空白名单、默认拒绝。会话键为 `chat_type + chat_id + user_id`，不公开历史搜索工具。
 - 系统提示必须要求回答仅使用工具证据；只有 `source_status=verified` 时才可附 `source_urls`，并可按 `source_names`、`source_types` 客观说明来源名称和类型；否则来源链接明确视为未知。无证据时回答“未在已审核知识库中找到足够依据。”
 
@@ -42,13 +43,13 @@ PYTHONPATH=/srv/projects/dek python3 -m qa.dek_qa.dependency_lock \
 - 钉钉：`DINGTALK_CLIENT_ID`、`DINGTALK_CLIENT_SECRET`。
 - 人员权限只由钉钉应用可见范围管理：`DINGTALK_ALLOWED_USERS=*`、`DINGTALK_ALLOW_ALL_USERS=true`。Hermes 不维护逐人白名单。群聊仍使用非空 `DINGTALK_ALLOWED_CHATS` 限定允许群，并保持 `require_mention=true`。
 
-由管理员在服务器本地使用交互式秘密录入或受控 secrets manager 写入，不在聊天、Git、命令历史或 systemd unit 中填写值。上线前将独立 profile 的 `platform_toolsets.dingtalk` 设为空，只启用本 MCP 的三个工具；同时禁用 terminal、file、web、browser、skills、memory、session_search、cronjob、delegation 和 code execution。
+由管理员在服务器本地使用交互式秘密录入或受控 secrets manager 写入，不在聊天、Git、命令历史或 systemd unit 中填写值。上线前将独立 profile 的 `platform_toolsets.dingtalk` 设为空，只启用本 MCP 的四个只读工具；同时禁用 terminal、file、web、browser、skills、memory、session_search、cronjob、delegation 和 code execution。
 
 仓库提供的 `qa/config/config.yaml` 默认保持 DingTalk `enabled: false`，因此在录入凭据并完成上线复核前不会建立 Stream 连接。DingTalk adapter 从 `platforms.dingtalk.extra` 读取 `allowed_users`、`allowed_chats` 和 `require_mention`；运行配置将 `allowed_users` 设为 `[*]`，把逐人授权交给钉钉应用可见范围，同时写入非空群白名单并保持 `group_sessions_per_user: true`。不得仅把这些键放在 `platforms.dingtalk` 顶层，因为当前 Hermes 解析器不会把用户/群白名单自动桥接到 adapter。
 
 构建完成后将 `qa/` 的只读部署副本放在 `/opt/dek-qa/app`。systemd 运行时通过 `InaccessiblePaths=/srv/projects/dek` 完全禁止访问生产 vault；`/var/lib/dek-qa/index` 和 `/var/lib/dek-qa/secrets` 显式只读，仅 `/var/lib/dek-qa/hermes` 允许写入运行状态。unit 必须设置 `HERMES_DISABLE_LAZY_INSTALLS=1`，避免 Hermes 在启动或模型探针期间把可选后端依赖写入已锁定 venv。
 
-`requirements-dek-qa.txt` 显式固定 Stream SDK、MCP 客户端及代码直接导入的 `requests`、`websockets`；`requirements-dek-qa.lock.txt` 固定传递依赖并记录制品哈希。依赖只安装到独立 venv，不修改管理员 Hermes 环境。为使模型直接看到且只能看到三个知识库工具，独立 profile 还必须设置 `tools.tool_search.enabled: off`；否则渐进式工具发现可能把三个 MCP 工具替换为通用桥接工具。
+`requirements-dek-qa.txt` 显式固定 Stream SDK、MCP 客户端及代码直接导入的 `requests`、`websockets`；`requirements-dek-qa.lock.txt` 固定传递依赖并记录制品哈希。依赖只安装到独立 venv，不修改管理员 Hermes 环境。为使模型直接看到且只能看到四个只读知识工具，独立 profile 还必须设置 `tools.tool_search.enabled: off`；否则渐进式工具发现可能把这些 MCP 工具替换为通用桥接工具。
 
 生产 profile 迁移还必须显式关闭 `platforms.*`、顶层平台别名、`gateway.<platform>` 与 `gateway.platforms.*` 中除 DingTalk 外的所有 adapter，并清除这些别名内嵌的工具/MCP 路由键；Telegram、Discord 等秘密字段可以原样保留，但不得令平台启用。QA EnvironmentFile 使用 fail-closed 字段 allowlist：只允许部署所需的 `DINGTALK_CLIENT_ID`、`DINGTALK_CLIENT_SECRET`、`DINGTALK_AGENT_ID`、`DINGTALK_ALLOWED_USERS`、`DINGTALK_ALLOW_ALL_USERS` 以及只影响网络路由的 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`；任何未知字段、provider key、工具控制、Hermes 运行位置或其他平台字段均拒绝且不得输出值。A6 必须让 systemd 从正式 `EnvironmentFile=/var/lib/dek-qa/secrets/environment` 加载环境，再使用已安装 Hermes 的真实 `load_gateway_config()`、`DingTalkAdapter`、MCP discovery 与模型工具组装，证明只有 DingTalk adapter 启用，最终工具精确等于 `mcp__dek_kb__dek_kb_search`、`mcp__dek_kb__dek_kb_get` 和 `mcp__dek_kb__dek_kb_recent`。
 

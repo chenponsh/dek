@@ -16,7 +16,7 @@ from pathlib import Path
 
 from qa.dek_qa.access import INSUFFICIENT_EVIDENCE, Message, ReadOnlyQa
 from qa.dek_qa.index import KnowledgeBase, build_index
-from qa.dek_qa.mcp_server import TOOLS, ActiveIndex, _reply, _validated_tool_call, load_knowledge_base
+from qa.dek_qa.mcp_server import TOOLS, ActiveIndex, SharedDocumentClient, _reply, _validated_tool_call, load_knowledge_base
 from qa.dek_qa.stream_id_collector import (
     CandidateCollector,
     CollectorLimits,
@@ -559,13 +559,13 @@ class DekQaTests(unittest.TestCase):
         self.assertEqual(qa.session_messages(first), ("注册",))
         self.assertTrue(all(qa.session_messages(message) == (message.text,) for message in others))
 
-    def test_only_three_read_only_mcp_tools_are_exposed(self):
+    def test_only_four_read_only_mcp_tools_are_exposed(self):
         self.assertEqual(
             {tool["name"] for tool in TOOLS},
-            {"dek_kb_search", "dek_kb_get", "dek_kb_recent"},
+            {"dek_kb_search", "dek_kb_get", "dek_kb_recent", "dek_shared_search"},
         )
         response = _reply({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.kb)
-        self.assertEqual(len(response["result"]["tools"]), 3)
+        self.assertEqual(len(response["result"]["tools"]), 4)
         recent = next(tool for tool in TOOLS if tool["name"] == "dek_kb_recent")
         self.assertEqual(set(recent["inputSchema"]["properties"]), {"days", "limit", "since", "until"})
         self.assertFalse(recent["inputSchema"]["additionalProperties"])
@@ -600,8 +600,25 @@ class DekQaTests(unittest.TestCase):
         )
         self.assertEqual(
             [tool["name"] for tool in response["result"]["tools"]],
-            ["dek_kb_search", "dek_kb_get", "dek_kb_recent"],
+            ["dek_kb_search", "dek_kb_get", "dek_shared_search", "dek_kb_recent"],
         )
+
+    def test_shared_search_uses_read_only_internal_client(self):
+        class FakeShared:
+            def search(self,query):
+                self.query=query
+                return {"context":"共享资料：资料.txt\n场地变更","matched":True}
+        shared=FakeShared()
+        response=_reply({"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"dek_shared_search","arguments":{"query":"场地变更"}}},self.kb,shared)
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(shared.query,"场地变更")
+        self.assertTrue(json.loads(response["result"]["content"][0]["text"])["matched"])
+
+    def test_shared_search_fails_closed_without_client_or_with_invalid_query(self):
+        request={"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"dek_shared_search","arguments":{"query":"场地变更"}}}
+        self.assertTrue(_reply(request,self.kb)["result"]["isError"])
+        request["params"]["arguments"]={"query":""}
+        self.assertTrue(_reply(request,self.kb)["result"]["isError"])
 
     def test_mcp_call_accepts_standard_optional_meta(self):
         response = _reply(
@@ -763,7 +780,7 @@ class DekQaTests(unittest.TestCase):
             [-32700, -32600, -32602],
         )
         self.assertTrue(responses[3]["result"]["isError"])
-        self.assertEqual(len(responses[4]["result"]["tools"]), 3)
+        self.assertEqual(len(responses[4]["result"]["tools"]), 4)
 
     def test_unknown_mcp_tool_is_rejected(self):
         response = _reply({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "shell", "arguments": {}}}, self.kb)
@@ -803,7 +820,9 @@ class DekQaTests(unittest.TestCase):
         prompt = (Path(__file__).parents[1] / "config" / "SOUL.md").read_text(encoding="utf-8")
         self.assertIn("wiki/...", prompt)
         self.assertIn(INSUFFICIENT_EVIDENCE, prompt)
-        self.assertIn("其他知识问答必须先且最多调用一轮知识库搜索工具", prompt)
+        self.assertIn("其他知识问答必须先且最多调用一轮正式知识库搜索工具", prompt)
+        self.assertIn("同一轮还必须调用一次共享资料搜索工具", prompt)
+        self.assertIn("不得再调用共享资料搜索工具", prompt)
         self.assertIn("并行读取其中覆盖不同核心维度的 5–10 篇笔记", prompt)
         self.assertIn("搜索必须使用 `limit: 10`", prompt)
         self.assertIn("覆盖不同核心维度", prompt)
@@ -838,7 +857,7 @@ class DekQaTests(unittest.TestCase):
         self.assertIn("数量为 0 必须明确回答 0", prompt)
         self.assertIn("调用失败或结果不可解析属于查询失败，不得表述为 0", prompt)
         self.assertIn("即使用户明确要求内部追溯信息，也不显示内部路径", prompt)
-        self.assertIn("最多调用一轮知识库搜索工具", prompt)
+        self.assertIn("最多调用一轮正式知识库搜索工具", prompt)
 
 
 class ActiveIndexTests(unittest.TestCase):

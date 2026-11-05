@@ -461,20 +461,22 @@ class CredentialContentGateTests(unittest.TestCase):
 
 
 class QaA6EnvironmentAcceptanceContractTests(unittest.TestCase):
-    def test_qa_profile_acceptance_surface_is_exactly_three_read_only_tools(self):
+    def test_qa_profile_acceptance_surface_is_exactly_four_read_only_tools(self):
         from deploy.qa_profile import QA_READ_ONLY_TOOLS
 
         self.assertEqual(QA_READ_ONLY_TOOLS, frozenset({
             "mcp__dek_kb__dek_kb_search",
             "mcp__dek_kb__dek_kb_get",
             "mcp__dek_kb__dek_kb_recent",
+            "mcp__dek_kb__dek_shared_search",
         }))
 
-    def test_qa_operator_docs_list_the_exact_three_tool_acceptance_surface(self):
+    def test_qa_operator_docs_list_the_exact_four_tool_acceptance_surface(self):
         expected = {
             "mcp__dek_kb__dek_kb_search",
             "mcp__dek_kb__dek_kb_get",
             "mcp__dek_kb__dek_kb_recent",
+            "mcp__dek_kb__dek_shared_search",
         }
         for path in (Path("qa/README.md"), Path("qa/HANDOVER.md")):
             text = path.read_text(encoding="utf-8")
@@ -543,6 +545,7 @@ class QaA6EnvironmentAcceptanceContractTests(unittest.TestCase):
             "mcp__dek_kb__dek_kb_search",
             "mcp__dek_kb__dek_kb_get",
             "mcp__dek_kb__dek_kb_recent",
+            "mcp__dek_kb__dek_shared_search",
             "only enabled adapter is `dingtalk`",
         ):
             self.assertIn(required, a6)

@@ -112,7 +112,7 @@ FRONTEND_ASSETS=frozenset({"/assets/style.css","/assets/app.js","/assets/search.
 
 
 class KnowledgeApp:
-    def __init__(self, site_root: Path, gateway: DingTalkGateway, claim_secret: bytes, clock=time.time, generation_proof_secret: str = "", boot_nonce: str = "", release_sha256: str = "", chat_client=None, chat_limiter=None, document_store=None, document_uploaders=frozenset()):
+    def __init__(self, site_root: Path, gateway: DingTalkGateway, claim_secret: bytes, clock=time.time, generation_proof_secret: str = "", boot_nonce: str = "", release_sha256: str = "", chat_client=None, chat_limiter=None, document_store=None, document_uploaders=frozenset(), internal_api_key: str = ""):
         self.active_site = site_root if isinstance(site_root, ActiveSite) else None
         self.root = None if self.active_site else Path(site_root).resolve(strict=True)
         self.gateway=gateway; self.secret=claim_secret; self.clock=clock
@@ -123,6 +123,7 @@ class KnowledgeApp:
         self.chat_limiter = chat_limiter or ChatRateLimiter()
         self.document_store = document_store
         self.document_uploaders = frozenset(document_uploaders)
+        self.internal_api_key = internal_api_key
     def _same_origin(self,environ):
         expected = urlsplit(self.gateway.redirect_uri)
         return environ.get("HTTP_ORIGIN") == f"{expected.scheme}://{expected.netloc}"
@@ -139,6 +140,31 @@ class KnowledgeApp:
             if (environ.get("REQUEST_METHOD") or "GET")!="GET":
                 return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","GET")])
             body=json.dumps({"status":"ready","oauth_callback":self.gateway.redirect_uri},separators=(",",":")).encode()
+            return self._response(start,"200 OK",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
+        if path=="/internal/shared-context":
+            if (environ.get("REQUEST_METHOD") or "GET").upper()!="POST":
+                return self._response(start,"405 Method Not Allowed",b"Method Not Allowed",[("Allow","POST"),("Cache-Control","no-store")])
+            remote=environ.get("REMOTE_ADDR","")
+            authorization=environ.get("HTTP_AUTHORIZATION","")
+            expected="Bearer "+self.internal_api_key if self.internal_api_key else ""
+            if remote not in {"127.0.0.1","::1"} or not expected or not secrets.compare_digest(authorization,expected):
+                return self._response(start,"404 Not Found",b"Not found",[("Cache-Control","no-store")])
+            if environ.get("CONTENT_TYPE","").split(";",1)[0].strip().lower()!="application/json":
+                return self._response(start,"400 Bad Request",b"Bad Request",[("Cache-Control","no-store")])
+            try: length=int(environ.get("CONTENT_LENGTH") or "0")
+            except ValueError: length=-1
+            if length<1 or length>8192:
+                return self._response(start,"400 Bad Request",b"Bad Request",[("Cache-Control","no-store")])
+            try:
+                value=json.loads(environ["wsgi.input"].read(length))
+                query=value.get("query") if isinstance(value,dict) and set(value)=={"query"} else None
+            except (ValueError,UnicodeDecodeError): query=None
+            if not isinstance(query,str) or not query.strip() or len(query.strip())>2000:
+                return self._response(start,"400 Bad Request",b"Bad Request",[("Cache-Control","no-store")])
+            try: context=self.document_store.context(query.strip()) if self.document_store else ""
+            except DocumentError:
+                return self._response(start,"503 Service Unavailable",b"Unavailable",[("Cache-Control","no-store")])
+            body=json.dumps({"context":context},ensure_ascii=False,separators=(",",":")).encode()
             return self._response(start,"200 OK",body,[("Content-Type","application/json"),("Cache-Control","no-store")])
         try:
             pin = self.active_site.pin() if self.active_site else None
@@ -317,7 +343,7 @@ def main():
     except DocumentError as error: raise SystemExit(str(error)) from error
     uploaders=frozenset(value.strip() for value in os.environ.get("DEK_DOCUMENT_UPLOADER_IDS","").split(",") if value.strip())
     if documents is not None and not uploaders: raise SystemExit("Qiniu documents require DEK_DOCUMENT_UPLOADER_IDS")
-    app=KnowledgeApp(site,gateway,secret,generation_proof_secret=generation_proof_secret(os.environ),chat_client=chat,document_store=documents,document_uploaders=uploaders)
+    app=KnowledgeApp(site,gateway,secret,generation_proof_secret=generation_proof_secret(os.environ),chat_client=chat,document_store=documents,document_uploaders=uploaders,internal_api_key=os.environ['API_SERVER_KEY'])
     with make_server(a.host,a.port,app,server_class=ThreadingWSGIServer) as server: server.serve_forever()
 
 if __name__=='__main__': main()
